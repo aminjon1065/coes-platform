@@ -1,0 +1,97 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
+import { Resolution } from './resolution.entity';
+
+export enum ExecutorAssignmentStatus {
+  ASSIGNED = 'assigned',
+  ACCEPTED = 'accepted',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  OVERDUE = 'overdue',
+  RETURNED = 'returned',
+  CANCELLED = 'cancelled',
+}
+
+export enum ExecutorRole {
+  PRIMARY = 'primary',      // Sole accountability
+  CO_EXECUTOR = 'co_executor',
+}
+
+/**
+ * A specific position assigned responsibility by a Resolution.
+ * When converted to a Task, linkedTaskId is set.
+ * This is the EDMS's formal execution record — Task Management owns the operational state.
+ */
+@Entity({ name: 'executor_assignments', schema: 'edms' })
+@Index(['resolutionId', 'positionId'])
+@Index(['documentId', 'status'])
+export class ExecutorAssignment {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'resolution_id' })
+  resolutionId: string;
+
+  @ManyToOne(() => Resolution, (r) => r.executorAssignments, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'resolution_id' })
+  resolution: Resolution;
+
+  /** Denormalized for quick filtering without joining resolution */
+  @Column({ name: 'document_id' })
+  documentId: string;
+
+  /** Target position (obligation belongs to position, not person) */
+  @Column({ name: 'position_id' })
+  positionId: string;
+
+  /** Snapshot of occupant at assignment time */
+  @Column({ name: 'assigned_user_id', nullable: true })
+  assignedUserId: string | null;
+
+  @Column({
+    name: 'executor_role',
+    type: 'enum',
+    enum: ExecutorRole,
+    default: ExecutorRole.PRIMARY,
+  })
+  executorRole: ExecutorRole;
+
+  /** Assignment instruction text (may differ from resolution text for co-executors) */
+  @Column({ type: 'text', nullable: true })
+  instruction: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: ExecutorAssignmentStatus,
+    default: ExecutorAssignmentStatus.ASSIGNED,
+  })
+  status: ExecutorAssignmentStatus;
+
+  @Column({ name: 'deadline', type: 'date', nullable: true })
+  deadline: string | null;
+
+  /** ID of the Task created in TaskManagement domain for this assignment */
+  @Column({ name: 'linked_task_id', nullable: true })
+  linkedTaskId: string | null;
+
+  /** Completion report filed by the executor */
+  @Column({ name: 'completion_report', type: 'text', nullable: true })
+  completionReport: string | null;
+
+  @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
+  completedAt: Date | null;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
+}

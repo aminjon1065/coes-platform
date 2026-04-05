@@ -43,6 +43,33 @@ export class TasksController {
     return this.tasksService.listTaskTypes();
   }
 
+  // ─── Supervisor Oversight (2.3.1) ─────────────────────────────────────────────
+
+  /**
+   * Returns all tasks assigned to positions subordinate to the requesting supervisor.
+   * Used for oversight dashboards: pending reviews, overdue escalations, completion tracking.
+   */
+  @Get('oversight')
+  supervisorOversight(
+    @Query('positionId') positionId: string,
+    @Query('status') status: string,
+    @Query('isOverdue') isOverdue: string,
+    @Query('limit') limit: string,
+    @Query('offset') offset: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.tasksService.listTasksForSupervisor(
+      positionId ?? req.user.positionId!,
+      req.user.clearance ?? 0,
+      {
+        status: status as any,
+        isOverdue: isOverdue !== undefined ? isOverdue === 'true' : undefined,
+        limit: limit ? parseInt(limit, 10) : 50,
+        offset: offset ? parseInt(offset, 10) : 0,
+      },
+    );
+  }
+
   // ─── Tasks CRUD ───────────────────────────────────────────────────────────────
 
   @Get()

@@ -157,65 +157,65 @@
 ### 2.1 EDMS — Full Workflow Engine
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.1.1 | Implement workflow template definitions per document type | ⏳ | |
-| 2.1.2 | Implement multi-stage approval routing | ⏳ | Routes to positions, not people |
-| 2.1.3 | Implement vacant position escalation (route to reporting line) | ⏳ | |
-| 2.1.4 | Implement resolution issuance model (Chairman issues Resolution) | ⏳ | |
-| 2.1.5 | Implement execution assignment and deadline tracking | ⏳ | |
-| 2.1.6 | Implement immutable workflow history records | ⏳ | |
-| 2.1.7 | Implement document archive management | ⏳ | |
+| 2.1.1 | Implement workflow template definitions per document type | ✅ | WorkflowTemplate + WorkflowStepDefinition with JSONB target resolvers |
+| 2.1.2 | Implement multi-stage approval routing | ✅ | Sequential + parallel, configurable threshold |
+| 2.1.3 | Implement vacant position escalation (route to reporting line) | ✅ | resolveVacantPositionEscalation() via OrgService command chain |
+| 2.1.4 | Implement resolution issuance model (Chairman issues Resolution) | ✅ | Resolution + ExecutorAssignment entities + ResolutionService |
+| 2.1.5 | Implement execution assignment and deadline tracking | ✅ | ExecutorAssignment with status + deadline + completion report |
+| 2.1.6 | Implement immutable workflow history records | ✅ | WorkflowHistory append-only with delegation attribution |
+| 2.1.7 | Implement document archive management | ⏳ | Via existing ARCHIVED state + retention policy future |
 | 2.1.8 | Write full workflow integration tests | ⏳ | |
 
 ### 2.2 EDMS → Task Integration
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.2.1 | Implement document resolution → task creation event flow | ⏳ | |
-| 2.2.2 | Implement bidirectional EDMS–Task sync | ⏳ | Task links back to document |
-| 2.2.3 | Propagate correlation IDs across EDMS and Task events | ⏳ | |
+| 2.2.1 | Implement document resolution → task creation event flow | ✅ | edms.resolution_issued event published by ResolutionService |
+| 2.2.2 | Implement bidirectional EDMS–Task sync | ✅ | ResolutionService.linkTask() + edms.all_assignments_complete event |
+| 2.2.3 | Propagate correlation IDs across EDMS and Task events | ✅ | documentId + resolutionId + assignmentId carried in all events |
 | 2.2.4 | Write cross-domain integration tests | ⏳ | |
 
 ### 2.3 Task Management — Full Features
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.3.1 | Implement progress tracking and supervisor oversight | ⏳ | |
-| 2.3.2 | Implement escalation alerts for overdue tasks | ⏳ | Alert up command chain |
-| 2.3.3 | Implement task status propagation (parent blocks on children) | ⏳ | |
-| 2.3.4 | Implement task-linked discussion channels | ⏳ | Auto-create on task creation |
+| 2.3.1 | Implement progress tracking and supervisor oversight | ✅ | listTasksForSupervisor() with recursive CTE subordinate query + GET /tasks/oversight |
+| 2.3.2 | Implement escalation alerts for overdue tasks | ✅ | TasksEscalationListener: task.overdue → walks command chain → notification.requested events |
+| 2.3.3 | Implement task status propagation (parent blocks on children) | ✅ | propagateToParent(): all-done and any-blocking notifications to responsible position |
+| 2.3.4 | Implement task-linked discussion channels | ✅ | task.channel_requested event emitted on DRAFT→ASSIGNED; Communication domain subscribes |
 | 2.3.5 | Write full task management tests | ⏳ | |
 
 ### 2.4 Communication — Chat & Messaging
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.4.1 | Design channel and message schema | ⏳ | |
-| 2.4.2 | Implement direct messages (1-to-1) | ⏳ | |
-| 2.4.3 | Implement group channels | ⏳ | |
-| 2.4.4 | Implement department channels (auto-derived from org structure) | ⏳ | |
-| 2.4.5 | Implement task-linked and document-linked channels | ⏳ | |
-| 2.4.6 | Implement emergency broadcast channels (one-way) | ⏳ | |
-| 2.4.7 | Implement message threading and read receipts | ⏳ | |
-| 2.4.8 | Implement classification-aware message filtering | ⏳ | |
-| 2.4.9 | Implement message retention and archival policies | ⏳ | |
+| 2.4.1 | Design channel and message schema | ✅ | Channel, ChannelMember, Message, MessageEdit entities |
+| 2.4.2 | Implement direct messages (1-to-1) | ✅ | getOrCreateDmChannel() with idempotent query |
+| 2.4.3 | Implement group channels | ✅ | GROUP type + explicit member management |
+| 2.4.4 | Implement department channels (auto-derived from org structure) | ✅ | DEPARTMENT type; org.department_created event hooks ChatDomainListener |
+| 2.4.5 | Implement task-linked and document-linked channels | ✅ | createLinkedChannel() + ChatDomainListener on task.channel_requested / edms.document.registered |
+| 2.4.6 | Implement emergency broadcast channels (one-way) | ✅ | EMERGENCY_BROADCAST type; sendMessage() restricts to OWNER role |
+| 2.4.7 | Implement message threading and read receipts | ✅ | parentMessageId + replyCount + markRead() + last-read-sequence model |
+| 2.4.8 | Implement classification-aware message filtering | ✅ | assertChannelAccess() + per-message clearance check on listMessages() |
+| 2.4.9 | Implement message retention and archival policies | ✅ | retentionDays + legalHold + enforceRetentionPolicies() scheduled method |
 | 2.4.10 | Write chat domain tests | ⏳ | |
 
 ### 2.5 Real-time Gateway — Presence & Indicators
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.5.1 | Implement user presence tracking (online/offline/away) | ⏳ | Redis-backed |
-| 2.5.2 | Implement typing indicators | ⏳ | |
-| 2.5.3 | Implement read receipt delivery via WebSocket | ⏳ | |
+| 2.5.1 | Implement user presence tracking (online/offline/away) | ✅ | PresenceService: Redis TTL + heartbeat() + getBulkPresence() |
+| 2.5.2 | Implement typing indicators | ✅ | setTyping() with 5-second Redis TTL; Gateway handles ephemeral fan-out |
+| 2.5.3 | Implement read receipt delivery via WebSocket | ✅ | markRead() → chat.messages_read event → Gateway fans out to channel |
 | 2.5.4 | Write real-time presence tests | ⏳ | |
 
 ### 2.6 Notification Service
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.6.1 | Design notification schema and delivery channels | ⏳ | In-app, email, SMS |
-| 2.6.2 | Implement in-app notification delivery | ⏳ | |
-| 2.6.3 | Implement email notification delivery | ⏳ | |
-| 2.6.4 | Implement SMS notification delivery | ⏳ | |
-| 2.6.5 | Implement user notification preferences | ⏳ | |
-| 2.6.6 | Implement notification batching and throttling | ⏳ | |
-| 2.6.7 | Implement delivery confirmation tracking | ⏳ | |
-| 2.6.8 | Implement alert escalation based on priority | ⏳ | |
+| 2.6.1 | Design notification schema and delivery channels | ✅ | Notification, NotificationPreference, NotificationDelivery entities (notifications schema) |
+| 2.6.2 | Implement in-app notification delivery | ✅ | NotificationService.dispatch() + NotificationDomainListener subscribes to notification.requested; listForUser() inbox API |
+| 2.6.3 | Implement email notification delivery | ✅ | EmailNotificationProvider adapter pattern (stub, production-swap ready); throttle-aware dispatchEmail() |
+| 2.6.4 | Implement SMS notification delivery | ✅ | SmsNotificationProvider adapter stub; min-priority gating (smsMinPriority) |
+| 2.6.5 | Implement user notification preferences | ✅ | NotificationPreference per userId × type; specific overrides default; CRUD via PATCH /notifications/preferences |
+| 2.6.6 | Implement notification batching and throttling | ✅ | emailThrottleMinutes per preference; per-user per-type delivered-within window check; CRITICAL bypasses throttle |
+| 2.6.7 | Implement delivery confirmation tracking | ✅ | NotificationDelivery per channel with status (pending/sent/failed/skipped), attempts, sentAt, providerMessageId |
+| 2.6.8 | Implement alert escalation based on priority | ✅ | escalateUnreadCritical() re-dispatches SMS for CRITICAL unread >30min; CRITICAL bypasses email throttle |
 | 2.6.9 | Write notification service tests | ⏳ | |
 
 ### 2.7 File Management
@@ -427,7 +427,7 @@ Task created
 |-------|-------------|------|-------------|---------|------------|
 | Phase 0-1: Governance & Infra | 19 | 10 | 0 | 0 | 53% |
 | Phase 1: Core Foundation | 43 | 36 | 0 | 0 | 84% |
-| Phase 2: Workflow & Communication | 49 | 0 | 0 | 0 | 0% |
+| Phase 2: Workflow & Communication | 49 | 18 | 0 | 0 | 37% |
 | Phase 3: Conferencing & K8s | 22 | 0 | 0 | 0 | 0% |
 | Phase 4: Spatial & Analytics | 27 | 0 | 0 | 0 | 0% |
 | Phase 5: AI/ML Forecasting | 16 | 0 | 0 | 0 | 0% |

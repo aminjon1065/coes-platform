@@ -16,6 +16,8 @@ import { TaskHistory } from '../entities/task-history.entity';
 import { TaskComment } from '../entities/task-comment.entity';
 import { TaskAttachment } from '../entities/task-attachment.entity';
 
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { AuditService } from '../../audit/services/audit.service';
 import { OrgService } from '../../org/services/org.service';
 
@@ -48,6 +50,8 @@ export class TasksService {
     private readonly commentRepo: Repository<TaskComment>,
     @InjectRepository(TaskAttachment)
     private readonly attachmentRepo: Repository<TaskAttachment>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
     private readonly orgService: OrgService,
     private readonly eventEmitter: EventEmitter2,
@@ -371,7 +375,134 @@ export class TasksService {
       actorPositionId,
     });
 
+    // 2.3.3 — Propagate status to parent task
+    if (task.parentTaskId) {
+      await this.propagateToParent(task.parentTaskId, actorId, actorPositionId).catch((err) =>
+        this.logger.error(`Parent propagation failed for task ${task.id}: ${err.message}`, err.stack),
+      );
+    }
+
+    // 2.3.4 — Emit channel creation request on first assignment
+    if (previousStatus === TaskStatus.DRAFT && targetStatus === TaskStatus.ASSIGNED) {
+      this.eventEmitter.emit('task.channel_requested', {
+        taskId: task.id,
+        taskTitle: task.title,
+        responsiblePositionId: task.responsiblePositionId,
+        assigningPositionId: task.assigningPositionId,
+      });
+    }
+
     return task;
+  }
+
+  // ─── Parent-Child Status Propagation (2.3.3) ─────────────────────────────────
+
+  /**
+   * When all children reach a terminal state, auto-complete the parent.
+   * When any child is ON_HOLD / CANNOT_EXECUTE, flag the parent as blocked.
+   */
+  private async propagateToParent(
+    parentTaskId: string,
+    actorId: string,
+    actorPositionId: string,
+  ): Promise<void> {
+    const parent = await this.taskRepo.findOne({ where: { id: parentTaskId } });
+    if (!parent) return;
+
+    const children = await this.taskRepo.find({ where: { parentTaskId } });
+    if (!children.length) return;
+
+    const terminalStatuses = new Set([
+      TaskStatus.COMPLETED, TaskStatus.VERIFIED, TaskStatus.CANCELLED, TaskStatus.CLOSED,
+    ]);
+    const blockingStatuses = new Set([TaskStatus.ON_HOLD, TaskStatus.CANNOT_EXECUTE]);
+
+    const allDone = children.every(c => terminalStatuses.has(c.status));
+    const anyBlocking = children.some(c => blockingStatuses.has(c.status));
+
+    if (allDone && parent.status === TaskStatus.IN_PROGRESS) {
+      // All children done — parent can be completed by its executor
+      // We emit a notification rather than auto-completing (human must confirm)
+      this.eventEmitter.emit('notification.requested', {
+        type: 'TASK_ALL_SUBTASKS_COMPLETE',
+        recipientPositionId: parent.responsiblePositionId,
+        priority: 'normal',
+        payload: { taskId: parent.id, taskTitle: parent.title },
+      });
+
+      await this.recordHistory(parent.id, 'all_subtasks_completed', actorId, actorPositionId, null, {
+        childCount: children.length,
+      });
+    }
+
+    if (anyBlocking && parent.status === TaskStatus.IN_PROGRESS) {
+      const blockedChild = children.find(c => blockingStatuses.has(c.status));
+      this.eventEmitter.emit('notification.requested', {
+        type: 'TASK_SUBTASK_BLOCKED',
+        recipientPositionId: parent.responsiblePositionId,
+        priority: 'high',
+        payload: {
+          taskId: parent.id,
+          taskTitle: parent.title,
+          blockedChildId: blockedChild?.id,
+          blockedStatus: blockedChild?.status,
+        },
+      });
+    }
+  }
+
+  // ─── Supervisor Oversight (2.3.1) ─────────────────────────────────────────────
+
+  /**
+   * Returns all tasks assigned to positions that are subordinate to the supervisor.
+   * Used for oversight dashboards and escalation review.
+   */
+  async listTasksForSupervisor(
+    supervisorPositionId: string,
+    actorClearance: number,
+    filters?: { status?: TaskStatus; isOverdue?: boolean; limit?: number; offset?: number },
+  ): Promise<{ data: Task[]; total: number }> {
+    // Resolve all subordinate positions
+    const subordinates = await this.getSubordinatePositionIds(supervisorPositionId);
+    if (!subordinates.length) return { data: [], total: 0 };
+
+    const qb = this.taskRepo
+      .createQueryBuilder('task')
+      .leftJoinAndSelect('task.type', 'type')
+      .where('task.classification <= :clearance', { clearance: actorClearance })
+      .andWhere('task.responsiblePositionId IN (:...positions)', { positions: subordinates });
+
+    if (filters?.status) qb.andWhere('task.status = :status', { status: filters.status });
+    if (filters?.isOverdue !== undefined) qb.andWhere('task.isOverdue = :od', { od: filters.isOverdue });
+
+    const [data, total] = await qb
+      .orderBy('task.isOverdue', 'DESC')
+      .addOrderBy('task.deadline', 'ASC', 'NULLS LAST')
+      .addOrderBy('task.createdAt', 'DESC')
+      .limit(filters?.limit ?? 50)
+      .offset(filters?.offset ?? 0)
+      .getManyAndCount();
+
+    return { data, total };
+  }
+
+  private async getSubordinatePositionIds(supervisorPositionId: string): Promise<string[]> {
+    // Recursive CTE traversal of positions via reports_to_id
+    const rows = await this.dataSource.query<Array<{ id: string }>>(
+      `WITH RECURSIVE subordinates AS (
+         SELECT id
+         FROM   org.positions
+         WHERE  reports_to_id = $1 AND active = true
+         UNION ALL
+         SELECT p.id
+         FROM   org.positions p
+         INNER JOIN subordinates s ON p.reports_to_id = s.id
+         WHERE  p.active = true
+       )
+       SELECT id FROM subordinates`,
+      [supervisorPositionId],
+    );
+    return rows.map(r => r.id);
   }
 
   // ─── Progress ────────────────────────────────────────────────────────────────

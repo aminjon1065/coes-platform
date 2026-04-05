@@ -10,6 +10,8 @@ import { TaskAttachment } from './entities/task-attachment.entity';
 
 import { TasksService } from './services/tasks.service';
 import { TasksController } from './controllers/tasks.controller';
+import { TasksEdmsListener } from './listeners/tasks-edms.listener';
+import { TasksEscalationListener } from './listeners/tasks-escalation.listener';
 
 import { AuditModule } from '../audit/audit.module';
 import { OrgModule } from '../org/org.module';
@@ -28,7 +30,11 @@ import { OrgModule } from '../org/org.module';
     OrgModule,
   ],
   controllers: [TasksController],
-  providers: [TasksService],
+  providers: [
+    TasksService,
+    TasksEdmsListener,
+    TasksEscalationListener,
+  ],
   exports: [TasksService],
 })
 export class TasksModule {}

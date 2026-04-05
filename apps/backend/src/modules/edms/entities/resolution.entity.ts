@@ -1,0 +1,67 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+  OneToMany,
+} from 'typeorm';
+import { ExecutorAssignment } from './executor-assignment.entity';
+
+export enum ResolutionPriority {
+  ROUTINE = 'routine',
+  URGENT = 'urgent',
+  EMERGENCY = 'emergency',
+}
+
+/**
+ * A formal executive directive issued by a leadership official on a document.
+ * Resolution → creates ExecutorAssignments → triggers Task creation in TaskManagement.
+ */
+@Entity({ name: 'resolutions', schema: 'edms' })
+@Index(['documentId'])
+@Index(['issuingPositionId'])
+export class Resolution {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'document_id' })
+  documentId: string;
+
+  /** The step in the workflow instance where the resolution was issued */
+  @Column({ name: 'workflow_step_id', nullable: true })
+  workflowStepId: string | null;
+
+  /** Position issuing the resolution */
+  @Column({ name: 'issuing_position_id' })
+  issuingPositionId: string;
+
+  /** User who issued the resolution */
+  @Column({ name: 'issuing_user_id' })
+  issuingUserId: string;
+
+  /** The instruction text */
+  @Column({ type: 'text' })
+  text: string;
+
+  @Column({
+    type: 'enum',
+    enum: ResolutionPriority,
+    default: ResolutionPriority.ROUTINE,
+  })
+  priority: ResolutionPriority;
+
+  /** Deadline imposed by this resolution on executors */
+  @Column({ name: 'deadline', type: 'date', nullable: true })
+  deadline: string | null;
+
+  @OneToMany(() => ExecutorAssignment, (a) => a.resolution, { cascade: true })
+  executorAssignments: ExecutorAssignment[];
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
+}
