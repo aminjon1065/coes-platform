@@ -16,6 +16,14 @@ async function bootstrap() {
 
   const config = app.get(ConfigService);
 
+  // Multipart file uploads — required by FilesController
+  await app.register(require('@fastify/multipart'), {
+    limits: {
+      fileSize: 100 * 1024 * 1024, // 100 MB
+      files: 1,                     // one file per request
+    },
+  });
+
   // Global prefix
   app.setGlobalPrefix('api');
 

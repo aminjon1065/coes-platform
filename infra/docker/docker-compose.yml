@@ -55,6 +55,7 @@ volumes:
   grafana-data:
   loki-data:
   jaeger-data:
+  opensearch-data:
 
 # ===========================================================================
 # SERVICES
@@ -514,6 +515,153 @@ services:
     labels:
       coescd.service: postgres-exporter
       coescd.tier: obs
+
+  # =========================================================================
+  # MEDIA  (profile: media)
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Mediasoup SFU — WebRTC Selective Forwarding Unit for audio/video calls
+  # ---------------------------------------------------------------------------
+  media:
+    profiles: [media]
+    build:
+      context: ../../apps/media
+      dockerfile: Dockerfile
+      target: production
+    image: coescd/media:${APP_VERSION:-latest}
+    container_name: coescd-media
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: ../../.env.local
+    environment:
+      NODE_ENV:                production
+      PORT:                    4002
+      HOST:                    0.0.0.0
+      REDIS_HOST:              redis
+      REDIS_PORT:              6379
+      RABBITMQ_URL:            amqp://${RABBITMQ_USER:-coescd}:${RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
+      # Public IP that remote peers use to reach this host (set to your server IP)
+      MEDIASOUP_ANNOUNCED_IP:  ${MEDIASOUP_ANNOUNCED_IP:-127.0.0.1}
+      MEDIASOUP_WORKERS:       ${MEDIASOUP_WORKERS:-2}
+      RTC_MIN_PORT:            10000
+      RTC_MAX_PORT:            10100
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4002:4002"         # HTTP API + WebSocket signaling
+      - "10000-10100:10000-10100/udp"  # RTP/RTCP media
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      coescd.service: media
+      coescd.tier: media
+
+  # ---------------------------------------------------------------------------
+  # Coturn — STUN/TURN server for WebRTC NAT traversal
+  # ---------------------------------------------------------------------------
+  coturn:
+    profiles: [media]
+    image: coturn/coturn:4.6.2-alpine
+    container_name: coescd-coturn
+    restart: unless-stopped
+    logging: *default-logging
+    network_mode: host     # TURN requires host networking for correct NAT behaviour
+    command: >
+      -n
+      --log-file=stdout
+      --external-ip=$${TURN_EXTERNAL_IP:-127.0.0.1}
+      --listening-port=3478
+      --tls-listening-port=5349
+      --fingerprint
+      --lt-cred-mech
+      --realm=${TURN_REALM:-coescd.local}
+      --user=${TURN_USER:-coescd}:${TURN_PASSWORD:?Set TURN_PASSWORD in .env}
+      --min-port=49152
+      --max-port=65535
+      --denied-peer-ip=10.0.0.0-10.255.255.255
+      --denied-peer-ip=192.168.0.0-192.168.255.255
+      --denied-peer-ip=172.16.0.0-172.31.255.255
+    labels:
+      coescd.service: coturn
+      coescd.tier: media
+
+  # =========================================================================
+  # SEARCH  (profile: search)
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # OpenSearch — full-text search and analytics engine
+  # ---------------------------------------------------------------------------
+  opensearch:
+    profiles: [search]
+    image: opensearchproject/opensearch:2.13.0
+    container_name: coescd-opensearch
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      cluster.name: coescd-search
+      node.name: opensearch-node1
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"     # TLS handled by Nginx in production
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "127.0.0.1:9200:9200"   # REST API
+      - "127.0.0.1:9600:9600"   # Performance analyzer
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qv '\"status\":\"red\"'"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      coescd.service: opensearch
+      coescd.tier: search
+
+  # ---------------------------------------------------------------------------
+  # OpenSearch Dashboards — visualization for OpenSearch
+  # ---------------------------------------------------------------------------
+  opensearch-dashboards:
+    profiles: [search]
+    image: opensearchproject/opensearch-dashboards:2.13.0
+    container_name: coescd-opensearch-dashboards
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks:
+      - coescd-net
+    labels:
+      coescd.service: opensearch-dashboards
+      coescd.tier: search
 
   # ---------------------------------------------------------------------------
   # Redis Exporter — Redis metrics for Prometheus

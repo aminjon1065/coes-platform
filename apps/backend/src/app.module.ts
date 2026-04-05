@@ -16,10 +16,14 @@ import { TasksModule } from './modules/tasks/tasks.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { FilesModule } from './modules/files/files.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { SearchModule } from './modules/search/search.module';
+import { CallsModule } from './modules/calls/calls.module';
 import { validateConfig } from './infra/config/config.validation';
 import databaseConfig from './infra/config/database.config';
 import redisConfig from './infra/config/redis.config';
 import jwtConfig from './infra/config/jwt.config';
+import minioConfig from './infra/config/minio.config';
+import opensearchConfig from './infra/config/opensearch.config';
 
 @Module({
   imports: [
@@ -27,7 +31,7 @@ import jwtConfig from './infra/config/jwt.config';
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateConfig,
-      load: [databaseConfig, redisConfig, jwtConfig],
+      load: [databaseConfig, redisConfig, jwtConfig, minioConfig, opensearchConfig],
       envFilePath: ['.env.local', '.env'],
     }),
 
@@ -95,6 +99,8 @@ import jwtConfig from './infra/config/jwt.config';
     NotificationsModule,
     FilesModule,
     ChatModule,
+    SearchModule,
+    CallsModule,
   ],
 })
 export class AppModule {}

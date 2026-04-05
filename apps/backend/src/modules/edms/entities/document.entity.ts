@@ -135,6 +135,18 @@ export class Document {
   @Column({ name: 'cancel_reason', length: 500, nullable: true })
   cancelReason: string | null;
 
+  /** Set when document transitions to ARCHIVED */
+  @Column({ name: 'archived_at', type: 'timestamptz', nullable: true })
+  archivedAt: Date | null;
+
+  /** Credential ID of the user (or 'system' for auto-archive) who archived the document */
+  @Column({ name: 'archived_by_id', nullable: true })
+  archivedById: string | null;
+
+  /** Date at which the archive copy must be reviewed per retention policy (archivedAt + retentionYears) */
+  @Column({ name: 'retention_review_date', type: 'date', nullable: true })
+  retentionReviewDate: string | null;
+
   @OneToMany(() => DocumentVersion, (v) => v.document, { cascade: true })
   versions: DocumentVersion[];
 

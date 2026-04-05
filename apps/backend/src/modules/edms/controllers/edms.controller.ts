@@ -129,4 +129,27 @@ export class EdmsController {
       req.user.clearance ?? 0,
     );
   }
+
+  // ─── Archive Management ───────────────────────────────────────────────────────
+
+  /**
+   * List all archived documents accessible to the caller.
+   * Optional: ?reviewBefore=YYYY-MM-DD to find documents due for retention review.
+   */
+  @Get('archive')
+  listArchived(
+    @Query('search') search: string | undefined,
+    @Query('reviewBefore') reviewBefore: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Query('offset') offset: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.edmsService.listArchivedDocuments({
+      search,
+      reviewBefore: reviewBefore ? new Date(reviewBefore) : undefined,
+      limit: limit ? parseInt(limit, 10) : 20,
+      offset: offset ? parseInt(offset, 10) : 0,
+      userClearance: req.user.clearance ?? 0,
+    });
+  }
 }

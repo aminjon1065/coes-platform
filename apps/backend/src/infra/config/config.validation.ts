@@ -47,6 +47,42 @@ class EnvironmentVariables {
   @IsString()
   @MinLength(32)
   JWT_REFRESH_SECRET: string;
+
+  @IsString()
+  @IsOptional()
+  MINIO_ENDPOINT: string = 'localhost';
+
+  @IsNumber()
+  @IsOptional()
+  MINIO_PORT: number = 9000;
+
+  @IsString()
+  @IsOptional()
+  MINIO_ROOT_USER: string = 'minioadmin';
+
+  @IsString()
+  @IsOptional()
+  MINIO_ROOT_PASSWORD: string = 'minioadmin';
+
+  @IsString()
+  @IsOptional()
+  MINIO_BUCKET: string = 'coescd-files';
+
+  @IsString()
+  @IsOptional()
+  OPENSEARCH_NODE: string = 'http://localhost:9200';
+
+  @IsString()
+  @IsOptional()
+  OPENSEARCH_USERNAME: string;
+
+  @IsString()
+  @IsOptional()
+  OPENSEARCH_PASSWORD: string;
+
+  @IsString()
+  @IsOptional()
+  OPENSEARCH_INDEX_PREFIX: string = 'coescd';
 }
 
 export function validateConfig(config: Record<string, unknown>) {

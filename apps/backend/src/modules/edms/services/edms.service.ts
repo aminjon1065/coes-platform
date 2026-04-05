@@ -285,6 +285,17 @@ export class EdmsService {
       updates.cancelReason = dto.reason ?? null;
     }
 
+    if (dto.targetStatus === DocumentStatus.ARCHIVED) {
+      const now = new Date();
+      updates.archivedAt = now;
+      updates.archivedById = actorId;
+      // retention_review_date = archivedAt + docType.retentionYears
+      const retentionYears = doc.type?.retentionYears ?? 5;
+      const reviewDate = new Date(now);
+      reviewDate.setFullYear(reviewDate.getFullYear() + retentionYears);
+      updates.retentionReviewDate = reviewDate.toISOString().split('T')[0];
+    }
+
     await this.documentRepo.update(id, updates);
 
     await this.auditService.emit({
@@ -374,6 +385,85 @@ export class EdmsService {
       where: { documentId },
       order: { versionNumber: 'DESC' },
     });
+  }
+
+  // ─── Archive Management ───────────────────────────────────────────────────────
+
+  /**
+   * List archived documents with optional search and clearance filtering.
+   * Supports pagination and optional date range on retentionReviewDate.
+   */
+  async listArchivedDocuments(opts: {
+    search?: string;
+    reviewBefore?: Date;
+    limit?: number;
+    offset?: number;
+    userClearance: number;
+  }): Promise<{ items: Document[]; total: number }> {
+    const qb = this.documentRepo
+      .createQueryBuilder('doc')
+      .leftJoinAndSelect('doc.type', 'type')
+      .where("doc.status = 'archived'")
+      .andWhere('doc.classification <= :clearance', { clearance: opts.userClearance });
+
+    if (opts.search) {
+      qb.andWhere('doc.subject ILIKE :search', { search: `%${opts.search}%` });
+    }
+    if (opts.reviewBefore) {
+      qb.andWhere('doc.retention_review_date <= :reviewBefore', { reviewBefore: opts.reviewBefore.toISOString().split('T')[0] });
+    }
+
+    const [items, total] = await qb
+      .orderBy('doc.archived_at', 'DESC')
+      .skip(opts.offset ?? 0)
+      .take(opts.limit ?? 20)
+      .getManyAndCount();
+
+    return { items, total };
+  }
+
+  /**
+   * Scheduled job: auto-archive COMPLETED documents where updated_at is older
+   * than the configured threshold (default 90 days).
+   * Called by a cron job — returns the count of documents archived.
+   */
+  async autoArchiveCompletedDocuments(olderThanDays = 90): Promise<number> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - olderThanDays);
+
+    const docsToArchive = await this.documentRepo
+      .createQueryBuilder('doc')
+      .leftJoinAndSelect('doc.type', 'type')
+      .where("doc.status = 'completed'")
+      .andWhere('doc.updated_at < :cutoff', { cutoff })
+      .getMany();
+
+    if (docsToArchive.length === 0) return 0;
+
+    const now = new Date();
+    for (const doc of docsToArchive) {
+      const retentionYears = doc.type?.retentionYears ?? 5;
+      const reviewDate = new Date(now);
+      reviewDate.setFullYear(reviewDate.getFullYear() + retentionYears);
+
+      await this.documentRepo.update(doc.id, {
+        status: DocumentStatus.ARCHIVED,
+        archivedAt: now,
+        archivedById: 'system',
+        retentionReviewDate: reviewDate.toISOString().split('T')[0],
+      });
+
+      await this.auditService.emit({
+        actorId: 'system',
+        eventType: 'edms.document.auto_archived',
+        resourceType: 'document',
+        resourceId: doc.id,
+        metadata: { olderThanDays, retentionReviewDate: reviewDate.toISOString().split('T')[0] },
+      });
+    }
+
+    this.logger.log(`Auto-archived ${docsToArchive.length} completed documents older than ${olderThanDays} days`);
+    return docsToArchive.length;
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────────
