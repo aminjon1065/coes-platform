@@ -1,0 +1,51 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
+import { Task } from './task.entity';
+
+/**
+ * Short operational communication attached to a task.
+ * Distinct from full discussion threads in the Communication domain.
+ */
+@Entity({ name: 'task_comments', schema: 'tasks' })
+@Index(['taskId', 'createdAt'])
+export class TaskComment {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'task_id' })
+  taskId: string;
+
+  @ManyToOne(() => Task, (t) => t.comments, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'task_id' })
+  task: Task;
+
+  @Column({ name: 'author_id' })
+  authorId: string;
+
+  @Column({ name: 'author_position_id', nullable: true })
+  authorPositionId: string | null;
+
+  @Column({ type: 'text' })
+  body: string;
+
+  /**
+   * Internal comments are visible only to the assigning chain and supervisors,
+   * not to co-executors or observers.
+   */
+  @Column({ name: 'is_internal', default: false })
+  isInternal: boolean;
+
+  /** Soft-delete: set when comment is removed */
+  @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+}

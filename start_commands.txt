@@ -1,0 +1,11 @@
+# Infra only (local dev — just postgres, redis, rabbitmq, minio)
+npm run infra:up
+
+# Infra + app services (backend, gateway, nginx)
+npm run app:up
+
+# Infra + observability (prometheus, grafana, loki, jaeger)
+npm run obs:up
+
+# Everything
+npm run all:up

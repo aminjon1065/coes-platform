@@ -1,0 +1,537 @@
+# =============================================================================
+# CoESCD Unified Digital Platform — Docker Compose
+# Sovereign on-premises deployment (Tajikistan Emergency Management)
+#
+# PROFILES
+#   infra  — PostgreSQL, Redis, RabbitMQ, MinIO         (always included)
+#   app    — Backend API, WebSocket Gateway, Nginx
+#   obs    — Prometheus, Grafana, Loki, Promtail, Jaeger
+#
+# USAGE
+#   Start everything:
+#     docker compose --profile app --profile obs up -d
+#
+#   Infra only (dev):
+#     docker compose up -d
+#
+#   Stop everything:
+#     docker compose --profile app --profile obs down
+#
+# REQUIREMENTS
+#   Copy ../../.env.example to ../../.env and fill in all secrets before running.
+# =============================================================================
+
+name: coescd
+
+# ---------------------------------------------------------------------------
+# Shared logging — all containers ship logs to Loki via json-file driver
+# ---------------------------------------------------------------------------
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+    tag: "{{.Name}}"
+
+# ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+networks:
+  coescd-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  minio-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  jaeger-data:
+
+# ===========================================================================
+# SERVICES
+# ===========================================================================
+services:
+
+  # =========================================================================
+  # INFRASTRUCTURE (default profile — always starts)
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: coescd-postgres
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-coescd}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB:       ${POSTGRES_DB:-coescd}
+      PGDATA:            /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coescd} -d ${POSTGRES_DB:-coescd}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      postgres
+        -c max_connections=200
+        -c shared_buffers=256MB
+        -c effective_cache_size=768MB
+        -c maintenance_work_mem=64MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c default_statistics_target=100
+        -c log_min_duration_statement=1000
+        -c log_connections=on
+        -c log_disconnections=on
+    labels:
+      coescd.service: postgres
+      coescd.tier: infra
+
+  # ---------------------------------------------------------------------------
+  # Redis 7
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: coescd-redis
+    restart: unless-stopped
+    logging: *default-logging
+    command: >
+      redis-server
+        --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --appendonly yes
+        --appendfsync everysec
+        --loglevel notice
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      coescd.service: redis
+      coescd.tier: infra
+
+  # ---------------------------------------------------------------------------
+  # RabbitMQ 3.13
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: coescd-rabbitmq
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      RABBITMQ_DEFAULT_USER:  ${RABBITMQ_USER:-coescd}
+      RABBITMQ_DEFAULT_PASS:  ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+      RABBITMQ_DEFAULT_VHOST: coescd
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"   # Management UI — internal only
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    labels:
+      coescd.service: rabbitmq
+      coescd.tier: infra
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-compatible sovereign object storage
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-04-06T05-26-02Z
+    container_name: coescd-minio
+    restart: unless-stopped
+    logging: *default-logging
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ROOT_USER:-coescd_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API
+      - "127.0.0.1:9001:9001"   # Console UI
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    labels:
+      coescd.service: minio
+      coescd.tier: infra
+
+  # =========================================================================
+  # APPLICATION  (profile: app)
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Backend — NestJS Modular Monolith
+  # ---------------------------------------------------------------------------
+  backend:
+    profiles: [app]
+    build:
+      context: ../../apps/backend
+      dockerfile: Dockerfile
+      target: production
+    image: coescd/backend:${APP_VERSION:-latest}
+    container_name: coescd-backend
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: ../../.env.local
+    environment:
+      NODE_ENV:      production
+      PORT:          4000
+      HOST:          0.0.0.0
+      DB_HOST:       postgres
+      DB_PORT:       5432
+      REDIS_HOST:    redis
+      REDIS_PORT:    6379
+      RABBITMQ_URL:  amqp://${RABBITMQ_USER:-coescd}:${RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      coescd.service: backend
+      coescd.tier: app
+
+  # ---------------------------------------------------------------------------
+  # WebSocket Gateway — Real-time event bus for connected clients
+  # ---------------------------------------------------------------------------
+  gateway:
+    profiles: [app]
+    build:
+      context: ../../apps/gateway
+      dockerfile: Dockerfile
+      target: production
+    image: coescd/gateway:${APP_VERSION:-latest}
+    container_name: coescd-gateway
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: ../../.env.local
+    environment:
+      NODE_ENV:     production
+      PORT:         4001
+      BACKEND_URL:  http://backend:4000
+      REDIS_HOST:   redis
+      REDIS_PORT:   6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-coescd}:${RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      coescd.service: gateway
+      coescd.tier: app
+
+  # ---------------------------------------------------------------------------
+  # Nginx — TLS termination, rate limiting, reverse proxy
+  # ---------------------------------------------------------------------------
+  nginx:
+    profiles: [app]
+    image: nginx:1.25-alpine
+    container_name: coescd-nginx
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      coescd.service: nginx
+      coescd.tier: app
+
+  # =========================================================================
+  # OBSERVABILITY  (profile: obs)
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — metrics collection and alerting
+  # ---------------------------------------------------------------------------
+  prometheus:
+    profiles: [obs]
+    image: prom/prometheus:v2.51.0
+    container_name: coescd-prometheus
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    labels:
+      coescd.service: prometheus
+      coescd.tier: obs
+
+  # ---------------------------------------------------------------------------
+  # Grafana — dashboards for metrics, logs, and traces
+  # ---------------------------------------------------------------------------
+  grafana:
+    profiles: [obs]
+    image: grafana/grafana:10.4.0
+    container_name: coescd-grafana
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP:     "false"
+      GF_AUTH_ANONYMOUS_ENABLED:  "false"
+      GF_SERVER_ROOT_URL:         http://localhost:3001
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "127.0.0.1:3001:3000"
+    networks:
+      - coescd-net
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      coescd.service: grafana
+      coescd.tier: obs
+
+  # ---------------------------------------------------------------------------
+  # Loki — log aggregation
+  # ---------------------------------------------------------------------------
+  loki:
+    profiles: [obs]
+    image: grafana/loki:2.9.6
+    container_name: coescd-loki
+    restart: unless-stopped
+    logging: *default-logging
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3100/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      coescd.service: loki
+      coescd.tier: obs
+
+  # ---------------------------------------------------------------------------
+  # Promtail — ships container logs to Loki
+  # ---------------------------------------------------------------------------
+  promtail:
+    profiles: [obs]
+    image: grafana/promtail:2.9.6
+    container_name: coescd-promtail
+    restart: unless-stopped
+    logging: *default-logging
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./loki/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - coescd-net
+    depends_on:
+      loki:
+        condition: service_healthy
+    labels:
+      coescd.service: promtail
+      coescd.tier: obs
+
+  # ---------------------------------------------------------------------------
+  # Jaeger — distributed tracing (OTLP receiver)
+  # ---------------------------------------------------------------------------
+  jaeger:
+    profiles: [obs]
+    image: jaegertracing/all-in-one:1.56
+    container_name: coescd-jaeger
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE:      badger
+      BADGER_EPHEMERAL:       "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY:   /badger/key
+    volumes:
+      - jaeger-data:/badger
+    ports:
+      - "127.0.0.1:16686:16686"   # Jaeger UI
+      - "127.0.0.1:4317:4317"     # OTLP gRPC
+      - "127.0.0.1:4318:4318"     # OTLP HTTP
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:14269/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      coescd.service: jaeger
+      coescd.tier: obs
+
+  # ---------------------------------------------------------------------------
+  # Node Exporter — host-level metrics for Prometheus
+  # ---------------------------------------------------------------------------
+  node-exporter:
+    profiles: [obs]
+    image: prom/node-exporter:v1.7.0
+    container_name: coescd-node-exporter
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|run)($$|/)
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - coescd-net
+    labels:
+      coescd.service: node-exporter
+      coescd.tier: obs
+
+  # ---------------------------------------------------------------------------
+  # Postgres Exporter — PostgreSQL metrics for Prometheus
+  # ---------------------------------------------------------------------------
+  postgres-exporter:
+    profiles: [obs]
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: coescd-postgres-exporter
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-coescd}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coescd}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - coescd-net
+    labels:
+      coescd.service: postgres-exporter
+      coescd.tier: obs
+
+  # ---------------------------------------------------------------------------
+  # Redis Exporter — Redis metrics for Prometheus
+  # ---------------------------------------------------------------------------
+  redis-exporter:
+    profiles: [obs]
+    image: oliver006/redis_exporter:v1.58.0
+    container_name: coescd-redis-exporter
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      REDIS_ADDR:     redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - coescd-net
+    labels:
+      coescd.service: redis-exporter
+      coescd.tier: obs

@@ -1,0 +1,60 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from 'typeorm';
+
+export enum CredentialStatus {
+  ACTIVE = 'active',
+  LOCKED = 'locked',
+  SUSPENDED = 'suspended',
+  PENDING_RESET = 'pending_reset',
+}
+
+@Entity({ name: 'user_credentials', schema: 'iam' })
+export class UserCredential {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index({ unique: true })
+  @Column({ length: 100 })
+  username: string;
+
+  @Index({ unique: true })
+  @Column({ length: 255 })
+  email: string;
+
+  @Column({ name: 'password_hash', length: 255 })
+  passwordHash: string;
+
+  @Column({
+    type: 'enum',
+    enum: CredentialStatus,
+    default: CredentialStatus.ACTIVE,
+  })
+  status: CredentialStatus;
+
+  @Column({ name: 'failed_attempts', default: 0 })
+  failedAttempts: number;
+
+  @Column({ name: 'locked_until', type: 'timestamptz', nullable: true })
+  lockedUntil: Date | null;
+
+  @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
+  lastLoginAt: Date | null;
+
+  @Column({ name: 'password_changed_at', type: 'timestamptz', nullable: true })
+  passwordChangedAt: Date | null;
+
+  @Column({ name: 'is_service_account', default: false })
+  isServiceAccount: boolean;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
+}
