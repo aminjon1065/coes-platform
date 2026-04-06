@@ -5,8 +5,9 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { CallSession } from './call-session.entity';
+import type { CallSession } from './call-session.entity';
 
 export enum ParticipantStatus {
   INVITED  = 'invited',
@@ -58,7 +59,7 @@ export class CallParticipant {
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
-  @ManyToOne(() => CallSession, (s) => s.participants, { onDelete: 'CASCADE' })
+  @ManyToOne('CallSession', 'participants', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'session_id' })
-  session: CallSession;
+  session: Relation<CallSession>;
 }

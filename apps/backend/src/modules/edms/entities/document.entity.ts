@@ -8,10 +8,11 @@ import {
   ManyToOne,
   OneToMany,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
 import { DocumentType } from './document-type.entity';
-import { DocumentVersion } from './document-version.entity';
-import { DocumentAttachment } from './document-attachment.entity';
+import type { DocumentVersion } from './document-version.entity';
+import type { DocumentAttachment } from './document-attachment.entity';
 
 export enum DocumentStatus {
   DRAFT = 'draft',
@@ -147,11 +148,11 @@ export class Document {
   @Column({ name: 'retention_review_date', type: 'date', nullable: true })
   retentionReviewDate: string | null;
 
-  @OneToMany(() => DocumentVersion, (v) => v.document, { cascade: true })
-  versions: DocumentVersion[];
+  @OneToMany('DocumentVersion', 'document', { cascade: true })
+  versions: Relation<DocumentVersion[]>;
 
-  @OneToMany(() => DocumentAttachment, (a) => a.document, { cascade: true })
-  attachments: DocumentAttachment[];
+  @OneToMany('DocumentAttachment', 'document', { cascade: true })
+  attachments: Relation<DocumentAttachment[]>;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

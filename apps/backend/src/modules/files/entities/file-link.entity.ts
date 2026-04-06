@@ -6,8 +6,9 @@ import {
   Unique,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { FileRecord } from './file-record.entity';
+import type { FileRecord } from './file-record.entity';
 
 export enum LinkedEntityType {
   TASK     = 'task',
@@ -27,9 +28,9 @@ export class FileLink {
   @Column({ name: 'file_id' })
   fileId: string;
 
-  @ManyToOne(() => FileRecord, (f) => f.links, { onDelete: 'CASCADE' })
+  @ManyToOne('FileRecord', 'links', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'file_id' })
-  file: FileRecord;
+  file: Relation<FileRecord>;
 
   @Column({ name: 'linked_entity_id' })
   linkedEntityId: string;

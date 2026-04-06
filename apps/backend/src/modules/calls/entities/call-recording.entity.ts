@@ -6,8 +6,9 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { CallSession } from './call-session.entity';
+import type { CallSession } from './call-session.entity';
 
 export enum RecordingStatus {
   RECORDING  = 'recording',
@@ -64,7 +65,7 @@ export class CallRecording {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
-  @ManyToOne(() => CallSession, (s) => s.recordings, { onDelete: 'CASCADE' })
+  @ManyToOne('CallSession', 'recordings', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'session_id' })
-  session: CallSession;
+  session: Relation<CallSession>;
 }

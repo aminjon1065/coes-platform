@@ -6,8 +6,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { Document } from './document.entity';
+import type { Document } from './document.entity';
 
 /**
  * Immutable snapshot of a document at a point in time.
@@ -23,9 +24,9 @@ export class DocumentVersion {
   @Column({ name: 'document_id' })
   documentId: string;
 
-  @ManyToOne(() => Document, (d) => d.versions, { onDelete: 'CASCADE' })
+  @ManyToOne('Document', 'versions', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'document_id' })
-  document: Document;
+  document: Relation<Document>;
 
   @Column({ name: 'version_number' })
   versionNumber: number;

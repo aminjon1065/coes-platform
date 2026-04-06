@@ -7,9 +7,10 @@ import {
   Index,
   OneToMany,
   OneToOne,
+  type Relation,
 } from 'typeorm';
-import { UserPositionAssignment } from './user-position-assignment.entity';
-import { UserPreferences } from './user-preferences.entity';
+import type { UserPositionAssignment } from './user-position-assignment.entity';
+import type { UserPreferences } from './user-preferences.entity';
 
 export enum UserStatus {
   ACTIVE = 'active',
@@ -63,11 +64,11 @@ export class UserProfile {
   @Column({ name: 'clearance_level', default: 0 })
   clearanceLevel: number;
 
-  @OneToMany(() => UserPositionAssignment, (a) => a.user, { cascade: true })
-  positionAssignments: UserPositionAssignment[];
+  @OneToMany('UserPositionAssignment', 'user', { cascade: true })
+  positionAssignments: Relation<UserPositionAssignment[]>;
 
-  @OneToOne(() => UserPreferences, (p) => p.user, { cascade: true })
-  preferences: UserPreferences;
+  @OneToOne('UserPreferences', 'user', { cascade: true })
+  preferences: Relation<UserPreferences>;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

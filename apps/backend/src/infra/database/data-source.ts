@@ -1,10 +1,21 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import * as dotenv from 'dotenv';
 import { join } from 'path';
 
-dotenv.config({ path: '.env.local' });
-dotenv.config({ path: '.env' });
+// dotenv is loaded here so the TypeORM CLI can read .env.local when invoked
+// directly (outside NestJS bootstrap). Safe to call multiple times.
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const dotenv = require('dotenv');
+  dotenv.config({ path: join(process.cwd(), '.env.local') });
+  dotenv.config({ path: join(process.cwd(), '.env') });
+} catch {
+  // dotenv not available — env vars must be set externally (Docker / CI)
+}
+
+// process.cwd() == apps/backend when migration commands are run from that dir.
+// This works in both CommonJS (__dirname) and ESM (bun's default TS loader).
+const src = join(process.cwd(), 'src');
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -15,6 +26,6 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_NAME ?? 'coescd',
   synchronize: false,
   logging: true,
-  entities: [join(__dirname, '../../**/*.entity{.ts,.js}')],
-  migrations: [join(__dirname, 'migrations/**/*{.ts,.js}')],
+  entities: [join(src, '**/*.entity{.ts,.js}')],
+  migrations: [join(src, 'infra/database/migrations/**/*{.ts,.js}')],
 });

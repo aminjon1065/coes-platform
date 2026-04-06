@@ -6,8 +6,9 @@ import {
   UpdateDateColumn,
   Index,
   OneToMany,
+  type Relation,
 } from 'typeorm';
-import { FormSubmission } from './form-submission.entity';
+import type { FormSubmission } from './form-submission.entity';
 
 export enum FormStatus {
   DRAFT     = 'draft',
@@ -70,6 +71,6 @@ export class DataCollectionForm {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
-  @OneToMany(() => FormSubmission, (s) => s.form)
-  submissions: FormSubmission[];
+  @OneToMany('FormSubmission', 'form')
+  submissions: Relation<FormSubmission[]>;
 }

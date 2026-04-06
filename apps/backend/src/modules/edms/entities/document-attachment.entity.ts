@@ -6,8 +6,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { Document } from './document.entity';
+import type { Document } from './document.entity';
 
 export enum AttachmentRole {
   PRIMARY_BODY = 'primary_body',   // the main document file
@@ -29,9 +30,9 @@ export class DocumentAttachment {
   @Column({ name: 'document_id' })
   documentId: string;
 
-  @ManyToOne(() => Document, (d) => d.attachments, { onDelete: 'CASCADE' })
+  @ManyToOne('Document', 'attachments', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'document_id' })
-  document: Document;
+  document: Relation<Document>;
 
   /** File ID in FileManagement domain */
   @Column({ name: 'file_id' })

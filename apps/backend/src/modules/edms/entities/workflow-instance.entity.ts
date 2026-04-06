@@ -8,9 +8,10 @@ import {
   ManyToOne,
   OneToMany,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
 import { WorkflowTemplate } from './workflow-template.entity';
-import { WorkflowStep } from './workflow-step.entity';
+import type { WorkflowStep } from './workflow-step.entity';
 
 export enum WorkflowInstanceStatus {
   ACTIVE = 'active',
@@ -75,8 +76,8 @@ export class WorkflowInstance {
   @Column({ name: 'rejection_reason', type: 'text', nullable: true })
   rejectionReason: string | null;
 
-  @OneToMany(() => WorkflowStep, (s) => s.instance, { cascade: true })
-  steps: WorkflowStep[];
+  @OneToMany('WorkflowStep', 'instance', { cascade: true })
+  steps: Relation<WorkflowStep[]>;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

@@ -7,8 +7,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { DataCollectionForm } from './data-collection-form.entity';
+import type { DataCollectionForm } from './data-collection-form.entity';
 
 export enum SubmissionStatus {
   SUBMITTED         = 'submitted',
@@ -30,9 +31,9 @@ export class FormSubmission {
   @Column({ name: 'form_id', type: 'uuid' })
   formId: string;
 
-  @ManyToOne(() => DataCollectionForm, (f) => f.submissions)
+  @ManyToOne('DataCollectionForm', 'submissions')
   @JoinColumn({ name: 'form_id' })
-  form: DataCollectionForm;
+  form: Relation<DataCollectionForm>;
 
   @Column({ name: 'incident_id', type: 'uuid', nullable: true })
   incidentId: string | null;

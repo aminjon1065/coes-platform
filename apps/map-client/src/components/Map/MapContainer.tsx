@@ -57,7 +57,7 @@ export function MapContainer() {
       zoom: INITIAL_ZOOM,
       minZoom: 4,
       maxZoom: 18,
-      attributionControl: true,
+      attributionControl: { compact: true },
     });
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');

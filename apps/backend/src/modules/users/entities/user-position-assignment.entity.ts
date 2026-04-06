@@ -6,8 +6,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { UserProfile } from './user-profile.entity';
+import type { UserProfile } from './user-profile.entity';
 
 export enum AssignmentType {
   PRIMARY = 'primary',       // main position
@@ -32,9 +33,9 @@ export class UserPositionAssignment {
   @Column({ name: 'user_id' })
   userId: string;
 
-  @ManyToOne(() => UserProfile, (u) => u.positionAssignments, { onDelete: 'CASCADE' })
+  @ManyToOne('UserProfile', 'positionAssignments', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
-  user: UserProfile;
+  user: Relation<UserProfile>;
 
   /** Position UUID — not a FK (cross-schema); validated at service layer */
   @Column({ name: 'position_id' })

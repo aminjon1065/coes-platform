@@ -6,8 +6,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { Task } from './task.entity';
+import type { Task } from './task.entity';
 
 /**
  * Immutable append-only log of every significant action on a task.
@@ -22,9 +23,9 @@ export class TaskHistory {
   @Column({ name: 'task_id' })
   taskId: string;
 
-  @ManyToOne(() => Task, (t) => t.history, { onDelete: 'CASCADE' })
+  @ManyToOne('Task', 'history', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'task_id' })
-  task: Task;
+  task: Relation<Task>;
 
   /** Type of action, e.g. "status_changed", "assigned", "progress_updated" */
   @Column({ name: 'event_type', length: 100 })

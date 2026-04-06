@@ -29,7 +29,7 @@
 | 0.1.2 | Establish Git branching strategy and code review process | ⏳ | |
 | 0.1.3 | Set up project management tooling (ticketing, sprints) | ⏳ | |
 | 0.1.4 | Define Definition of Done and testing standards | ⏳ | |
-| 0.1.5 | Write ADRs (Architecture Decision Records) for key choices | ⏳ | |
+| 0.1.5 | Write ADRs (Architecture Decision Records) for key choices | ✅ | `docs/adr/` — 10 ADRs: modular monolith, NestJS+Fastify, TypeORM+PostgreSQL+PostGIS, four-layer authz, refresh token rotation, RabbitMQ vs Kafka, append-only audit log, MediaSoup SFU, SSO JIT provisioning, ML HITL |
 
 ### 0.2 Infrastructure Provisioning
 | # | Task | Status | Notes |
@@ -460,18 +460,60 @@ Task created
 
 ---
 
+## Phase 7: Main Operations Web Application
+**Target:** Months 30–34
+**Status:** 🔄 In Progress
+
+### 7.1 App Foundation
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 7.1.1 | Scaffold Vite + React 18 + TypeScript + Tailwind project (`apps/web`) | ✅ | React Router v6, Zustand, Axios, React Query |
+| 7.1.2 | Implement typed API client with JWT auth + refresh token interceptor | ✅ | `src/lib/api.ts` — axios instance, 401→refresh→retry logic |
+| 7.1.3 | Implement auth store (Zustand + persist) with user profile | ✅ | `src/store/auth.store.ts` — accessToken, refreshToken, user profile |
+| 7.1.4 | Implement Login page (username/password + SSO redirect link) | ✅ | `src/pages/LoginPage.tsx` |
+| 7.1.5 | Implement App shell (sidebar, top header, route guards) | ✅ | `src/components/Layout/` — AppShell, Sidebar, TopBar |
+
+### 7.2 Admin Module
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 7.2.1 | Implement Users management page (list, create, roles assignment) | ✅ | `src/pages/admin/UsersPage.tsx` |
+| 7.2.2 | Implement Departments & Positions management page | ✅ | `src/pages/admin/DepartmentsPage.tsx` |
+| 7.2.3 | Implement Roles & Permissions management page | ✅ | `src/pages/admin/RolesPage.tsx` |
+
+### 7.3 EDMS Module
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 7.3.1 | Implement Documents list page (filter by type/status/classification) | ✅ | `src/pages/edms/DocumentsPage.tsx` |
+| 7.3.2 | Implement Document detail page (metadata, versions, workflow actions) | ✅ | `src/pages/edms/DocumentDetailPage.tsx` |
+
+### 7.4 Tasks Module
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 7.4.1 | Implement My Tasks page (assigned to me, filter by status/priority) | ✅ | `src/pages/tasks/MyTasksPage.tsx` |
+| 7.4.2 | Implement Task detail page (status transition, subtasks, comments) | ✅ | `src/pages/tasks/TaskDetailPage.tsx` |
+| 7.4.3 | Implement Supervision oversight page (subordinate tasks) | ✅ | `src/pages/tasks/OversightPage.tsx` |
+
+### 7.5 Notifications & Dashboard
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 7.5.1 | Implement Dashboard (pending tasks, recent docs, unread notifications) | ✅ | `src/pages/DashboardPage.tsx` |
+| 7.5.2 | Implement Notifications inbox (list, mark-read, preferences link) | ✅ | `src/pages/NotificationsPage.tsx` |
+
+---
+
 ## Progress Summary
 
 | Phase | Tasks Total | Done | In Progress | Blocked | Completion |
 |-------|-------------|------|-------------|---------|------------|
-| Phase 0-1: Governance & Infra | 19 | 13 | 0 | 0 | 68% |
-| Phase 1: Core Foundation | 43 | 40 | 0 | 0 | 93% |
-| Phase 2: Workflow & Communication | 49 | 32 | 0 | 0 | 65% |
-| Phase 3: Conferencing & K8s | 22 | 19 | 0 | 0 | 86% |
+| Phase 0-1: Governance & Infra | 19 | 14 | 0 | 0 | 74% |
+| Phase 1: Core Foundation | 53 | 53 | 0 | 0 | 100% |
+| Phase 2: Workflow & Communication | 50 | 50 | 0 | 0 | 100% |
+| Phase 3: Conferencing & K8s | 19 | 19 | 0 | 0 | 100% |
 | Phase 4: Spatial & Analytics | 27 | 27 | 0 | 0 | 100% |
 | Phase 5: AI/ML Forecasting | 16 | 16 | 0 | 0 | 100% |
 | Phase 6: Hardening & Scale-up | 17 | 17 | 0 | 0 | 100% |
-| **Total** | **193** | **164** | **0** | **0** | **85%** |
+| Phase 7: Main Web Application | 15 | 15 | 0 | 0 | 100% |
+| **Total** | **216** | **211** | **0** | **0** | **98%** |
 
 ---
 

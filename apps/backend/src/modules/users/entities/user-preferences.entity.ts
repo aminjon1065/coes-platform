@@ -5,8 +5,9 @@ import {
   UpdateDateColumn,
   OneToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { UserProfile } from './user-profile.entity';
+import type { UserProfile } from './user-profile.entity';
 
 export enum AppLanguage {
   RU = 'ru',
@@ -22,9 +23,9 @@ export class UserPreferences {
   @Column({ name: 'user_id' })
   userId: string;
 
-  @OneToOne(() => UserProfile, (u) => u.preferences, { onDelete: 'CASCADE' })
+  @OneToOne('UserProfile', 'preferences', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
-  user: UserProfile;
+  user: Relation<UserProfile>;
 
   @Column({
     type: 'enum',

@@ -7,8 +7,9 @@ import {
   ManyToOne,
   JoinColumn,
   Index,
+  type Relation,
 } from 'typeorm';
-import { Channel } from './channel.entity';
+import type { Channel } from './channel.entity';
 
 export enum MemberRole {
   OWNER = 'owner',     // Can manage the channel
@@ -38,9 +39,9 @@ export class ChannelMember {
   @Column({ name: 'channel_id' })
   channelId: string;
 
-  @ManyToOne(() => Channel, (c) => c.members, { onDelete: 'CASCADE' })
+  @ManyToOne('Channel', 'members', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'channel_id' })
-  channel: Channel;
+  channel: Relation<Channel>;
 
   /** Position that is a member (occupant resolved at query time) */
   @Column({ name: 'position_id' })

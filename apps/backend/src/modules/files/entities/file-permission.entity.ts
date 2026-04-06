@@ -7,8 +7,9 @@ import {
   Unique,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { FileRecord } from './file-record.entity';
+import type { FileRecord } from './file-record.entity';
 
 export enum PermissionAction {
   READ     = 'read',
@@ -34,9 +35,9 @@ export class FilePermission {
   @Column({ name: 'file_id' })
   fileId: string;
 
-  @ManyToOne(() => FileRecord, (f) => f.permissions, { onDelete: 'CASCADE' })
+  @ManyToOne('FileRecord', 'permissions', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'file_id' })
-  file: FileRecord;
+  file: Relation<FileRecord>;
 
   @Column({ name: 'grantee_position_id' })
   granteePositionId: string;

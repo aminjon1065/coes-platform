@@ -8,8 +8,9 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  type Relation,
 } from 'typeorm';
-import { MlModel } from './ml-model.entity';
+import type { MlModel } from './ml-model.entity';
 import { RiskPrediction } from './risk-prediction.entity';
 
 export enum ModelVersionStatus {
@@ -92,9 +93,9 @@ export class MlModelVersion {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
-  @ManyToOne(() => MlModel, (m) => m.versions)
+  @ManyToOne('MlModel', 'versions')
   @JoinColumn({ name: 'model_id' })
-  model: MlModel;
+  model: Relation<MlModel>;
 
   @OneToMany(() => RiskPrediction, (p) => p.modelVersion)
   predictions: RiskPrediction[];

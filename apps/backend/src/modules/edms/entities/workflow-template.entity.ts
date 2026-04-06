@@ -7,9 +7,10 @@ import {
   OneToMany,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
 import { DocumentType } from './document-type.entity';
-import { WorkflowStepDefinition } from './workflow-step-definition.entity';
+import type { WorkflowStepDefinition } from './workflow-step-definition.entity';
 
 /**
  * A configured sequence of step definitions that governs the lifecycle
@@ -41,12 +42,12 @@ export class WorkflowTemplate {
   @Column({ default: true })
   active: boolean;
 
-  @OneToMany(() => WorkflowStepDefinition, (s) => s.template, {
+  @OneToMany('WorkflowStepDefinition', 'template', {
     cascade: true,
     eager: true,
     orderBy: { stepOrder: 'ASC' },
   })
-  steps: WorkflowStepDefinition[];
+  steps: Relation<WorkflowStepDefinition[]>;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

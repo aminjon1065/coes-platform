@@ -8,12 +8,13 @@ import {
   ManyToOne,
   OneToMany,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
 import { TaskType } from './task-type.entity';
-import { TaskAssignment } from './task-assignment.entity';
-import { TaskHistory } from './task-history.entity';
-import { TaskComment } from './task-comment.entity';
-import { TaskAttachment } from './task-attachment.entity';
+import type { TaskAssignment } from './task-assignment.entity';
+import type { TaskHistory } from './task-history.entity';
+import type { TaskComment } from './task-comment.entity';
+import type { TaskAttachment } from './task-attachment.entity';
 
 export enum TaskStatus {
   DRAFT = 'draft',
@@ -222,17 +223,17 @@ export class Task {
 
   // ─── Relations ──────────────────────────────────────────────────────────────
 
-  @OneToMany(() => TaskAssignment, (a) => a.task, { cascade: true })
-  assignments: TaskAssignment[];
+  @OneToMany('TaskAssignment', 'task', { cascade: true })
+  assignments: Relation<TaskAssignment[]>;
 
-  @OneToMany(() => TaskHistory, (h) => h.task, { cascade: true })
-  history: TaskHistory[];
+  @OneToMany('TaskHistory', 'task', { cascade: true })
+  history: Relation<TaskHistory[]>;
 
-  @OneToMany(() => TaskComment, (c) => c.task, { cascade: true })
-  comments: TaskComment[];
+  @OneToMany('TaskComment', 'task', { cascade: true })
+  comments: Relation<TaskComment[]>;
 
-  @OneToMany(() => TaskAttachment, (a) => a.task, { cascade: true })
-  attachments: TaskAttachment[];
+  @OneToMany('TaskAttachment', 'task', { cascade: true })
+  attachments: Relation<TaskAttachment[]>;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

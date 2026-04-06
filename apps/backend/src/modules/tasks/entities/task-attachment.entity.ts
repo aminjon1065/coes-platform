@@ -6,8 +6,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { Task } from './task.entity';
+import type { Task } from './task.entity';
 
 /**
  * Reference to a file stored in the FileManagement domain.
@@ -22,9 +23,9 @@ export class TaskAttachment {
   @Column({ name: 'task_id' })
   taskId: string;
 
-  @ManyToOne(() => Task, (t) => t.attachments, { onDelete: 'CASCADE' })
+  @ManyToOne('Task', 'attachments', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'task_id' })
-  task: Task;
+  task: Relation<Task>;
 
   /** Reference to file in FileManagement domain */
   @Column({ name: 'file_id' })

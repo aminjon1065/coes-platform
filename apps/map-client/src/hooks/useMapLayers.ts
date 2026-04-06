@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import type { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import { useMapStore, LAYER_IDS } from '@/store/mapStore';
-import type { IncidentLocation } from '@/types/incidents';
 import type { HazardType, RiskPrediction } from '@/types/ml';
 import { RISK_TIER_COLORS } from '@/types/ml';
 
@@ -13,7 +12,8 @@ const SEVERITY_COLOR_EXPR = [
   3, '#f59e0b',
   4, '#ef4444',
   5, '#7f1d1d',
-] as unknown[];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+] as any;
 
 /**
  * Synchronises the MapLibre incidents GeoJSON source with the incidents

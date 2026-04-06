@@ -6,8 +6,9 @@ import {
   UpdateDateColumn,
   Index,
   OneToMany,
+  type Relation,
 } from 'typeorm';
-import { ChannelMember } from './channel-member.entity';
+import type { ChannelMember } from './channel-member.entity';
 
 export enum ChannelType {
   DIRECT = 'direct',                 // 1-to-1, implicitly created
@@ -88,8 +89,8 @@ export class Channel {
   @Column({ name: 'legal_hold', default: false })
   legalHold: boolean;
 
-  @OneToMany(() => ChannelMember, (m) => m.channel, { cascade: true })
-  members: ChannelMember[];
+  @OneToMany('ChannelMember', 'channel', { cascade: true })
+  members: Relation<ChannelMember[]>;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

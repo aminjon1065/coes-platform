@@ -7,8 +7,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { Resolution } from './resolution.entity';
+import type { Resolution } from './resolution.entity';
 
 export enum ExecutorAssignmentStatus {
   ASSIGNED = 'assigned',
@@ -40,9 +41,9 @@ export class ExecutorAssignment {
   @Column({ name: 'resolution_id' })
   resolutionId: string;
 
-  @ManyToOne(() => Resolution, (r) => r.executorAssignments, { onDelete: 'CASCADE' })
+  @ManyToOne('Resolution', 'executorAssignments', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'resolution_id' })
-  resolution: Resolution;
+  resolution: Relation<Resolution>;
 
   /** Denormalized for quick filtering without joining resolution */
   @Column({ name: 'document_id' })

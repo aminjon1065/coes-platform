@@ -7,8 +7,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { SpatialLayer } from './spatial-layer.entity';
+import type { SpatialLayer } from './spatial-layer.entity';
 
 @Entity({ name: 'spatial_features', schema: 'gis' })
 @Index(['layerId'])
@@ -19,9 +20,9 @@ export class SpatialFeature {
   @Column({ name: 'layer_id', type: 'uuid' })
   layerId: string;
 
-  @ManyToOne(() => SpatialLayer, (l) => l.features, { onDelete: 'CASCADE' })
+  @ManyToOne('SpatialLayer', 'features', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'layer_id' })
-  layer: SpatialLayer;
+  layer: Relation<SpatialLayer>;
 
   @Column({ name: 'external_id', length: 200, nullable: true })
   externalId: string | null;

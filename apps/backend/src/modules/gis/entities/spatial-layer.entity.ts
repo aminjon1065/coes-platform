@@ -6,8 +6,9 @@ import {
   UpdateDateColumn,
   Index,
   OneToMany,
+  type Relation,
 } from 'typeorm';
-import { SpatialFeature } from './spatial-feature.entity';
+import type { SpatialFeature } from './spatial-feature.entity';
 
 export enum GeometryType {
   POINT              = 'point',
@@ -147,6 +148,6 @@ export class SpatialLayer {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
-  @OneToMany(() => SpatialFeature, (f) => f.layer)
-  features: SpatialFeature[];
+  @OneToMany('SpatialFeature', 'layer')
+  features: Relation<SpatialFeature[]>;
 }

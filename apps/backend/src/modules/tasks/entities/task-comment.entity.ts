@@ -6,8 +6,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { Task } from './task.entity';
+import type { Task } from './task.entity';
 
 /**
  * Short operational communication attached to a task.
@@ -22,9 +23,9 @@ export class TaskComment {
   @Column({ name: 'task_id' })
   taskId: string;
 
-  @ManyToOne(() => Task, (t) => t.comments, { onDelete: 'CASCADE' })
+  @ManyToOne('Task', 'comments', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'task_id' })
-  task: Task;
+  task: Relation<Task>;
 
   @Column({ name: 'author_id' })
   authorId: string;

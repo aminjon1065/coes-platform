@@ -5,9 +5,10 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  type Relation,
 } from 'typeorm';
-import { CallParticipant } from './call-participant.entity';
-import { CallRecording } from './call-recording.entity';
+import type { CallParticipant } from './call-participant.entity';
+import type { CallRecording } from './call-recording.entity';
 
 export enum CallStatus {
   SCHEDULED = 'scheduled',
@@ -54,9 +55,9 @@ export class CallSession {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
-  @OneToMany(() => CallParticipant, (p) => p.session)
-  participants: CallParticipant[];
+  @OneToMany('CallParticipant', 'session')
+  participants: Relation<CallParticipant[]>;
 
-  @OneToMany(() => CallRecording, (r) => r.session)
-  recordings: CallRecording[];
+  @OneToMany('CallRecording', 'session')
+  recordings: Relation<CallRecording[]>;
 }

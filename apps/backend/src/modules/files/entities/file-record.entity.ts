@@ -8,11 +8,12 @@ import {
   ManyToOne,
   OneToMany,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
 import { FileFolder } from './file-folder.entity';
-import { FileVersion } from './file-version.entity';
-import { FilePermission } from './file-permission.entity';
-import { FileLink } from './file-link.entity';
+import type { FileVersion } from './file-version.entity';
+import type { FilePermission } from './file-permission.entity';
+import type { FileLink } from './file-link.entity';
 
 export enum ScanStatus {
   PENDING     = 'pending',
@@ -60,9 +61,9 @@ export class FileRecord {
   @Column({ name: 'current_version_id', nullable: true })
   currentVersionId: string | null;
 
-  @ManyToOne(() => FileVersion, { nullable: true, eager: true })
+  @ManyToOne('FileVersion', { nullable: true, eager: true })
   @JoinColumn({ name: 'current_version_id' })
-  currentVersion: FileVersion | null;
+  currentVersion: Relation<FileVersion> | null;
 
   @Column({ name: 'total_size_bytes', type: 'bigint', default: 0 })
   totalSizeBytes: number;
@@ -84,14 +85,14 @@ export class FileRecord {
   @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
-  @OneToMany(() => FileVersion, (v) => v.file)
-  versions: FileVersion[];
+  @OneToMany('FileVersion', 'file')
+  versions: Relation<FileVersion[]>;
 
-  @OneToMany(() => FilePermission, (p) => p.file)
-  permissions: FilePermission[];
+  @OneToMany('FilePermission', 'file')
+  permissions: Relation<FilePermission[]>;
 
-  @OneToMany(() => FileLink, (l) => l.file)
-  links: FileLink[];
+  @OneToMany('FileLink', 'file')
+  links: Relation<FileLink[]>;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

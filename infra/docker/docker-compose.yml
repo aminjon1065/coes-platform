@@ -73,6 +73,42 @@ volumes:
   mlflow-db-data:
 
 # ===========================================================================
+# EXTENSION — Airflow shared config (top-level x- block, not a service)
+# ===========================================================================
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.0
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+      postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME:-airflow}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?Set AIRFLOW_FERNET_KEY in .env}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:?Set AIRFLOW_SECRET_KEY in .env}
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+    AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    AIRFLOW__METRICS__STATSD_ON: "false"
+    AIRFLOW_CONN_COESCD_POSTGRES: >-
+      postgresql+psycopg2://${POSTGRES_USER:-coescd}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coescd}
+    AIRFLOW_CONN_COESCD_TIMESCALE: >-
+      postgresql+psycopg2://${TIMESCALE_USER:-coescd_analytics}:${TIMESCALE_PASSWORD}@timescaledb:5432/${TIMESCALE_DB:-coescd_analytics}
+    AIRFLOW_CONN_COESCD_BACKEND: >-
+      http://:@backend:4000/api
+    AIRFLOW_CONN_COESCD_CLICKHOUSE: >-
+      http://${CLICKHOUSE_USER:-coescd_ml}:${CLICKHOUSE_PASSWORD}@clickhouse:8123/${CLICKHOUSE_DB:-coescd_ml}
+    COESCD_BACKEND_URL:  http://backend:4000
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+    MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    AWS_ACCESS_KEY_ID:   ${MINIO_ACCESS_KEY}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
+  volumes:
+    - ../../apps/pipelines/dags:/opt/airflow/dags:ro
+    - ../../apps/pipelines/plugins:/opt/airflow/plugins:ro
+    - airflow-logs:/opt/airflow/logs
+  networks:
+    - coescd-net
+
+# ===========================================================================
 # SERVICES
 # ===========================================================================
 services:
@@ -85,7 +121,7 @@ services:
   # PostgreSQL 16 + PostGIS 3.4 — spatial queries for GIS domain
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgis/postgis:16-3.4-alpine
+    image: postgis/postgis:16-3.4
     container_name: coescd-postgres
     restart: unless-stopped
     logging: *default-logging
@@ -199,8 +235,8 @@ services:
     volumes:
       - minio-data:/data
     ports:
-      - "127.0.0.1:9000:9000"   # S3 API
-      - "127.0.0.1:9001:9001"   # Console UI
+      - "127.0.0.1:9002:9000"   # S3 API  (host 9002 → container 9000; 9000 taken by php-fpm)
+      - "127.0.0.1:9003:9001"   # Console UI
     networks:
       - coescd-net
     healthcheck:
@@ -907,46 +943,6 @@ services:
     labels:
       coescd.service: airflow-db
       coescd.tier: pipelines
-
-  # ---------------------------------------------------------------------------
-  # Airflow common environment — shared across all Airflow containers
-  # ---------------------------------------------------------------------------
-  x-airflow-common: &airflow-common
-    image: apache/airflow:2.9.0
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
-        postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME:-airflow}
-      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?Set AIRFLOW_FERNET_KEY in .env}
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:?Set AIRFLOW_SECRET_KEY in .env}
-      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
-      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
-      AIRFLOW__METRICS__STATSD_ON: "false"
-      # Connection strings injected as env-based Airflow connections
-      AIRFLOW_CONN_COESCD_POSTGRES: >-
-        postgresql+psycopg2://${POSTGRES_USER:-coescd}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coescd}
-      AIRFLOW_CONN_COESCD_TIMESCALE: >-
-        postgresql+psycopg2://${TIMESCALE_USER:-coescd_analytics}:${TIMESCALE_PASSWORD}@timescaledb:5432/${TIMESCALE_DB:-coescd_analytics}
-      AIRFLOW_CONN_COESCD_BACKEND: >-
-        http://:@backend:4000/api
-      AIRFLOW_CONN_COESCD_CLICKHOUSE: >-
-        http://${CLICKHOUSE_USER:-coescd_ml}:${CLICKHOUSE_PASSWORD}@clickhouse:8123/${CLICKHOUSE_DB:-coescd_ml}
-      COESCD_BACKEND_URL:  http://backend:4000
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-      AWS_ACCESS_KEY_ID:   ${MINIO_ACCESS_KEY}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
-    volumes:
-      - ../../apps/pipelines/dags:/opt/airflow/dags:ro
-      - ../../apps/pipelines/plugins:/opt/airflow/plugins:ro
-      - airflow-logs:/opt/airflow/logs
-    networks:
-      - coescd-net
-    depends_on:
-      airflow-db:
-        condition: service_healthy
 
   # ---------------------------------------------------------------------------
   # Airflow init — DB migrate + create admin user (runs once then exits)

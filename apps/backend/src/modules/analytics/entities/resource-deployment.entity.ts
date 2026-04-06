@@ -7,8 +7,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { Incident } from './incident.entity';
+import type { Incident } from './incident.entity';
 
 export enum ResourceType {
   PERSONNEL     = 'personnel',
@@ -32,9 +33,9 @@ export class ResourceDeployment {
   @Column({ name: 'incident_id', type: 'uuid' })
   incidentId: string;
 
-  @ManyToOne(() => Incident, (i) => i.resourceDeployments, { onDelete: 'CASCADE' })
+  @ManyToOne('Incident', 'resourceDeployments', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'incident_id' })
-  incident: Incident;
+  incident: Relation<Incident>;
 
   @Column({
     name: 'resource_type',

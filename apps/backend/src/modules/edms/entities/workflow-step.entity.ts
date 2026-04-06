@@ -7,8 +7,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { WorkflowInstance } from './workflow-instance.entity';
+import type { WorkflowInstance } from './workflow-instance.entity';
 import { StepType } from './workflow-step-definition.entity';
 
 export enum WorkflowStepStatus {
@@ -48,9 +49,9 @@ export class WorkflowStep {
   @Column({ name: 'instance_id' })
   instanceId: string;
 
-  @ManyToOne(() => WorkflowInstance, (i) => i.steps, { onDelete: 'CASCADE' })
+  @ManyToOne('WorkflowInstance', 'steps', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'instance_id' })
-  instance: WorkflowInstance;
+  instance: Relation<WorkflowInstance>;
 
   /** Matches WorkflowStepDefinition.stepOrder */
   @Column({ name: 'step_order' })

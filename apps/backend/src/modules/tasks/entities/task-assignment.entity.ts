@@ -7,8 +7,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { Task } from './task.entity';
+import type { Task } from './task.entity';
 
 export enum AssignmentType {
   PRIMARY = 'primary',       // Solely accountable
@@ -36,9 +37,9 @@ export class TaskAssignment {
   @Column({ name: 'task_id' })
   taskId: string;
 
-  @ManyToOne(() => Task, (t) => t.assignments, { onDelete: 'CASCADE' })
+  @ManyToOne('Task', 'assignments', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'task_id' })
-  task: Task;
+  task: Relation<Task>;
 
   /** Position assigned (the obligation target) */
   @Column({ name: 'position_id' })

@@ -4,8 +4,9 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { WorkflowTemplate } from './workflow-template.entity';
+import type { WorkflowTemplate } from './workflow-template.entity';
 
 export enum StepType {
   REVIEW = 'review',
@@ -43,9 +44,9 @@ export class WorkflowStepDefinition {
   @Column({ name: 'template_id' })
   templateId: string;
 
-  @ManyToOne(() => WorkflowTemplate, (t) => t.steps, { onDelete: 'CASCADE' })
+  @ManyToOne('WorkflowTemplate', 'steps', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'template_id' })
-  template: WorkflowTemplate;
+  template: Relation<WorkflowTemplate>;
 
   /** 1-based ordering within the template */
   @Column({ name: 'step_order' })

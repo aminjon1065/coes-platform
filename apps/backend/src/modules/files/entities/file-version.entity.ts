@@ -6,8 +6,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { FileRecord } from './file-record.entity';
+import type { FileRecord } from './file-record.entity';
 
 @Entity({ name: 'file_versions', schema: 'files' })
 @Index(['fileId', 'versionNumber'])
@@ -18,9 +19,9 @@ export class FileVersion {
   @Column({ name: 'file_id' })
   fileId: string;
 
-  @ManyToOne(() => FileRecord, (f) => f.versions, { onDelete: 'CASCADE' })
+  @ManyToOne('FileRecord', 'versions', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'file_id' })
-  file: FileRecord;
+  file: Relation<FileRecord>;
 
   @Column({ name: 'version_number' })
   versionNumber: number;

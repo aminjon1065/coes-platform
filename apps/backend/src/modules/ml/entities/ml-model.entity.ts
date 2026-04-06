@@ -6,8 +6,9 @@ import {
   UpdateDateColumn,
   Index,
   OneToMany,
+  type Relation,
 } from 'typeorm';
-import { MlModelVersion } from './ml-model-version.entity';
+import type { MlModelVersion } from './ml-model-version.entity';
 
 export enum HazardType {
   FLOOD     = 'flood',
@@ -74,6 +75,6 @@ export class MlModel {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
-  @OneToMany(() => MlModelVersion, (v) => v.model)
-  versions: MlModelVersion[];
+  @OneToMany('MlModelVersion', 'model')
+  versions: Relation<MlModelVersion[]>;
 }

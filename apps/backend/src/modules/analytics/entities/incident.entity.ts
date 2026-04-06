@@ -6,9 +6,10 @@ import {
   UpdateDateColumn,
   Index,
   OneToMany,
+  type Relation,
 } from 'typeorm';
-import { IncidentResponse } from './incident-response.entity';
-import { ResourceDeployment } from './resource-deployment.entity';
+import type { IncidentResponse } from './incident-response.entity';
+import type { ResourceDeployment } from './resource-deployment.entity';
 
 export enum IncidentStatus {
   OPEN       = 'open',
@@ -141,9 +142,9 @@ export class Incident {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
-  @OneToMany(() => IncidentResponse, (r) => r.incident)
-  responses: IncidentResponse[];
+  @OneToMany('IncidentResponse', 'incident')
+  responses: Relation<IncidentResponse[]>;
 
-  @OneToMany(() => ResourceDeployment, (d) => d.incident)
-  resourceDeployments: ResourceDeployment[];
+  @OneToMany('ResourceDeployment', 'incident')
+  resourceDeployments: Relation<ResourceDeployment[]>;
 }

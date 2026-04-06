@@ -6,8 +6,9 @@ import {
   UpdateDateColumn,
   Index,
   OneToMany,
+  type Relation,
 } from 'typeorm';
-import { ExecutorAssignment } from './executor-assignment.entity';
+import type { ExecutorAssignment } from './executor-assignment.entity';
 
 export enum ResolutionPriority {
   ROUTINE = 'routine',
@@ -56,8 +57,8 @@ export class Resolution {
   @Column({ name: 'deadline', type: 'date', nullable: true })
   deadline: string | null;
 
-  @OneToMany(() => ExecutorAssignment, (a) => a.resolution, { cascade: true })
-  executorAssignments: ExecutorAssignment[];
+  @OneToMany('ExecutorAssignment', 'resolution', { cascade: true })
+  executorAssignments: Relation<ExecutorAssignment[]>;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

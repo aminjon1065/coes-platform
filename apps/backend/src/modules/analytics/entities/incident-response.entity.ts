@@ -6,8 +6,9 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  type Relation,
 } from 'typeorm';
-import { Incident } from './incident.entity';
+import type { Incident } from './incident.entity';
 
 export enum ResponseAction {
   DISPATCHED            = 'dispatched',
@@ -30,9 +31,9 @@ export class IncidentResponse {
   @Column({ name: 'incident_id', type: 'uuid' })
   incidentId: string;
 
-  @ManyToOne(() => Incident, (i) => i.responses, { onDelete: 'CASCADE' })
+  @ManyToOne('Incident', 'responses', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'incident_id' })
-  incident: Incident;
+  incident: Relation<Incident>;
 
   @Column({
     type: 'enum',
