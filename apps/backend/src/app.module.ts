@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ScheduleModule } from '@nestjs/schedule';
 import { redisStore } from 'cache-manager-ioredis-yet';
 
 import { IamModule } from './modules/iam/iam.module';
@@ -18,6 +19,8 @@ import { FilesModule } from './modules/files/files.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { SearchModule } from './modules/search/search.module';
 import { CallsModule } from './modules/calls/calls.module';
+import { GisModule } from './modules/gis/gis.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { validateConfig } from './infra/config/config.validation';
 import databaseConfig from './infra/config/database.config';
 import redisConfig from './infra/config/redis.config';
@@ -75,6 +78,9 @@ import opensearchConfig from './infra/config/opensearch.config';
       maxListeners: 20,
     }),
 
+    // Task scheduling (cron jobs)
+    ScheduleModule.forRoot(),
+
     // Rate limiting
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
@@ -101,6 +107,8 @@ import opensearchConfig from './infra/config/opensearch.config';
     ChatModule,
     SearchModule,
     CallsModule,
+    GisModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

@@ -3,7 +3,7 @@
 > **Platform:** CoESCD Unified Digital Platform (Tajikistan Emergency Management)
 > **Type:** Government-grade, sovereign on-premises enterprise system
 > **Total Timeline:** 24–30 months across 6 phases
-> **Last Updated:** 2026-04-05 (updated by implementation session)
+> **Last Updated:** 2026-04-06 (Phase 4.1 GIS + Phase 4.3 Analytics implemented)
 
 ---
 
@@ -276,15 +276,15 @@
 ### 4.1 GIS Domain
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.1.1 | Deploy PostGIS extension on PostgreSQL (or separate DB) | ⏳ | Extracted GIS service |
-| 4.1.2 | Design spatial data schema (layers, features, metadata) | ⏳ | WGS84 + UTM39N CRS |
-| 4.1.3 | Implement administrative boundary data ingestion | ⏳ | |
-| 4.1.4 | Implement hazard zone data management | ⏳ | |
-| 4.1.5 | Implement infrastructure layer management | ⏳ | |
-| 4.1.6 | Implement vector tile serving (Martin) | ⏳ | |
-| 4.1.7 | Implement raster tile serving (GeoServer/MapServer) | ⏳ | |
-| 4.1.8 | Implement layer management and symbology APIs | ⏳ | |
-| 4.1.9 | Implement incident location tracking with spatial enrichment | ⏳ | |
+| 4.1.1 | Deploy PostGIS extension on PostgreSQL (or separate DB) | ✅ | postgis/postgis:16-3.4-alpine image; PostGIS + topology extensions in init SQL |
+| 4.1.2 | Design spatial data schema (layers, features, metadata) | ✅ | WGS84 + UTM39N dual storage; 5 tables; GIST indexes; materialized view |
+| 4.1.3 | Implement administrative boundary data ingestion | ✅ | ingestBoundary() + recursive hierarchy CTE + spatialEnrichPoint() |
+| 4.1.4 | Implement hazard zone data management | ✅ | HazardZone entity; CRUD + radius/bbox/class/severity queries |
+| 4.1.5 | Implement infrastructure layer management | ✅ | SpatialLayer catalog with symbology + schema definitions; publishLayer/deprecateLayer |
+| 4.1.6 | Implement vector tile serving (Martin) | ✅ | Martin v0.14.0 in docker-compose `gis` profile; connects to PostGIS |
+| 4.1.7 | Implement raster tile serving (GeoServer/MapServer) | ⏳ | Deferred to Phase 4.2 — raster pipeline needed first |
+| 4.1.8 | Implement layer management and symbology APIs | ✅ | CRUD + list/filter + publish/deprecate; symbology JSONB field |
+| 4.1.9 | Implement incident location tracking with spatial enrichment | ✅ | reportIncident() with auto admin-code resolution; async enrichment stub |
 | 4.1.10 | Write GIS domain tests | ⏳ | |
 
 ### 4.2 Spatial Data Pipelines
@@ -298,14 +298,14 @@
 ### 4.3 Emergency Analytics
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.3.1 | Deploy TimescaleDB for analytical time-series store | ⏳ | |
-| 4.3.2 | Implement incident registry and classification | ⏳ | |
-| 4.3.3 | Implement data collection forms for field analysts | ⏳ | |
-| 4.3.4 | Implement statistical aggregations (by region/type/period) | ⏳ | |
-| 4.3.5 | Implement response time metrics | ⏳ | |
-| 4.3.6 | Implement resource utilization tracking | ⏳ | |
-| 4.3.7 | Implement seasonal pattern analysis | ⏳ | |
-| 4.3.8 | Implement analytics dashboard and report generation | ⏳ | |
+| 4.3.1 | Deploy TimescaleDB for analytical time-series store | ✅ | timescale/timescaledb:latest-pg16 under `analytics` profile; BRIN indexes + hypertable migration comments |
+| 4.3.2 | Implement incident registry and classification | ✅ | Incident entity + registry CRUD; auto-registered from gis.incident.reported event |
+| 4.3.3 | Implement data collection forms for field analysts | ✅ | DataCollectionForm + FormSubmission entities; required-field validation; review workflow |
+| 4.3.4 | Implement statistical aggregations (by region/type/period) | ✅ | getIncidentStats(): by-type, by-region, by-severity, percentiles (p50/p90) |
+| 4.3.5 | Implement response time metrics | ✅ | getResponseTimeMetrics(): mean/stddev/p25/p50/p75/p90/p95/max; GENERATED DB columns |
+| 4.3.6 | Implement resource utilization tracking | ✅ | ResourceDeployment entity; deployResource/withdrawResource; getResourceUtilisation() |
+| 4.3.7 | Implement seasonal pattern analysis | ✅ | getSeasonalPattern(): month-of-year aggregation across multiple years |
+| 4.3.8 | Implement analytics dashboard and report generation | ✅ | GeneratedReport entity; requestReport() inline JSON + async file pipeline stub; daily/weekly/monthly cron snapshots |
 | 4.3.9 | Write analytics tests | ⏳ | |
 
 ### 4.4 Frontend — GIS Map Client
@@ -429,7 +429,7 @@ Task created
 | Phase 1: Core Foundation | 43 | 36 | 0 | 0 | 84% |
 | Phase 2: Workflow & Communication | 49 | 28 | 0 | 0 | 57% |
 | Phase 3: Conferencing & K8s | 22 | 11 | 0 | 0 | 50% |
-| Phase 4: Spatial & Analytics | 27 | 0 | 0 | 0 | 0% |
+| Phase 4: Spatial & Analytics | 27 | 16 | 0 | 0 | 59% |
 | Phase 5: AI/ML Forecasting | 16 | 0 | 0 | 0 | 0% |
 | **Total** | **176** | **0** | **0** | **0** | **0%** |
 

@@ -20,6 +20,8 @@ CREATE SCHEMA IF NOT EXISTS analytics;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "btree_gin";
+CREATE EXTENSION IF NOT EXISTS "postgis";
+CREATE EXTENSION IF NOT EXISTS "postgis_topology";
 
 -- ─────────────── Audit schema: enforce append-only via RLS ───────────────
 -- The application role must only INSERT on audit.audit_events.
@@ -36,7 +38,7 @@ END
 $$;
 
 -- Grant schema-level access
-GRANT USAGE ON SCHEMA iam, org, users, authz, audit, edms, tasks, notifications, files, chat, search TO coescd_app;
+GRANT USAGE ON SCHEMA iam, org, users, authz, audit, edms, tasks, notifications, files, chat, search, gis, analytics TO coescd_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA iam TO coescd_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA org TO coescd_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA users TO coescd_app;
@@ -47,6 +49,8 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA notifications TO coescd_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA files TO coescd_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA chat TO coescd_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA search TO coescd_app;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA gis TO coescd_app;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA analytics TO coescd_app;
 
 -- Audit schema: INSERT-only for app role
 GRANT USAGE ON SCHEMA audit TO coescd_app;
@@ -64,6 +68,8 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA tasks GRANT ALL ON TABLES TO coescd_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA notifications GRANT ALL ON TABLES TO coescd_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA files GRANT ALL ON TABLES TO coescd_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA chat GRANT ALL ON TABLES TO coescd_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA gis GRANT ALL ON TABLES TO coescd_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA analytics GRANT ALL ON TABLES TO coescd_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT INSERT, SELECT ON TABLES TO coescd_app;
 
 COMMENT ON SCHEMA iam IS 'Identity and Access Management — credentials, sessions, tokens';

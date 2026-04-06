@@ -56,6 +56,8 @@ volumes:
   loki-data:
   jaeger-data:
   opensearch-data:
+  martin-cache:
+  timescaledb-data:
 
 # ===========================================================================
 # SERVICES
@@ -67,10 +69,10 @@ services:
   # =========================================================================
 
   # ---------------------------------------------------------------------------
-  # PostgreSQL 16
+  # PostgreSQL 16 + PostGIS 3.4 — spatial queries for GIS domain
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.4-alpine
     container_name: coescd-postgres
     restart: unless-stopped
     logging: *default-logging
@@ -662,6 +664,89 @@ services:
     labels:
       coescd.service: opensearch-dashboards
       coescd.tier: search
+
+  # =========================================================================
+  # ANALYTICS  (profile: analytics)
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # TimescaleDB — time-series analytical store for emergency analytics
+  # Currently a separate service; analytics schema starts on main postgres and
+  # will be migrated here once data volume grows to warrant separation.
+  # ---------------------------------------------------------------------------
+  timescaledb:
+    profiles: [analytics]
+    image: timescale/timescaledb:latest-pg16
+    container_name: coescd-timescaledb
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER:     ${TIMESCALE_USER:-coescd_analytics}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?Set TIMESCALE_PASSWORD in .env}
+      POSTGRES_DB:       ${TIMESCALE_DB:-coescd_analytics}
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"   # separate port from main postgres
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER:-coescd_analytics} -d ${TIMESCALE_DB:-coescd_analytics}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      postgres
+        -c max_connections=100
+        -c shared_buffers=512MB
+        -c effective_cache_size=1536MB
+        -c maintenance_work_mem=128MB
+        -c work_mem=32MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c log_min_duration_statement=2000
+    labels:
+      coescd.service: timescaledb
+      coescd.tier: analytics
+
+  # =========================================================================
+  # GIS  (profile: gis)
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Martin — Rust-based vector tile server (MVT from PostGIS)
+  # ---------------------------------------------------------------------------
+  martin:
+    profiles: [gis]
+    image: ghcr.io/maplibre/martin:v0.14.0
+    container_name: coescd-martin
+    restart: unless-stopped
+    logging: *default-logging
+    command: >
+      --listen-addresses 0.0.0.0:3002
+      --default-srid 4326
+      postgres://${POSTGRES_USER:-coescd}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coescd}
+    environment:
+      RUST_LOG: info
+    volumes:
+      - martin-cache:/tmp/martin-cache
+    ports:
+      - "127.0.0.1:3002:3002"   # MVT tile server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      coescd.service: martin
+      coescd.tier: gis
 
   # ---------------------------------------------------------------------------
   # Redis Exporter — Redis metrics for Prometheus
