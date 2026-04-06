@@ -1,0 +1,224 @@
+##############################################################################
+# CoESCD Platform — PostgreSQL Backup CronJob
+#
+# Runs pg_dump daily at 02:00 TJT (UTC+5 → 21:00 UTC the day before).
+# Backup files are stored in MinIO (S3-compatible) with a 30-day retention
+# window. A separate job runs weekly for a full cluster-level backup.
+#
+# Requires:
+#   - Secret `coescd-backup-secret` with keys:
+#       DB_PASSWORD, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+#   - MinIO bucket `coescd-backups` with lifecycle rule (30 days → delete)
+##############################################################################
+
+# ── Daily incremental (logical dump) ─────────────────────────────────────────
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: coescd-postgres-backup-daily
+  namespace: coescd
+  labels:
+    app.kubernetes.io/name: coescd-postgres-backup
+    app.kubernetes.io/component: backup
+    coescd.gov.tj/platform: "true"
+spec:
+  # 21:00 UTC = 02:00 TJT (Asia/Dushanbe = UTC+5)
+  schedule: "0 21 * * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600   # 1 hour max
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          nodeSelector:
+            coescd.gov.tj/tier: database
+          containers:
+            - name: pg-backup
+              image: postgres:16-alpine
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+
+                  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+                  BACKUP_FILE="/tmp/coescd_${TIMESTAMP}.dump"
+                  S3_KEY="daily/coescd_${TIMESTAMP}.dump"
+
+                  echo "[$(date)] Starting pg_dump → ${BACKUP_FILE}"
+
+                  PGPASSWORD="${DB_PASSWORD}" pg_dump \
+                    --host="${DB_HOST}" \
+                    --port="${DB_PORT}" \
+                    --username="${DB_USER}" \
+                    --dbname="${DB_NAME}" \
+                    --format=custom \
+                    --compress=9 \
+                    --no-password \
+                    --file="${BACKUP_FILE}"
+
+                  echo "[$(date)] Dump complete ($(du -sh ${BACKUP_FILE} | cut -f1)). Uploading to MinIO..."
+
+                  # Upload via mc (MinIO client)
+                  mc alias set minio "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --quiet
+                  mc cp "${BACKUP_FILE}" "minio/coescd-backups/${S3_KEY}"
+
+                  echo "[$(date)] Backup uploaded: ${S3_KEY}"
+
+                  # Verify backup is readable
+                  PGPASSWORD="${DB_PASSWORD}" pg_restore \
+                    --list \
+                    --file="${BACKUP_FILE}" > /dev/null
+
+                  echo "[$(date)] Backup verified. Done."
+
+                  rm -f "${BACKUP_FILE}"
+              env:
+                - name: DB_HOST
+                  value: coescd-postgres.coescd.svc.cluster.local
+                - name: DB_PORT
+                  value: "5432"
+                - name: DB_USER
+                  value: coescd
+                - name: DB_NAME
+                  value: coescd
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: coescd-backup-secret
+                      key: DB_PASSWORD
+                - name: MINIO_ENDPOINT
+                  value: coescd-minio-api.coescd.svc.cluster.local:9000
+                - name: MINIO_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: coescd-backup-secret
+                      key: MINIO_ACCESS_KEY
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: coescd-backup-secret
+                      key: MINIO_SECRET_KEY
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 256Mi
+                limits:
+                  cpu: 1000m
+                  memory: 1Gi
+
+---
+# ── Weekly full dump (Sunday 22:00 UTC = Monday 03:00 TJT) ───────────────────
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: coescd-postgres-backup-weekly
+  namespace: coescd
+  labels:
+    app.kubernetes.io/name: coescd-postgres-backup
+    app.kubernetes.io/component: backup
+    coescd.gov.tj/platform: "true"
+spec:
+  schedule: "0 22 * * 0"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 7200   # 2 hours max (full cluster dump)
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: backup-weekly
+        spec:
+          restartPolicy: OnFailure
+          nodeSelector:
+            coescd.gov.tj/tier: database
+          containers:
+            - name: pg-backup-weekly
+              image: postgres:16-alpine
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+
+                  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+                  BACKUP_FILE="/tmp/coescd_full_${TIMESTAMP}.dump"
+                  S3_KEY="weekly/coescd_full_${TIMESTAMP}.dump"
+
+                  echo "[$(date)] Starting FULL pg_dump (all schemas)..."
+
+                  # Full cluster dump including gis and analytics schemas
+                  PGPASSWORD="${DB_PASSWORD}" pg_dump \
+                    --host="${DB_HOST}" \
+                    --port="${DB_PORT}" \
+                    --username="${DB_USER}" \
+                    --dbname="${DB_NAME}" \
+                    --format=custom \
+                    --compress=9 \
+                    --schema=public \
+                    --schema=iam \
+                    --schema=org \
+                    --schema=tasks \
+                    --schema=edms \
+                    --schema=chat \
+                    --schema=files \
+                    --schema=gis \
+                    --schema=analytics \
+                    --schema=authz \
+                    --no-password \
+                    --file="${BACKUP_FILE}"
+
+                  echo "[$(date)] Full dump complete ($(du -sh ${BACKUP_FILE} | cut -f1)). Uploading..."
+
+                  mc alias set minio "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --quiet
+                  mc cp "${BACKUP_FILE}" "minio/coescd-backups/${S3_KEY}"
+
+                  echo "[$(date)] Weekly backup uploaded: ${S3_KEY}"
+                  rm -f "${BACKUP_FILE}"
+              env:
+                - name: DB_HOST
+                  value: coescd-postgres.coescd.svc.cluster.local
+                - name: DB_PORT
+                  value: "5432"
+                - name: DB_USER
+                  value: coescd
+                - name: DB_NAME
+                  value: coescd
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: coescd-backup-secret
+                      key: DB_PASSWORD
+                - name: MINIO_ENDPOINT
+                  value: coescd-minio-api.coescd.svc.cluster.local:9000
+                - name: MINIO_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: coescd-backup-secret
+                      key: MINIO_ACCESS_KEY
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: coescd-backup-secret
+                      key: MINIO_SECRET_KEY
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 512Mi
+                limits:
+                  cpu: 2000m
+                  memory: 2Gi

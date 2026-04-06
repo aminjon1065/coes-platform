@@ -1,0 +1,75 @@
+##############################################################################
+# CoESCD Platform — Alertmanager Configuration
+# Routes alerts by severity to email and optional Telegram channel.
+##############################################################################
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: "${SMTP_HOST}:${SMTP_PORT}"
+  smtp_from: "alerts@coescd.tj"
+  smtp_auth_username: "${SMTP_USER}"
+  smtp_auth_password: "${SMTP_PASS}"
+  smtp_require_tls: true
+
+# Inhibition: suppress warnings when there is a critical alert for the same object
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: [alertname, instance]
+
+# Route tree
+route:
+  receiver: platform-team
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # Critical alerts: immediate delivery, no batching
+    - match:
+        severity: critical
+      receiver: platform-team-critical
+      group_wait: 0s
+      repeat_interval: 1h
+
+    # Database alerts: DBA team
+    - match_re:
+        alertname: "^Postgres.*"
+      receiver: dba-team
+      continue: true
+
+# Receivers
+receivers:
+  - name: platform-team
+    email_configs:
+      - to: "platform@coescd.tj"
+        subject: "[CoESCD {{ .Status | toUpper }}] {{ .GroupLabels.alertname }}"
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Severity: {{ .Labels.severity }}
+          Details: {{ .Annotations.description }}
+          Fired at: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+          {{ end }}
+
+  - name: platform-team-critical
+    email_configs:
+      - to: "oncall@coescd.tj"
+        subject: "[CRITICAL CoESCD] {{ .GroupLabels.alertname }}"
+        send_resolved: true
+        body: |
+          ⚠️  CRITICAL ALERT
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Details: {{ .Annotations.description }}
+          Fired: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+          {{ end }}
+
+  - name: dba-team
+    email_configs:
+      - to: "dba@coescd.tj"
+        subject: "[CoESCD DB {{ .Status | toUpper }}] {{ .GroupLabels.alertname }}"
+        send_resolved: true

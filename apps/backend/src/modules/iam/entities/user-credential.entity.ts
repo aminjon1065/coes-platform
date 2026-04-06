@@ -52,6 +52,20 @@ export class UserCredential {
   @Column({ name: 'is_service_account', default: false })
   isServiceAccount: boolean;
 
+  // ── SSO columns (Phase 6.1) ──────────────────────────────────────────────
+
+  @Column({ name: 'sso_provider', length: 50, nullable: true })
+  ssoProvider: string | null;
+
+  @Column({ name: 'sso_subject_id', length: 500, nullable: true })
+  ssoSubjectId: string | null;
+
+  @Column({ name: 'sso_attributes', type: 'jsonb', nullable: true })
+  ssoAttributes: Record<string, any> | null;
+
+  @Column({ name: 'sso_linked_at', type: 'timestamptz', nullable: true })
+  ssoLinkedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

@@ -1,0 +1,400 @@
+##############################################################################
+# CoESCD Platform — Prometheus Alerting Rules
+# Covers: availability, latency, error rates, database health, queue depth,
+#         storage capacity, ML model staleness, GIS tile service.
+##############################################################################
+
+groups:
+
+  # ── API / Backend ──────────────────────────────────────────────────────────
+
+  - name: coescd.api
+    rules:
+
+      - alert: BackendDown
+        expr: up{job="coescd-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "CoESCD backend is DOWN"
+          description: "The NestJS backend has been unreachable for more than 1 minute. Emergency operations may be impaired."
+
+      - alert: HighAPIErrorRate
+        expr: |
+          (
+            rate(http_requests_total{job="coescd-backend", status=~"5.."}[5m])
+            /
+            rate(http_requests_total{job="coescd-backend"}[5m])
+          ) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High API 5xx error rate ({{ $value | humanizePercentage }})"
+          description: "More than 5% of backend requests are returning 5xx errors over the last 5 minutes."
+
+      - alert: CriticalAPIErrorRate
+        expr: |
+          (
+            rate(http_requests_total{job="coescd-backend", status=~"5.."}[5m])
+            /
+            rate(http_requests_total{job="coescd-backend"}[5m])
+          ) > 0.20
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical API 5xx error rate ({{ $value | humanizePercentage }})"
+          description: "More than 20% of backend requests are failing. Immediate action required."
+
+      - alert: HighAPILatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket{job="coescd-backend"}[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "API p95 latency is {{ $value | humanizeDuration }}"
+          description: "95th percentile API response time exceeds 2 seconds. Check for slow DB queries or resource contention."
+
+      - alert: GatewayDown
+        expr: up{job="coescd-gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "WebSocket gateway is DOWN"
+          description: "Real-time communication gateway has been unreachable for 1 minute. WebSocket connections will fail."
+
+      - alert: HighWebSocketConnections
+        expr: websocket_connections_active{job="coescd-gateway"} > 2000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High WebSocket connection count: {{ $value }}"
+          description: "More than 2000 concurrent WebSocket connections. Consider scaling the gateway."
+
+  # ── Database (PostgreSQL) ──────────────────────────────────────────────────
+
+  - name: coescd.database
+    rules:
+
+      - alert: PostgresDown
+        expr: up{job="postgres-exporter"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL is DOWN"
+          description: "The primary database is unreachable. All platform operations are impaired."
+
+      - alert: PostgresHighConnections
+        expr: |
+          pg_stat_activity_count{state="active"}
+          / pg_settings_max_connections
+          > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "PostgreSQL connection pool at {{ $value | humanizePercentage }}"
+          description: "Active connections exceed 80% of max_connections. Risk of connection exhaustion."
+
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag > 60
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "PostgreSQL replication lag: {{ $value | humanizeDuration }}"
+          description: "Replication lag exceeds 60 seconds. Standby may be falling behind."
+
+      - alert: PostgresSlowQueries
+        expr: |
+          rate(pg_stat_statements_total_time[5m])
+          / rate(pg_stat_statements_calls[5m])
+          > 5000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Slow PostgreSQL queries detected (avg {{ $value }}ms)"
+          description: "Average query execution time exceeds 5 seconds. Check for missing indexes or lock contention."
+
+      - alert: PostgresDiskFull
+        expr: |
+          (pg_database_size_bytes{datname="coescd"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql"}) > 0.85
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL data volume {{ $value | humanizePercentage }} full"
+          description: "Database volume is more than 85% full. Expand storage or archive data immediately."
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+
+  - name: coescd.redis
+    rules:
+
+      - alert: RedisDown
+        expr: up{job="redis-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis is DOWN"
+          description: "Session cache and presence tracking are unavailable."
+
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Redis memory at {{ $value | humanizePercentage }}"
+          description: "Redis is using more than 85% of its configured maxmemory. Key eviction may begin soon."
+
+      - alert: RedisHighConnectionCount
+        expr: redis_connected_clients > 500
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Redis has {{ $value }} connected clients"
+          description: "Unusually high number of Redis client connections. Check for connection pool leaks."
+
+  # ── RabbitMQ ───────────────────────────────────────────────────────────────
+
+  - name: coescd.messaging
+    rules:
+
+      - alert: RabbitMQDown
+        expr: up{job="rabbitmq"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "RabbitMQ is DOWN"
+          description: "The event message broker is unreachable. Cross-domain events and notifications will not be delivered."
+
+      - alert: RabbitMQHighQueueDepth
+        expr: rabbitmq_queue_messages{queue!~".*dlq.*"} > 10000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Queue '{{ $labels.queue }}' has {{ $value }} messages"
+          description: "Queue depth exceeds 10,000 messages. Consumer may be slow or stopped."
+
+      - alert: RabbitMQDeadLetterQueueGrowing
+        expr: rate(rabbitmq_queue_messages{queue=~".*dlq.*"}[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Dead letter queue '{{ $labels.queue }}' is accumulating messages"
+          description: "Messages are being routed to a dead letter queue. Check consumer errors."
+
+      - alert: RabbitMQNodeMemoryHigh
+        expr: rabbitmq_node_mem_used / rabbitmq_node_mem_limit > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "RabbitMQ memory at {{ $value | humanizePercentage }}"
+          description: "RabbitMQ is approaching its memory high-watermark. Publishing may be blocked soon."
+
+  # ── Object Storage (MinIO) ─────────────────────────────────────────────────
+
+  - name: coescd.storage
+    rules:
+
+      - alert: MinIODown
+        expr: up{job="minio"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "MinIO is DOWN"
+          description: "Object storage is unavailable. File uploads and downloads will fail."
+
+      - alert: MinIOHighDiskUsage
+        expr: minio_cluster_usage_total_bytes / minio_cluster_capacity_raw_total_bytes > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "MinIO storage at {{ $value | humanizePercentage }}"
+          description: "MinIO cluster storage exceeds 80% capacity. Plan for expansion."
+
+  # ── GIS / Martin tile server ───────────────────────────────────────────────
+
+  - name: coescd.gis
+    rules:
+
+      - alert: MartinTileServerDown
+        expr: up{job="coescd-martin"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Martin vector tile server is DOWN"
+          description: "GIS map tiles are unavailable. Situational awareness map will not render."
+
+      - alert: MartinHighTileLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket{job="coescd-martin"}[5m])
+          ) > 3
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Martin tile server p95 latency: {{ $value | humanizeDuration }}"
+          description: "Vector tile generation is slow. Check PostGIS index health."
+
+  # ── Search (OpenSearch) ────────────────────────────────────────────────────
+
+  - name: coescd.search
+    rules:
+
+      - alert: OpenSearchDown
+        expr: up{job="opensearch"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "OpenSearch is DOWN"
+          description: "Full-text search is unavailable. Document and message search will fail."
+
+      - alert: OpenSearchClusterRed
+        expr: opensearch_cluster_status{color="red"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "OpenSearch cluster status is RED"
+          description: "One or more primary shards are unassigned. Data may be unavailable."
+
+      - alert: OpenSearchClusterYellow
+        expr: opensearch_cluster_status{color="yellow"} == 1
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "OpenSearch cluster status is YELLOW"
+          description: "One or more replica shards are unassigned. Redundancy is reduced."
+
+  # ── Infrastructure / Nodes ─────────────────────────────────────────────────
+
+  - name: coescd.infra
+    rules:
+
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}: {{ $value | humanize }}%"
+          description: "Node CPU usage exceeds 85% for 10 minutes."
+
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}: {{ $value | humanizePercentage }}"
+          description: "Node memory usage exceeds 90%."
+
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+          description: "Filesystem has less than 15% free space."
+
+      - alert: DiskSpaceCritical
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.05
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "CRITICAL: Disk nearly full on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+          description: "Less than 5% free disk space. Write operations will fail imminently."
+
+  # ── ML / AI Forecasting ────────────────────────────────────────────────────
+
+  - name: coescd.ml
+    rules:
+
+      - alert: MLModelStale
+        expr: |
+          (time() - coescd_ml_model_last_trained_timestamp) > 86400 * 3
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "ML model '{{ $labels.hazard_type }}' has not been retrained in 3+ days"
+          description: "The risk forecast model may be stale. Check Airflow DAG coescd_ml_training."
+
+      - alert: MLModelDriftDetected
+        expr: coescd_ml_model_psi > 0.25
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "PSI drift detected in ML model '{{ $labels.hazard_type }}': PSI={{ $value }}"
+          description: "Population Stability Index exceeds 0.25. Model retraining has been auto-triggered."
+
+      - alert: MLPendingReviewsHigh
+        expr: coescd_ml_pending_hitl_reviews > 50
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "{{ $value }} ML predictions pending human review"
+          description: "High number of unreviewed risk predictions. Analysts should review via the Review Panel."
