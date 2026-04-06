@@ -1,0 +1,31 @@
+# CoESCD Spatial Data Pipelines — Python dependencies
+# Installed in the Airflow container via --extra-index-url or custom image
+
+apache-airflow==2.9.0
+apache-airflow-providers-postgres==5.10.0
+apache-airflow-providers-http==4.10.0
+
+# Spatial processing
+geopandas==0.14.4
+pyproj==3.6.1
+shapely==2.0.4
+fiona==1.9.6
+pyogrio==0.7.2        # faster Fiona backend for large files
+
+# Raster / remote sensing
+rasterio==1.3.10
+
+# Database connectivity
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.29
+
+# HTTP / API
+requests==2.31.0
+urllib3==2.2.1
+
+# Data processing
+pandas==2.2.2
+numpy==1.26.4
+
+# Validation helpers
+jsonschema==4.22.0

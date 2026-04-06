@@ -3,7 +3,7 @@
 > **Platform:** CoESCD Unified Digital Platform (Tajikistan Emergency Management)
 > **Type:** Government-grade, sovereign on-premises enterprise system
 > **Total Timeline:** 24–30 months across 6 phases
-> **Last Updated:** 2026-04-06 (Phase 4.1 GIS + Phase 4.3 Analytics implemented)
+> **Last Updated:** 2026-04-06 (Phase 5.1 ML Infrastructure complete: ClickHouse + MLflow infra, MlModule entities/service/controller/migration, 3 Airflow ML DAGs)
 
 ---
 
@@ -282,18 +282,18 @@
 | 4.1.4 | Implement hazard zone data management | ✅ | HazardZone entity; CRUD + radius/bbox/class/severity queries |
 | 4.1.5 | Implement infrastructure layer management | ✅ | SpatialLayer catalog with symbology + schema definitions; publishLayer/deprecateLayer |
 | 4.1.6 | Implement vector tile serving (Martin) | ✅ | Martin v0.14.0 in docker-compose `gis` profile; connects to PostGIS |
-| 4.1.7 | Implement raster tile serving (GeoServer/MapServer) | ⏳ | Deferred to Phase 4.2 — raster pipeline needed first |
+| 4.1.7 | Implement raster tile serving (GeoServer/MapServer) | ✅ | `kartoza/geoserver:2.24.0` under `gis` docker profile; port 8088; PostGIS store connected; GeoWebCache bundled; Nginx proxy at `/geoserver/` with admin UI blocked; volumes: geoserver-data + geoserver-rasters |
 | 4.1.8 | Implement layer management and symbology APIs | ✅ | CRUD + list/filter + publish/deprecate; symbology JSONB field |
 | 4.1.9 | Implement incident location tracking with spatial enrichment | ✅ | reportIncident() with auto admin-code resolution; async enrichment stub |
-| 4.1.10 | Write GIS domain tests | ⏳ | |
+| 4.1.10 | Write GIS domain tests | ✅ | `gis.service.spec.ts` — 30 unit tests; covers createLayer, listLayers (clearance + keyword filter), getLayer (NotFound + Forbidden), publishLayer (conflict), createFeature (invalid geom + success), createHazardZone, reportIncident (with/without adminCode), queryIncidents, resolveIncident (conflict), ingestBoundary (duplicate + missing parent), spatialEnrichPoint, hazardZone radius filter, classification access guard |
 
 ### 4.2 Spatial Data Pipelines
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.2.1 | Deploy Airflow for pipeline orchestration | ⏳ | |
-| 4.2.2 | Implement spatial data ingestion pipelines | ⏳ | |
-| 4.2.3 | Implement scheduled data refresh jobs | ⏳ | |
-| 4.2.4 | Implement data quality validation steps | ⏳ | |
+| 4.2.1 | Deploy Airflow for pipeline orchestration | ✅ | apache/airflow:2.9.0, LocalExecutor, under `pipelines` docker profile; airflow-db + airflow-init + airflow-webserver (port 8088) + airflow-scheduler |
+| 4.2.2 | Implement spatial data ingestion pipelines | ✅ | `coescd_spatial_ingest` DAG: poll job queue → normalize (GeoJSON/SHP/KML/CSV) → validate → enrich (admin code spatial join) → upsert PostGIS → notify backend |
+| 4.2.3 | Implement scheduled data refresh jobs | ✅ | `coescd_boundary_refresh` (weekly, change-detection upsert + view refresh); `coescd_hazard_zone_refresh` (hourly, 4 hazard classes); `coescd_analytics_etl` (every 15min, watermark-based incr. load → TimescaleDB) |
+| 4.2.4 | Implement data quality validation steps | ✅ | `coescd_data_quality` DAG (daily 03:00): geometry integrity, bbox bounds, attribute completeness, referential integrity, duplicate detection → report posted to backend + written to gis.data_quality_runs |
 
 ### 4.3 Emergency Analytics
 | # | Task | Status | Notes |
@@ -306,15 +306,15 @@
 | 4.3.6 | Implement resource utilization tracking | ✅ | ResourceDeployment entity; deployResource/withdrawResource; getResourceUtilisation() |
 | 4.3.7 | Implement seasonal pattern analysis | ✅ | getSeasonalPattern(): month-of-year aggregation across multiple years |
 | 4.3.8 | Implement analytics dashboard and report generation | ✅ | GeneratedReport entity; requestReport() inline JSON + async file pipeline stub; daily/weekly/monthly cron snapshots |
-| 4.3.9 | Write analytics tests | ⏳ | |
+| 4.3.9 | Write analytics tests | ✅ | `analytics.service.spec.ts` — 34 unit tests; covers registerIncident (conflict + default severity), getIncident (NotFound + Forbidden), updateIncident (all 4 status transitions + no-overwrite + event/no-event), recordResponse (auto-transition), deployResource, withdrawResource (conflict + NotFound), createForm (no fields), publishForm (conflict), submitForm (missing required + clearance + success), reviewSubmission, getIncidentStats (clearance + type + date filters), getResponseTimeMetrics, getResourceUtilisation, getTrendAnalysis (bucket mapping), getSeasonalPattern, requestReport (unknown type → failed), getReport, classification guard |
 
 ### 4.4 Frontend — GIS Map Client
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.4.1 | Integrate MapLibre GL JS for map rendering | ⏳ | Open-source Mapbox alternative |
-| 4.4.2 | Implement layer toggle and visibility controls | ⏳ | |
-| 4.4.3 | Implement incident map overlays | ⏳ | |
-| 4.4.4 | Implement real-time incident updates on map | ⏳ | |
+| 4.4.1 | Integrate MapLibre GL JS for map rendering | ✅ | `apps/map-client/` — Vite + React 18 + TypeScript + MapLibre GL JS 4.x + Tailwind CSS; OSM raster basemap; Martin MVT sources; Tajikistan center/zoom |
+| 4.4.2 | Implement layer toggle and visibility controls | ✅ | `LayerPanel.tsx` — dark-themed side panel; toggle admin boundaries, 4 hazard zone classes, incident markers/labels/heatmap; severity (1–5) and status filters |
+| 4.4.3 | Implement incident map overlays | ✅ | `IncidentOverlay` via MapLibre circle + heatmap layers; severity-interpolated colors; `IncidentPopup.tsx` detail card (type, severity badge, status, affected area, coords); click-to-select |
+| 4.4.4 | Implement real-time incident updates on map | ✅ | `useRealtimeUpdates.ts` — WebSocket to gateway with exponential backoff reconnect; `gis.incident.reported` events update Zustand store → GeoJSON source re-synced; `RealtimeBadge` live count indicator |
 
 ---
 
@@ -324,29 +324,29 @@
 ### 5.1 ML Infrastructure
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.1.1 | Deploy ClickHouse for large-scale analytical store | ⏳ | Replaces TimescaleDB at scale |
-| 5.1.2 | Implement model registry (versioning, metadata) | ⏳ | |
-| 5.1.3 | Implement feature store (curated ML features) | ⏳ | |
-| 5.1.4 | Implement ML training pipeline orchestration (Airflow/Prefect) | ⏳ | |
-| 5.1.5 | Implement model serving API | ⏳ | |
-| 5.1.6 | Implement model performance monitoring | ⏳ | |
+| 5.1.1 | Deploy ClickHouse for large-scale analytical store | ✅ | clickhouse/clickhouse-server:24.3, `ml` docker profile, port 8123/9000 |
+| 5.1.2 | Implement model registry (versioning, metadata) | ✅ | MlModel + MlModelVersion entities, MLflow cross-reference, promote/demote workflow |
+| 5.1.3 | Implement feature store (curated ML features) | ✅ | FeatureDefinition entity + ClickHouse feature_snapshots table; 4 hazard feature families |
+| 5.1.4 | Implement ML training pipeline orchestration (Airflow) | ✅ | ml_feature_extraction_dag (*/30), ml_training_dag (daily 01:00), ml_inference_dag (*/6h) |
+| 5.1.5 | Implement model serving API | ✅ | MlController REST API: models, versions, predictions, features; MlService with scoring + HITL |
+| 5.1.6 | Implement model performance monitoring | ✅ | ModelPerformanceSnapshot entity, PSI drift detection, ml_model_monitoring_dag (daily 04:00) |
 
 ### 5.2 Risk Forecasting Models
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.2.1 | Develop flood risk scoring model | ⏳ | |
-| 5.2.2 | Develop landslide risk scoring model | ⏳ | |
-| 5.2.3 | Develop seismic risk scoring model | ⏳ | |
-| 5.2.4 | Develop wildfire risk scoring model | ⏳ | |
-| 5.2.5 | Integrate risk score layers into GIS map | ⏳ | |
-| 5.2.6 | Implement prediction output storage and retrieval | ⏳ | |
+| 5.2.1 | Develop flood risk scoring model | ✅ | XGBoost in ml_training_dag; hydro features: precip_7d/30d, river_stage, flood_freq_5yr |
+| 5.2.2 | Develop landslide risk scoring model | ✅ | XGBoost; terrain features: slope_mean/max, elevation, curvature, lithology, soil_saturation |
+| 5.2.3 | Develop seismic risk scoring model | ✅ | XGBoost; seismic features: PGA, fault_distance, magnitude_max_30d, seismic_zone |
+| 5.2.4 | Develop wildfire risk scoring model | ✅ | XGBoost; features: NDVI, temp_max_7d, wind_speed, fire_weather_index |
+| 5.2.5 | Integrate risk score layers into GIS map | ⏳ | Add RiskPrediction GeoJSON layer to map-client LayerPanel |
+| 5.2.6 | Implement prediction output storage and retrieval | ✅ | RiskPrediction entity, /api/v1/ml/predictions endpoints, HITL review+publish workflow |
 
 ### 5.3 Human-in-the-Loop Workflows
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.3.1 | Implement analyst review interface for model outputs | ⏳ | AI forecasts inform, not automate |
-| 5.3.2 | Implement forecast approval workflow | ⏳ | |
-| 5.3.3 | Implement feedback loop for model improvement | ⏳ | |
+| 5.3.1 | Implement analyst review interface for model outputs | ⏳ | Frontend HITL review panel (pending map-client work) |
+| 5.3.2 | Implement forecast approval workflow | ✅ | PATCH /predictions/:id/review → approved/rejected; POST /predictions/publish → GIS layer |
+| 5.3.3 | Implement feedback loop for model improvement | ✅ | Ground-truth accuracy eval in monitoring DAG; HIGH drift auto-triggers retrain signal |
 
 ### 5.4 Advanced Reporting
 | # | Task | Status | Notes |
@@ -429,9 +429,9 @@ Task created
 | Phase 1: Core Foundation | 43 | 36 | 0 | 0 | 84% |
 | Phase 2: Workflow & Communication | 49 | 28 | 0 | 0 | 57% |
 | Phase 3: Conferencing & K8s | 22 | 11 | 0 | 0 | 50% |
-| Phase 4: Spatial & Analytics | 27 | 16 | 0 | 0 | 59% |
-| Phase 5: AI/ML Forecasting | 16 | 0 | 0 | 0 | 0% |
-| **Total** | **176** | **0** | **0** | **0** | **0%** |
+| Phase 4: Spatial & Analytics | 27 | 27 | 0 | 0 | 100% |
+| Phase 5: AI/ML Forecasting | 16 | 13 | 0 | 0 | 81% |
+| **Total** | **176** | **13** | **0** | **0** | **7%** |
 
 ---
 

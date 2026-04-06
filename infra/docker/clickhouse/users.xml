@@ -1,0 +1,39 @@
+<clickhouse>
+    <users>
+        <!-- Service account used by MLflow DAGs and backend ML module -->
+        <coescd_ml>
+            <password_sha256_hex from_env="CLICKHOUSE_PASSWORD_SHA256"/>
+            <networks>
+                <ip>172.20.0.0/24</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>0</access_management>
+            <databases>
+                <database>coescd_ml</database>
+            </databases>
+        </coescd_ml>
+    </users>
+
+    <profiles>
+        <default>
+            <max_memory_usage>2000000000</max_memory_usage>
+            <use_uncompressed_cache>0</use_uncompressed_cache>
+            <load_balancing>random</load_balancing>
+            <max_execution_time>120</max_execution_time>
+        </default>
+    </profiles>
+
+    <quotas>
+        <default>
+            <interval>
+                <duration>3600</duration>
+                <queries>0</queries>
+                <errors>0</errors>
+                <result_rows>0</result_rows>
+                <read_rows>0</read_rows>
+                <execution_time>0</execution_time>
+            </interval>
+        </default>
+    </quotas>
+</clickhouse>

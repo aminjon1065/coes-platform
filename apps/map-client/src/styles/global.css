@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* MapLibre GL canvas fills its container */
+.maplibregl-map {
+  @apply w-full h-full;
+}
+
+/* Remove default MapLibre attribution styling conflicts */
+.maplibregl-ctrl-attrib {
+  @apply text-xs;
+}
+
+/* Smooth layer panel scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-600 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-500;
+}
+
+/* Tailwind line-clamp utility (for older Tailwind versions) */
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

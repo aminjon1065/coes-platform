@@ -3,9 +3,15 @@
 # Sovereign on-premises deployment (Tajikistan Emergency Management)
 #
 # PROFILES
-#   infra  — PostgreSQL, Redis, RabbitMQ, MinIO         (always included)
-#   app    — Backend API, WebSocket Gateway, Nginx
-#   obs    — Prometheus, Grafana, Loki, Promtail, Jaeger
+#   infra     — PostgreSQL, Redis, RabbitMQ, MinIO       (always included)
+#   app       — Backend API, WebSocket Gateway, Map Client, Nginx
+#   obs       — Prometheus, Grafana, Loki, Promtail, Jaeger
+#   media     — Mediasoup SFU, Coturn TURN/STUN
+#   search    — OpenSearch, OpenSearch Dashboards
+#   analytics — TimescaleDB time-series store
+#   gis       — Martin vector tile server
+#   pipelines — Airflow scheduler + webserver + metadata DB
+#   ml        — ClickHouse columnar store, MLflow tracking server + model registry
 #
 # USAGE
 #   Start everything:
@@ -58,6 +64,12 @@ volumes:
   opensearch-data:
   martin-cache:
   timescaledb-data:
+  geoserver-data:
+  geoserver-rasters:
+  airflow-db-data:
+  airflow-logs:
+  clickhouse-data:
+  mlflow-db-data:
 
 # ===========================================================================
 # SERVICES
@@ -711,8 +723,91 @@ services:
       coescd.tier: analytics
 
   # =========================================================================
+  # MAP CLIENT  (profile: app)
+  # React + MapLibre GL JS GIS operational map — served as static build
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Map Client — Vite build served by Nginx on port 3003
+  # ---------------------------------------------------------------------------
+  map-client:
+    profiles: [app]
+    build:
+      context: ../../apps/map-client
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_URL: /api
+        VITE_TILE_URL: /tiles
+        VITE_WS_URL: /ws
+    image: coescd/map-client:${APP_VERSION:-latest}
+    container_name: coescd-map-client
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/index.html"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      coescd.service: map-client
+      coescd.tier: app
+
+  # =========================================================================
   # GIS  (profile: gis)
   # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # GeoServer — OGC-compliant raster tile serving (WMS/WMTS)
+  # Handles DEM hillshading, satellite imagery, and complex raster products.
+  # Vector tiles (MVT) are served by Martin; GeoServer handles raster only.
+  # ---------------------------------------------------------------------------
+  geoserver:
+    profiles: [gis]
+    image: kartoza/geoserver:2.24.0
+    container_name: coescd-geoserver
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      GEOSERVER_ADMIN_USER:     ${GEOSERVER_ADMIN_USER:-geoserver_admin}
+      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD:?Set GEOSERVER_ADMIN_PASSWORD in .env}
+      # Connect GeoServer to the main PostGIS instance for PostGIS stores
+      POSTGRES_HOST:     postgres
+      POSTGRES_PORT:     5432
+      POSTGRES_DB:       ${POSTGRES_DB:-coescd}
+      POSTGRES_USER:     ${POSTGRES_USER:-coescd}
+      POSTGRES_PASS:     ${POSTGRES_PASSWORD}
+      # JVM tuning for raster rendering
+      INITIAL_MEMORY:    512m
+      MAXIMUM_MEMORY:    1536m
+      # Disable CORS restriction (Nginx handles CORS)
+      GEOSERVER_CSRF_DISABLED: "true"
+      # Enable WMS tile caching via GeoWebCache (bundled)
+      GEOWEBCACHE_CACHE_DIR: /opt/geoserver/data_dir/gwc
+      # Raster overviews for performance (via GDAL)
+      GDAL_DATA: /usr/share/gdal
+    volumes:
+      - geoserver-data:/opt/geoserver/data_dir
+      - geoserver-rasters:/opt/geoserver/rasters   # mount point for DEM, satellite imagery
+    ports:
+      - "127.0.0.1:8080:8080"   # GeoServer Web UI + OGC endpoints
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/geoserver/web/ | grep -q GeoServer || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s    # GeoServer starts slowly
+    labels:
+      coescd.service: geoserver
+      coescd.tier: gis
 
   # ---------------------------------------------------------------------------
   # Martin — Rust-based vector tile server (MVT from PostGIS)
@@ -747,6 +842,264 @@ services:
     labels:
       coescd.service: martin
       coescd.tier: gis
+
+  # =========================================================================
+  # PIPELINES  (profile: pipelines)
+  # Apache Airflow 2.9 — spatial data ingestion and ETL pipeline orchestration
+  # LocalExecutor: no Celery required at current scale
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Airflow metadata database — isolated from main Postgres
+  # ---------------------------------------------------------------------------
+  airflow-db:
+    profiles: [pipelines]
+    image: postgres:16-alpine
+    container_name: coescd-airflow-db
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER:     ${AIRFLOW_DB_USER:-airflow}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:?Set AIRFLOW_DB_PASSWORD in .env}
+      POSTGRES_DB:       ${AIRFLOW_DB_NAME:-airflow}
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_DB_USER:-airflow} -d ${AIRFLOW_DB_NAME:-airflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      coescd.service: airflow-db
+      coescd.tier: pipelines
+
+  # ---------------------------------------------------------------------------
+  # Airflow common environment — shared across all Airflow containers
+  # ---------------------------------------------------------------------------
+  x-airflow-common: &airflow-common
+    image: apache/airflow:2.9.0
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+        postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME:-airflow}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?Set AIRFLOW_FERNET_KEY in .env}
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:?Set AIRFLOW_SECRET_KEY in .env}
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+      AIRFLOW__METRICS__STATSD_ON: "false"
+      # Connection strings injected as env-based Airflow connections
+      AIRFLOW_CONN_COESCD_POSTGRES: >-
+        postgresql+psycopg2://${POSTGRES_USER:-coescd}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coescd}
+      AIRFLOW_CONN_COESCD_TIMESCALE: >-
+        postgresql+psycopg2://${TIMESCALE_USER:-coescd_analytics}:${TIMESCALE_PASSWORD}@timescaledb:5432/${TIMESCALE_DB:-coescd_analytics}
+      AIRFLOW_CONN_COESCD_BACKEND: >-
+        http://:@backend:4000/api
+      AIRFLOW_CONN_COESCD_CLICKHOUSE: >-
+        http://${CLICKHOUSE_USER:-coescd_ml}:${CLICKHOUSE_PASSWORD}@clickhouse:8123/${CLICKHOUSE_DB:-coescd_ml}
+      COESCD_BACKEND_URL:  http://backend:4000
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID:   ${MINIO_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
+    volumes:
+      - ../../apps/pipelines/dags:/opt/airflow/dags:ro
+      - ../../apps/pipelines/plugins:/opt/airflow/plugins:ro
+      - airflow-logs:/opt/airflow/logs
+    networks:
+      - coescd-net
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Airflow init — DB migrate + create admin user (runs once then exits)
+  # ---------------------------------------------------------------------------
+  airflow-init:
+    profiles: [pipelines]
+    <<: *airflow-common
+    container_name: coescd-airflow-init
+    restart: "no"
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username ${AIRFLOW_ADMIN_USER:-airflow_admin} \
+          --password ${AIRFLOW_ADMIN_PASSWORD:?Set AIRFLOW_ADMIN_PASSWORD in .env} \
+          --firstname CoESCD \
+          --lastname Admin \
+          --role Admin \
+          --email ${AIRFLOW_ADMIN_EMAIL:-admin@coescd.local} || true
+    labels:
+      coescd.service: airflow-init
+      coescd.tier: pipelines
+
+  # ---------------------------------------------------------------------------
+  # Airflow Webserver — pipeline management UI on port 8088
+  # ---------------------------------------------------------------------------
+  airflow-webserver:
+    profiles: [pipelines]
+    <<: *airflow-common
+    container_name: coescd-airflow-webserver
+    restart: unless-stopped
+    logging: *default-logging
+    command: webserver
+    ports:
+      - "127.0.0.1:8088:8080"
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      coescd.service: airflow-webserver
+      coescd.tier: pipelines
+
+  # ---------------------------------------------------------------------------
+  # Airflow Scheduler — triggers DAG runs per schedule
+  # ---------------------------------------------------------------------------
+  airflow-scheduler:
+    profiles: [pipelines]
+    <<: *airflow-common
+    container_name: coescd-airflow-scheduler
+    restart: unless-stopped
+    logging: *default-logging
+    command: scheduler
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      coescd.service: airflow-scheduler
+      coescd.tier: pipelines
+
+  # =========================================================================
+  # ML  (profile: ml)
+  # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # ClickHouse 24.3 — columnar OLAP store for large-scale feature/prediction data
+  # ---------------------------------------------------------------------------
+  clickhouse:
+    profiles: [ml]
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: coescd-clickhouse
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      CLICKHOUSE_DB:       ${CLICKHOUSE_DB:-coescd_ml}
+      CLICKHOUSE_USER:     ${CLICKHOUSE_USER:-coescd_ml}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/config.xml:/etc/clickhouse-server/config.d/custom.xml:ro
+      - ./clickhouse/users.xml:/etc/clickhouse-server/users.d/custom.xml:ro
+    ports:
+      - "127.0.0.1:8123:8123"   # HTTP interface
+      - "127.0.0.1:9000:9000"   # Native protocol
+    networks:
+      - coescd-net
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q Ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      coescd.service: clickhouse
+      coescd.tier: ml
+
+  # ---------------------------------------------------------------------------
+  # MLflow metadata DB — Postgres for experiment/run/model registry metadata
+  # ---------------------------------------------------------------------------
+  mlflow-db:
+    profiles: [ml]
+    image: postgres:16-alpine
+    container_name: coescd-mlflow-db
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER:     ${MLFLOW_DB_USER:-mlflow}
+      POSTGRES_PASSWORD: ${MLFLOW_DB_PASSWORD:?Set MLFLOW_DB_PASSWORD in .env}
+      POSTGRES_DB:       ${MLFLOW_DB_NAME:-mlflow}
+    volumes:
+      - mlflow-db-data:/var/lib/postgresql/data
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MLFLOW_DB_USER:-mlflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      coescd.service: mlflow-db
+      coescd.tier: ml
+
+  # ---------------------------------------------------------------------------
+  # MLflow Tracking Server — experiment tracking + model registry
+  # Artifacts stored in MinIO (s3-compatible), metadata in mlflow-db (Postgres)
+  # ---------------------------------------------------------------------------
+  mlflow:
+    profiles: [ml]
+    image: ghcr.io/mlflow/mlflow:v2.13.2
+    container_name: coescd-mlflow
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      MLFLOW_TRACKING_URI:              postgresql+psycopg2://${MLFLOW_DB_USER:-mlflow}:${MLFLOW_DB_PASSWORD}@mlflow-db:5432/${MLFLOW_DB_NAME:-mlflow}
+      MLFLOW_S3_ENDPOINT_URL:           http://minio:9000
+      AWS_ACCESS_KEY_ID:                ${MINIO_ACCESS_KEY:?Set MINIO_ACCESS_KEY in .env}
+      AWS_SECRET_ACCESS_KEY:            ${MINIO_SECRET_KEY:?Set MINIO_SECRET_KEY in .env}
+      MLFLOW_ARTIFACT_ROOT:             s3://coescd-mlflow/artifacts
+      GUNICORN_CMD_ARGS:                "--workers=2 --timeout=120"
+    command: >
+      mlflow server
+        --backend-store-uri postgresql+psycopg2://${MLFLOW_DB_USER:-mlflow}:${MLFLOW_DB_PASSWORD}@mlflow-db:5432/${MLFLOW_DB_NAME:-mlflow}
+        --artifacts-destination s3://coescd-mlflow/artifacts
+        --host 0.0.0.0
+        --port 5000
+        --serve-artifacts
+    ports:
+      - "127.0.0.1:5001:5000"
+    networks:
+      - coescd-net
+    depends_on:
+      mlflow-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      coescd.service: mlflow
+      coescd.tier: ml
 
   # ---------------------------------------------------------------------------
   # Redis Exporter — Redis metrics for Prometheus
