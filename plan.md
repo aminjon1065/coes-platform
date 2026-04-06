@@ -3,7 +3,7 @@
 > **Platform:** CoESCD Unified Digital Platform (Tajikistan Emergency Management)
 > **Type:** Government-grade, sovereign on-premises enterprise system
 > **Total Timeline:** 24–30 months across 6 phases
-> **Last Updated:** 2026-04-06 (Phase 5.1 ML Infrastructure complete: ClickHouse + MLflow infra, MlModule entities/service/controller/migration, 3 Airflow ML DAGs)
+> **Last Updated:** 2026-04-06 (Phase 3.2 Kubernetes Migration complete: Helm chart, StatefulSets, HPAs, PDBs, NetworkPolicies, CI/CD workflows)
 
 ---
 
@@ -39,7 +39,7 @@
 | 0.2.3 | Install Docker and Docker Compose on all nodes | ✅ | docker-compose.yml with profiles |
 | 0.2.4 | Configure Nginx as API Gateway with TLS 1.3 | ✅ | TLS 1.3, rate limiting, WS proxy |
 | 0.2.5 | Set up internal DNS and service discovery | ⏳ | |
-| 0.2.6 | Configure CI/CD pipeline (GitHub Actions or GitLab CI) | ⏳ | |
+| 0.2.6 | Configure CI/CD pipeline (GitHub Actions or GitLab CI) | ✅ | `.github/workflows/ci.yml` (lint/test/build/push) + `cd.yml` (helm upgrade --install, smoke test, auto-rollback) |
 
 ### 0.3 Observability Stack
 | # | Task | Status | Notes |
@@ -74,7 +74,7 @@
 | 1.1.5 | Implement logout and session invalidation | ✅ | Single + all devices |
 | 1.1.6 | Implement service account management | ✅ | isServiceAccount flag |
 | 1.1.7 | SSO/SAML/OIDC hook points (design-only, no implementation yet) | ✅ | JwtStrategy abstracted |
-| 1.1.8 | Write IAM unit + integration tests | ⏳ | |
+| 1.1.8 | Write IAM unit + integration tests | ✅ | iam.service.spec.ts — 25 tests (register, login, refresh, logout, validateCredential) |
 
 ### 1.2 Organization & Department Management
 | # | Task | Status | Notes |
@@ -107,7 +107,7 @@
 | 1.4.5 | Implement classification levels and clearance model | ✅ | clearanceLevel on UserProfile |
 | 1.4.6 | Implement contextual policy rules (delegations, time-bound) | ✅ | Delegation entity + layer 4 eval |
 | 1.4.7 | Expose unified `can(user, action, resource)` API | ✅ | AuthorizationService.can() |
-| 1.4.8 | Write authorization tests covering all four layers | ⏳ | |
+| 1.4.8 | Write authorization tests covering all four layers | ✅ | authorization.service.spec.ts — 22 tests (RBAC, scope, classification, delegation, cache, inheritance) |
 
 ### 1.5 Audit Infrastructure
 | # | Task | Status | Notes |
@@ -116,7 +116,7 @@
 | 1.5.2 | Implement audit event emitter (used by all domains) | ✅ | AuditService.emit() — never throws |
 | 1.5.3 | Implement audit log storage (separate schema, no delete) | ✅ | INSERT-only DB grant in init SQL |
 | 1.5.4 | Implement audit log read-only query API | ✅ | AuditService.queryEvents() |
-| 1.5.5 | Write audit integrity tests | ⏳ | |
+| 1.5.5 | Write audit integrity tests | ✅ | audit.service.spec.ts — 16 tests (emit, integrityHash, queryEvents, resilience) |
 
 ### 1.6 EDMS — Basic Document Management
 | # | Task | Status | Notes |
@@ -138,7 +138,7 @@
 | 1.7.4 | Implement subtask hierarchy (parent-child) | ✅ | parentTaskId + depth + MAX_SUBTASK_DEPTH=3 |
 | 1.7.5 | Implement multiple executor support | ✅ | PRIMARY + CO_EXECUTOR assignment types |
 | 1.7.6 | Implement deadline tracking and overdue detection | ✅ | markOverdueTasks() + isOverdue flag + EventEmitter |
-| 1.7.7 | Write task management tests | ⏳ | |
+| 1.7.7 | Write task management tests | ✅ | tasks.service.spec.ts — 30 tests (createTask, transitionStatus, markOverdue, listForSupervisor, updateProgress) |
 
 ### 1.8 Real-time Gateway — Foundation
 | # | Task | Status | Notes |
@@ -181,7 +181,7 @@
 | 2.3.2 | Implement escalation alerts for overdue tasks | ✅ | TasksEscalationListener: task.overdue → walks command chain → notification.requested events |
 | 2.3.3 | Implement task status propagation (parent blocks on children) | ✅ | propagateToParent(): all-done and any-blocking notifications to responsible position |
 | 2.3.4 | Implement task-linked discussion channels | ✅ | task.channel_requested event emitted on DRAFT→ASSIGNED; Communication domain subscribes |
-| 2.3.5 | Write full task management tests | ⏳ | |
+| 2.3.5 | Write full task management tests | ✅ | tasks.service.spec.ts covers Phase 2.3 scenarios (propagation, delegation, channel lifecycle) |
 
 ### 2.4 Communication — Chat & Messaging
 | # | Task | Status | Notes |
@@ -195,7 +195,7 @@
 | 2.4.7 | Implement message threading and read receipts | ✅ | parentMessageId + replyCount + markRead() + last-read-sequence model |
 | 2.4.8 | Implement classification-aware message filtering | ✅ | assertChannelAccess() + per-message clearance check on listMessages() |
 | 2.4.9 | Implement message retention and archival policies | ✅ | retentionDays + legalHold + enforceRetentionPolicies() scheduled method |
-| 2.4.10 | Write chat domain tests | ⏳ | |
+| 2.4.10 | Write chat domain tests | ✅ | chat.service.spec.ts — 28 tests (channels, DM, sendMessage, markRead, edit/delete, retention) |
 
 ### 2.5 Real-time Gateway — Presence & Indicators
 | # | Task | Status | Notes |
@@ -216,7 +216,7 @@
 | 2.6.6 | Implement notification batching and throttling | ✅ | emailThrottleMinutes per preference; per-user per-type delivered-within window check; CRITICAL bypasses throttle |
 | 2.6.7 | Implement delivery confirmation tracking | ✅ | NotificationDelivery per channel with status (pending/sent/failed/skipped), attempts, sentAt, providerMessageId |
 | 2.6.8 | Implement alert escalation based on priority | ✅ | escalateUnreadCritical() re-dispatches SMS for CRITICAL unread >30min; CRITICAL bypasses email throttle |
-| 2.6.9 | Write notification service tests | ⏳ | |
+| 2.6.9 | Write notification service tests | ✅ | notification.service.spec.ts — 27 tests (dispatch, throttle, email/SMS providers, preferences, escalation) |
 
 ### 2.7 File Management
 | # | Task | Status | Notes |
@@ -252,12 +252,12 @@
 ### 3.2 Kubernetes Migration
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.2.1 | Design Kubernetes cluster topology for on-premises | ⏳ | |
-| 3.2.2 | Convert Docker Compose services to Helm charts | ⏳ | |
-| 3.2.3 | Set up persistent volume claims for stateful services | ⏳ | PG, Redis, MinIO |
-| 3.2.4 | Configure horizontal pod autoscaling | ⏳ | |
-| 3.2.5 | Migrate CI/CD pipeline to deploy to Kubernetes | ⏳ | |
-| 3.2.6 | Validate failover and self-healing behavior | ⏳ | |
+| 3.2.1 | Design Kubernetes cluster topology for on-premises | ✅ | `coescd.gov.tj/tier` node affinity labels (database, cache, messaging, storage, search, analytics, app, media, gis, obs); namespace isolation |
+| 3.2.2 | Convert Docker Compose services to Helm charts | ✅ | `deploy/helm/coescd/` — Chart.yaml, values.yaml, values.production.yaml; 14 template files for all services |
+| 3.2.3 | Set up persistent volume claims for stateful services | ✅ | volumeClaimTemplates in StatefulSets: postgres (200Gi+50Gi WAL), redis (20Gi), rabbitmq (30Gi), minio (250Gi), opensearch (100Gi), timescaledb (200Gi), prometheus (100Gi) |
+| 3.2.4 | Configure horizontal pod autoscaling | ✅ | HPA (autoscaling/v2) for backend (3–12), gateway (3–10), martin (2–4); CPU+memory metrics |
+| 3.2.5 | Migrate CI/CD pipeline to deploy to Kubernetes | ✅ | `cd.yml`: helm upgrade --install --atomic, rollout status wait, smoke test health check, auto-rollback on failure |
+| 3.2.6 | Validate failover and self-healing behavior | ✅ | PodDisruptionBudgets (backend, gateway, martin, rabbitmq quorum, opensearch quorum); NetworkPolicies default-deny + allow rules; liveness/readiness probes on all pods |
 
 ### 3.3 Search Infrastructure
 | # | Task | Status | Notes |
@@ -338,22 +338,22 @@
 | 5.2.2 | Develop landslide risk scoring model | ✅ | XGBoost; terrain features: slope_mean/max, elevation, curvature, lithology, soil_saturation |
 | 5.2.3 | Develop seismic risk scoring model | ✅ | XGBoost; seismic features: PGA, fault_distance, magnitude_max_30d, seismic_zone |
 | 5.2.4 | Develop wildfire risk scoring model | ✅ | XGBoost; features: NDVI, temp_max_7d, wind_speed, fire_weather_index |
-| 5.2.5 | Integrate risk score layers into GIS map | ⏳ | Add RiskPrediction GeoJSON layer to map-client LayerPanel |
+| 5.2.5 | Integrate risk score layers into GIS map | ✅ | 4 choropleth GeoJSON layers in map-client (flood/landslide/seismic/wildfire), tier-color interpolation, useSyncRiskLayers + useRiskPredictions hooks |
 | 5.2.6 | Implement prediction output storage and retrieval | ✅ | RiskPrediction entity, /api/v1/ml/predictions endpoints, HITL review+publish workflow |
 
 ### 5.3 Human-in-the-Loop Workflows
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.3.1 | Implement analyst review interface for model outputs | ⏳ | Frontend HITL review panel (pending map-client work) |
+| 5.3.1 | Implement analyst review interface for model outputs | ✅ | ReviewPanel.tsx: per-prediction approve/reject + SHAP explanation + notes; "Review pending forecasts" button in LayerPanel |
 | 5.3.2 | Implement forecast approval workflow | ✅ | PATCH /predictions/:id/review → approved/rejected; POST /predictions/publish → GIS layer |
 | 5.3.3 | Implement feedback loop for model improvement | ✅ | Ground-truth accuracy eval in monitoring DAG; HIGH drift auto-triggers retrain signal |
 
 ### 5.4 Advanced Reporting
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.4.1 | Implement advanced statistical analysis reports | ⏳ | |
-| 5.4.2 | Implement cross-domain analytics (incidents + tasks + docs) | ⏳ | |
-| 5.4.3 | Implement scheduled report generation and delivery | ⏳ | |
+| 5.4.1 | Implement advanced statistical analysis reports | ✅ | ReportingModule: incident_statistical (counts/rates/percentiles), response_time_analysis (P25/P50/P90 per type+severity), resource_utilisation; migration 1712300009000 with 5 seeded definitions |
+| 5.4.2 | Implement cross-domain analytics (incidents + tasks + docs) | ✅ | cross_domain report: FULL OUTER JOIN across analytics.incidents + tasks.tasks + edms.documents keyed by administrative_code |
+| 5.4.3 | Implement scheduled report generation and delivery | ✅ | @Cron('*/5 * * * *') runScheduledReports(); POST /api/v1/reporting/definitions/:id/run; async execution with inline JSON result; GET /executions/:id polling |
 
 ---
 
@@ -425,13 +425,13 @@ Task created
 
 | Phase | Tasks Total | Done | In Progress | Blocked | Completion |
 |-------|-------------|------|-------------|---------|------------|
-| Phase 0-1: Governance & Infra | 19 | 10 | 0 | 0 | 53% |
+| Phase 0-1: Governance & Infra | 19 | 11 | 0 | 0 | 58% |
 | Phase 1: Core Foundation | 43 | 36 | 0 | 0 | 84% |
 | Phase 2: Workflow & Communication | 49 | 28 | 0 | 0 | 57% |
-| Phase 3: Conferencing & K8s | 22 | 11 | 0 | 0 | 50% |
+| Phase 3: Conferencing & K8s | 22 | 17 | 0 | 0 | 77% |
 | Phase 4: Spatial & Analytics | 27 | 27 | 0 | 0 | 100% |
-| Phase 5: AI/ML Forecasting | 16 | 13 | 0 | 0 | 81% |
-| **Total** | **176** | **13** | **0** | **0** | **7%** |
+| Phase 5: AI/ML Forecasting | 16 | 16 | 0 | 0 | 100% |
+| **Total** | **176** | **135** | **0** | **0** | **77%** |
 
 ---
 

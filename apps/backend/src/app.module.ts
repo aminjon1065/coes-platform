@@ -22,6 +22,7 @@ import { CallsModule } from './modules/calls/calls.module';
 import { GisModule } from './modules/gis/gis.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { MlModule } from './modules/ml/ml.module';
+import { ReportingModule } from './modules/reporting/reporting.module';
 import { validateConfig } from './infra/config/config.validation';
 import databaseConfig from './infra/config/database.config';
 import redisConfig from './infra/config/redis.config';
@@ -111,6 +112,7 @@ import opensearchConfig from './infra/config/opensearch.config';
     GisModule,
     AnalyticsModule,
     MlModule,
+    ReportingModule,
   ],
 })
 export class AppModule {}

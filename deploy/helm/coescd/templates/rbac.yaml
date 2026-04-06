@@ -1,0 +1,75 @@
+# =============================================================================
+# RBAC — ServiceAccount, Role, RoleBinding for backend workloads
+# =============================================================================
+
+# Backend ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "coescd.fullname" . }}-backend
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+  annotations:
+    coescd.gov.tj/description: "Backend NestJS service account"
+---
+# Role: backend needs to read its own ConfigMaps and Secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "coescd.fullname" . }}-backend
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["{{ include "coescd.fullname" . }}-backend-env"]
+    verbs: ["get", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["{{ .Values.backend.existingSecret }}"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "coescd.fullname" . }}-backend
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "coescd.fullname" . }}-backend
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "coescd.fullname" . }}-backend
+    namespace: {{ .Values.global.namespace }}
+---
+# Gateway ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "coescd.fullname" . }}-gateway
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+---
+# Media ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "coescd.fullname" . }}-media
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+---
+# Martin ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "coescd.fullname" . }}-martin
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}

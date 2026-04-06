@@ -1,0 +1,120 @@
+name: CD — Deploy to Kubernetes
+
+on:
+  # Triggered automatically after CI succeeds on main
+  workflow_run:
+    workflows: ["CI — Lint, Test, Build"]
+    types: [completed]
+    branches: [main]
+  # Manual trigger with environment selection
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: production
+        type: choice
+        options: [production, staging]
+      image_tag:
+        description: "Docker image tag to deploy (defaults to latest)"
+        required: false
+        default: latest
+
+env:
+  REGISTRY: registry.coescd.gov.tj
+  HELM_CHART: deploy/helm/coescd
+  RELEASE_NAME: coescd
+
+jobs:
+  deploy:
+    name: Deploy — ${{ inputs.environment || 'production' }}
+    runs-on: self-hosted   # Runner with kubectl + helm + kubeconfig
+    environment: ${{ inputs.environment || 'production' }}
+    # Only deploy when CI passed (for workflow_run trigger)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine image tag
+        id: image_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.image_tag }}" ]; then
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connectivity
+        run: kubectl cluster-info --request-timeout=10s
+
+      - name: Helm upgrade (production)
+        run: |
+          helm upgrade --install ${{ env.RELEASE_NAME }} ${{ env.HELM_CHART }} \
+            --namespace ${{ secrets.K8S_NAMESPACE }} \
+            --create-namespace \
+            --values ${{ env.HELM_CHART }}/values.yaml \
+            --values ${{ env.HELM_CHART }}/values.production.yaml \
+            --set backend.image.tag=${{ steps.image_tag.outputs.tag }} \
+            --set gateway.image.tag=${{ steps.image_tag.outputs.tag }} \
+            --set media.image.tag=${{ steps.image_tag.outputs.tag }} \
+            --set global.imageRegistry=${{ env.REGISTRY }} \
+            --atomic \
+            --timeout 10m \
+            --wait \
+            --history-max 5
+
+      - name: Wait for backend rollout
+        run: |
+          kubectl rollout status deployment/${{ env.RELEASE_NAME }}-backend \
+            -n ${{ secrets.K8S_NAMESPACE }} \
+            --timeout=300s
+
+      - name: Wait for gateway rollout
+        run: |
+          kubectl rollout status deployment/${{ env.RELEASE_NAME }}-gateway \
+            -n ${{ secrets.K8S_NAMESPACE }} \
+            --timeout=180s
+
+      - name: Smoke test — API health
+        run: |
+          # Port-forward backend for health check
+          kubectl port-forward svc/${{ env.RELEASE_NAME }}-backend 14000:4000 \
+            -n ${{ secrets.K8S_NAMESPACE }} &
+          PF_PID=$!
+          sleep 5
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:14000/api/health)
+          kill $PF_PID || true
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          echo "✅ Health check passed (HTTP $HTTP_CODE)"
+
+      - name: Print deployment summary
+        if: always()
+        run: |
+          echo "=== Pod Status ==="
+          kubectl get pods -n ${{ secrets.K8S_NAMESPACE }} -l coescd.gov.tj/platform=true
+          echo ""
+          echo "=== HPA Status ==="
+          kubectl get hpa -n ${{ secrets.K8S_NAMESPACE }} 2>/dev/null || true
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed — rolling back to previous release"
+          helm rollback ${{ env.RELEASE_NAME }} 0 \
+            --namespace ${{ secrets.K8S_NAMESPACE }} \
+            --wait \
+            --timeout 5m
+          echo "Rollback complete."

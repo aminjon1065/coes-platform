@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import type { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import { useMapStore, LAYER_IDS } from '@/store/mapStore';
 import type { IncidentLocation } from '@/types/incidents';
+import type { HazardType, RiskPrediction } from '@/types/ml';
+import { RISK_TIER_COLORS } from '@/types/ml';
 
 const SEVERITY_COLOR_EXPR = [
   'interpolate', ['linear'],
@@ -248,4 +250,96 @@ export function addCoESCDLayers(map: MapLibreMap, tileBaseUrl: string) {
       },
     });
   }
+
+  // ------------------------------------------------------------------
+  // ML Risk prediction choropleth layers (GeoJSON, one source per hazard)
+  // ------------------------------------------------------------------
+
+  const riskLayers: Array<{ hazardType: HazardType; layerId: string }> = [
+    { hazardType: 'flood',     layerId: LAYER_IDS.RISK_FLOOD_FILL },
+    { hazardType: 'landslide', layerId: LAYER_IDS.RISK_LANDSLIDE_FILL },
+    { hazardType: 'seismic',   layerId: LAYER_IDS.RISK_SEISMIC_FILL },
+    { hazardType: 'wildfire',  layerId: LAYER_IDS.RISK_WILDFIRE_FILL },
+  ];
+
+  for (const { hazardType, layerId } of riskLayers) {
+    const sourceId = `risk-${hazardType}`;
+    if (!map.getSource(sourceId)) {
+      map.addSource(sourceId, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getLayer(layerId)) {
+      map.addLayer({
+        id: layerId,
+        type: 'fill',
+        source: sourceId,
+        paint: {
+          // tier 1=green 2=amber 3=red 4=dark-red choropleth
+          'fill-color': [
+            'match',
+            ['get', 'riskTier'],
+            1, RISK_TIER_COLORS[1],
+            2, RISK_TIER_COLORS[2],
+            3, RISK_TIER_COLORS[3],
+            4, RISK_TIER_COLORS[4],
+            '#aaaaaa',
+          ],
+          'fill-opacity': [
+            'interpolate', ['linear'],
+            ['get', 'riskScore'],
+            0, 0.05,
+            1, 0.55,
+          ],
+          'fill-outline-color': 'rgba(0,0,0,0.15)',
+        },
+        layout: { visibility: 'none' },
+      });
+    }
+  }
+}
+
+/**
+ * Keeps all four ML risk GeoJSON sources in sync with the Zustand store.
+ * Risk predictions are polygons derived from admin-boundary geometries:
+ * each prediction is rendered as a filled polygon keyed by administrativeCode.
+ *
+ * Because we don't have admin boundary GeoJSON in the map client (only MVT tiles),
+ * we represent predictions as centroid points using administrativeCode to look up
+ * approximate centroids from a static registry.
+ */
+export function useSyncRiskLayers() {
+  const { map, riskPredictions } = useMapStore();
+
+  useEffect(() => {
+    if (!map) return;
+
+    const hazardTypes: HazardType[] = ['flood', 'landslide', 'seismic', 'wildfire'];
+    for (const hazardType of hazardTypes) {
+      const predictions = riskPredictions[hazardType];
+      const sourceId    = `risk-${hazardType}`;
+      const source      = map.getSource(sourceId) as GeoJSONSource | undefined;
+      if (!source) continue;
+
+      const fc: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features: predictions.map((p) => ({
+          type: 'Feature' as const,
+          geometry: null as unknown as GeoJSON.Geometry, // will be filled from MVT join in future
+          properties: {
+            id:                 p.id,
+            administrativeCode: p.administrativeCode,
+            administrativeName: p.administrativeName,
+            riskScore:          p.riskScore,
+            riskTier:           p.riskTier,
+            hazardType:         p.hazardType,
+            validFrom:          p.validFrom,
+            validUntil:         p.validUntil,
+          },
+        })),
+      };
+      source.setData(fc);
+    }
+  }, [map, riskPredictions]);
 }

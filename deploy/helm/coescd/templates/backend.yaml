@@ -1,0 +1,141 @@
+{{- if .Values.backend.enabled }}
+# =============================================================================
+# Backend — NestJS Modular Monolith (Deployment + HPA + ConfigMap)
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coescd.fullname" . }}-backend-env
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.backend.env.NODE_ENV | quote }}
+  PORT: {{ .Values.backend.env.PORT | quote }}
+  HOST: {{ .Values.backend.env.HOST | quote }}
+  THROTTLE_TTL: {{ .Values.backend.env.THROTTLE_TTL | quote }}
+  THROTTLE_LIMIT: {{ .Values.backend.env.THROTTLE_LIMIT | quote }}
+  # Service discovery — internal cluster DNS
+  DB_HOST: {{ include "coescd.fullname" . }}-postgres.{{ .Values.global.namespace }}.svc.cluster.local
+  DB_PORT: {{ .Values.postgres.service.port | quote }}
+  DB_NAME: {{ .Values.postgres.credentials.database | quote }}
+  DB_USER: {{ .Values.postgres.credentials.user | quote }}
+  REDIS_HOST: {{ include "coescd.fullname" . }}-redis.{{ .Values.global.namespace }}.svc.cluster.local
+  REDIS_PORT: {{ .Values.redis.service.port | quote }}
+  RABBITMQ_HOST: {{ include "coescd.fullname" . }}-rabbitmq-client.{{ .Values.global.namespace }}.svc.cluster.local
+  RABBITMQ_PORT: {{ .Values.rabbitmq.service.amqpPort | quote }}
+  RABBITMQ_VHOST: {{ .Values.rabbitmq.credentials.vhost | quote }}
+  RABBITMQ_USER: {{ .Values.rabbitmq.credentials.user | quote }}
+  MINIO_ENDPOINT: {{ include "coescd.fullname" . }}-minio-api.{{ .Values.global.namespace }}.svc.cluster.local
+  MINIO_PORT: {{ .Values.minio.service.apiPort | quote }}
+  MINIO_USE_SSL: "false"
+  OPENSEARCH_HOST: {{ include "coescd.fullname" . }}-opensearch-client.{{ .Values.global.namespace }}.svc.cluster.local
+  OPENSEARCH_PORT: {{ .Values.opensearch.service.port | quote }}
+  TIMESCALEDB_HOST: {{ include "coescd.fullname" . }}-timescaledb.{{ .Values.global.namespace }}.svc.cluster.local
+  TIMESCALEDB_PORT: {{ .Values.timescaledb.service.port | quote }}
+  TIMESCALEDB_NAME: {{ .Values.timescaledb.credentials.database | quote }}
+  TIMESCALEDB_USER: {{ .Values.timescaledb.credentials.user | quote }}
+  MARTIN_URL: http://{{ include "coescd.fullname" . }}-martin.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.martin.service.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "coescd.fullname" . }}-backend
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "backend" "root" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "backend" "root" .) | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "backend" "root" .) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/backend.yaml") . | sha256sum }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.backend "root" .) | nindent 6 }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: backend
+          image: {{ include "coescd.image" (dict "repository" .Values.backend.image.repository "tag" .Values.backend.image.tag "root" .) }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "coescd.fullname" . }}-backend-env
+          {{- if .Values.backend.existingSecret }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "coescd.fullname" . }}-backend-env
+            - secretRef:
+                name: {{ .Values.backend.existingSecret }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.backend.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.backend.readinessProbe | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-backend
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "backend" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.backend.service.port }}
+      targetPort: http
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "backend" "root" .) | nindent 4 }}
+---
+{{- if .Values.backend.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "coescd.fullname" . }}-backend
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "coescd.fullname" . }}-backend
+  minReplicas: {{ .Values.backend.hpa.minReplicas }}
+  maxReplicas: {{ .Values.backend.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.backend.hpa.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.backend.hpa.targetMemoryUtilizationPercentage }}
+{{- end }}
+{{- end }}

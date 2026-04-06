@@ -2,8 +2,10 @@ import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMapStore } from '@/store/mapStore';
-import { addCoESCDLayers, useSyncIncidentsSource } from '@/hooks/useMapLayers';
+import { addCoESCDLayers, useSyncIncidentsSource, useSyncRiskLayers } from '@/hooks/useMapLayers';
+import { useRiskPredictions } from '@/hooks/useRiskPredictions';
 import { IncidentPopup } from './IncidentPopup';
+import { ReviewPanel } from '@/components/ML/ReviewPanel';
 import type { IncidentLocation } from '@/types/incidents';
 
 // Tajikistan center: Dushanbe approx. [68.77, 38.56]
@@ -38,10 +40,12 @@ const BASEMAP_STYLE = {
 
 export function MapContainer() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { setMap, selectIncident } = useMapStore();
+  const { setMap, selectIncident, selectPrediction } = useMapStore();
 
-  // Sync incidents GeoJSON source whenever the store incidents change
+  // Sync incidents + risk layers whenever store data changes
   useSyncIncidentsSource();
+  useSyncRiskLayers();
+  useRiskPredictions();
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -84,6 +88,30 @@ export function MapContainer() {
       map.getCanvas().style.cursor = '';
     });
 
+    // Click handler — select risk prediction cell
+    const riskLayerIds = [
+      'risk-flood-fill', 'risk-landslide-fill',
+      'risk-seismic-fill', 'risk-wildfire-fill',
+    ];
+    for (const layerId of riskLayerIds) {
+      map.on('click', layerId, (e) => {
+        if (!e.features?.length) return;
+        const props = e.features[0].properties as { id: string };
+        // Lookup from store by id
+        const { riskPredictions } = useMapStore.getState();
+        for (const preds of Object.values(riskPredictions)) {
+          const match = preds.find((p) => p.id === props.id);
+          if (match) { selectPrediction(match); break; }
+        }
+      });
+      map.on('mouseenter', layerId, () => {
+        map.getCanvas().style.cursor = 'crosshair';
+      });
+      map.on('mouseleave', layerId, () => {
+        map.getCanvas().style.cursor = '';
+      });
+    }
+
     // Dismiss popup on map click (not on marker)
     map.on('click', (e) => {
       const features = map.queryRenderedFeatures(e.point, {
@@ -102,6 +130,7 @@ export function MapContainer() {
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full" />
       <IncidentPopup />
+      <ReviewPanel />
     </div>
   );
 }

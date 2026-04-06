@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    coescd.gov.tj/classification: "restricted"

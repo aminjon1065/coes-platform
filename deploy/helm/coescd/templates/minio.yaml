@@ -1,0 +1,150 @@
+{{- if .Values.minio.enabled }}
+# =============================================================================
+# MinIO — S3-compatible object storage (StatefulSet)
+# Dev: 1 replica standalone; Prod: 4 replicas distributed mode
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "coescd.fullname" . }}-minio
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "minio" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "coescd.fullname" . }}-minio
+  replicas: {{ .Values.minio.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "minio" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "minio" "root" .) | nindent 8 }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsNonRoot: true
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.minio "root" .) | nindent 6 }}
+      containers:
+        - name: minio
+          image: {{ .Values.minio.image }}
+          imagePullPolicy: IfNotPresent
+          {{- $replicas := int .Values.minio.replicas }}
+          {{- if gt $replicas 1 }}
+          # Distributed mode: pass server URLs for each pod
+          args:
+            - server
+            - "--console-address"
+            - ":{{ .Values.minio.service.consolePort }}"
+            {{- range $i := until $replicas }}
+            - "http://{{ include "coescd.fullname" $ }}-minio-{{ $i }}.{{ include "coescd.fullname" $ }}-minio.{{ $.Values.global.namespace }}.svc.cluster.local/data"
+            {{- end }}
+          {{- else }}
+          args:
+            - server
+            - /data
+            - "--console-address"
+            - ":{{ .Values.minio.service.consolePort }}"
+          {{- end }}
+          ports:
+            - name: api
+              containerPort: {{ .Values.minio.service.apiPort }}
+            - name: console
+              containerPort: {{ .Values.minio.service.consolePort }}
+          env:
+            - name: MINIO_ROOT_USER
+              {{- if .Values.minio.credentials.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.credentials.existingSecret }}
+                  key: root-user
+              {{- else }}
+              value: {{ .Values.minio.credentials.rootUser | quote }}
+              {{- end }}
+            - name: MINIO_ROOT_PASSWORD
+              {{- if .Values.minio.credentials.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.credentials.existingSecret }}
+                  key: root-password
+              {{- else }}
+              value: {{ .Values.minio.credentials.rootPassword | quote }}
+              {{- end }}
+          resources:
+            {{- toYaml .Values.minio.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: api
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "coescd.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ include "coescd.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.minio.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-minio
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "minio" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None   # Headless for StatefulSet peer addressing
+  ports:
+    - name: api
+      port: {{ .Values.minio.service.apiPort }}
+      targetPort: api
+    - name: console
+      port: {{ .Values.minio.service.consolePort }}
+      targetPort: console
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "minio" "root" .) | nindent 4 }}
+---
+# Client-facing stable service
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-minio-api
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "minio" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: api
+      port: {{ .Values.minio.service.apiPort }}
+      targetPort: api
+    - name: console
+      port: {{ .Values.minio.service.consolePort }}
+      targetPort: console
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "minio" "root" .) | nindent 4 }}
+{{- end }}

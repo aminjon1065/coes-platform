@@ -1,0 +1,109 @@
+{{- if .Values.redis.enabled }}
+# =============================================================================
+# Redis 7 — StatefulSet
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "coescd.fullname" . }}-redis
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "redis" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "coescd.fullname" . }}-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "redis" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "redis" "root" .) | nindent 8 }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+        runAsNonRoot: true
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.redis "root" .) | nindent 6 }}
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - redis-server
+            - "--requirepass"
+            - "$(REDIS_PASSWORD)"
+            - "--maxmemory"
+            - {{ .Values.redis.config.maxmemory | quote }}
+            - "--maxmemory-policy"
+            - {{ .Values.redis.config.maxmemoryPolicy | quote }}
+            - "--save"
+            - "900 1"
+            - "--save"
+            - "300 10"
+            - "--appendonly"
+            - "yes"
+          ports:
+            - name: redis
+              containerPort: {{ .Values.redis.service.port }}
+              protocol: TCP
+          env:
+            - name: REDIS_PASSWORD
+              {{- if .Values.redis.credentials.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.credentials.existingSecret }}
+                  key: redis-password
+              {{- else }}
+              value: {{ .Values.redis.credentials.password | quote }}
+              {{- end }}
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "coescd.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ include "coescd.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.redis.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-redis
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "redis" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: {{ .Values.redis.service.port }}
+      targetPort: redis
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "redis" "root" .) | nindent 4 }}
+{{- end }}

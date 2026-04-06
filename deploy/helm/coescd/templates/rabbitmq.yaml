@@ -1,0 +1,253 @@
+{{- if .Values.rabbitmq.enabled }}
+# =============================================================================
+# RabbitMQ 3.13 — StatefulSet (supports 1 or 3-node cluster)
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "coescd.fullname" . }}-rabbitmq
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "coescd.fullname" . }}-rabbitmq
+  replicas: {{ .Values.rabbitmq.replicas | default 1 }}
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 8 }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+        runAsNonRoot: true
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.rabbitmq "root" .) | nindent 6 }}
+      # Needed for cluster auto-peer discovery via Kubernetes
+      serviceAccountName: {{ include "coescd.fullname" . }}-rabbitmq
+      initContainers:
+        - name: config
+          image: {{ .Values.rabbitmq.image }}
+          command:
+            - sh
+            - -c
+            - |
+              cp /tmp/rabbitmq/rabbitmq.conf /etc/rabbitmq/rabbitmq.conf
+              cp /tmp/rabbitmq/enabled_plugins /etc/rabbitmq/enabled_plugins
+          volumeMounts:
+            - name: config-map
+              mountPath: /tmp/rabbitmq
+            - name: config
+              mountPath: /etc/rabbitmq
+      containers:
+        - name: rabbitmq
+          image: {{ .Values.rabbitmq.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: amqp
+              containerPort: {{ .Values.rabbitmq.service.amqpPort }}
+            - name: management
+              containerPort: {{ .Values.rabbitmq.service.mgmtPort }}
+            - name: epmd
+              containerPort: 4369
+            - name: dist
+              containerPort: 25672
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: {{ .Values.rabbitmq.credentials.user | quote }}
+            - name: RABBITMQ_DEFAULT_VHOST
+              value: {{ .Values.rabbitmq.credentials.vhost | quote }}
+            - name: RABBITMQ_DEFAULT_PASS
+              {{- if .Values.rabbitmq.credentials.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rabbitmq.credentials.existingSecret }}
+                  key: rabbitmq-password
+              {{- else }}
+              value: {{ .Values.rabbitmq.credentials.password | quote }}
+              {{- end }}
+            - name: RABBITMQ_ERLANG_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "coescd.fullname" . }}-rabbitmq-cookie
+                  key: erlang-cookie
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: K8S_SERVICE_NAME
+              value: {{ include "coescd.fullname" . }}-rabbitmq
+            - name: RABBITMQ_USE_LONGNAME
+              value: "true"
+            - name: RABBITMQ_NODENAME
+              value: "rabbit@$(MY_POD_NAME).$(K8S_SERVICE_NAME).{{ .Values.global.namespace }}.svc.cluster.local"
+          resources:
+            {{- toYaml .Values.rabbitmq.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+            - name: config
+              mountPath: /etc/rabbitmq
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "check_running"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 10
+      volumes:
+        - name: config-map
+          configMap:
+            name: {{ include "coescd.fullname" . }}-rabbitmq-config
+        - name: config
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "coescd.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ include "coescd.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.rabbitmq.storage.size }}
+---
+# Headless service for pod-to-pod discovery
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-rabbitmq
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: amqp
+      port: {{ .Values.rabbitmq.service.amqpPort }}
+      targetPort: amqp
+    - name: management
+      port: {{ .Values.rabbitmq.service.mgmtPort }}
+      targetPort: management
+    - name: epmd
+      port: 4369
+      targetPort: epmd
+    - name: dist
+      port: 25672
+      targetPort: dist
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 4 }}
+---
+# Client-facing service (stable ClusterIP for app connections)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-rabbitmq-client
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: amqp
+      port: {{ .Values.rabbitmq.service.amqpPort }}
+      targetPort: amqp
+    - name: management
+      port: {{ .Values.rabbitmq.service.mgmtPort }}
+      targetPort: management
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 4 }}
+---
+# ConfigMap with rabbitmq.conf and enabled_plugins
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coescd.fullname" . }}-rabbitmq-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+data:
+  rabbitmq.conf: |
+    cluster_formation.peer_discovery_backend  = rabbit_peer_discovery_k8s
+    cluster_formation.k8s.host                = kubernetes.default.svc.cluster.local
+    cluster_formation.k8s.address_type        = hostname
+    cluster_formation.k8s.service_name        = {{ include "coescd.fullname" . }}-rabbitmq
+    cluster_formation.k8s.hostname_suffix     = .{{ include "coescd.fullname" . }}-rabbitmq.{{ .Values.global.namespace }}.svc.cluster.local
+    cluster_formation.node_cleanup.interval   = 10
+    cluster_formation.node_cleanup.only_log_warning = true
+    cluster_partition_handling                = autoheal
+    queue_master_locator                      = min-masters
+    loopback_users.guest                      = false
+    management.tcp.port                       = {{ .Values.rabbitmq.service.mgmtPort }}
+  enabled_plugins: |
+    [rabbitmq_management,rabbitmq_peer_discovery_k8s].
+---
+# Erlang cookie secret (auto-generated on first install)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "coescd.fullname" . }}-rabbitmq-cookie
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+data:
+  erlang-cookie: {{ randAlphaNum 32 | b64enc | quote }}
+---
+# ServiceAccount for K8s peer discovery
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "coescd.fullname" . }}-rabbitmq
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "coescd.fullname" . }}-rabbitmq
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "coescd.fullname" . }}-rabbitmq
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "coescd.fullname" . }}-rabbitmq
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "coescd.fullname" . }}-rabbitmq
+    namespace: {{ .Values.global.namespace }}
+{{- end }}

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { MapLayerVisibility } from '@/types/gis';
 import type { IncidentLocation } from '@/types/incidents';
+import type { RiskPrediction, HazardType } from '@/types/ml';
 
 // ---------------------------------------------------------------------------
 // Built-in layer IDs that are always registered in the map style
@@ -24,6 +25,12 @@ export const LAYER_IDS = {
 
   // Heatmap for dense incident views
   INCIDENTS_HEATMAP:       'incidents-heatmap',
+
+  // ML risk prediction choropleth layers (one per hazard)
+  RISK_FLOOD_FILL:         'risk-flood-fill',
+  RISK_LANDSLIDE_FILL:     'risk-landslide-fill',
+  RISK_SEISMIC_FILL:       'risk-seismic-fill',
+  RISK_WILDFIRE_FILL:      'risk-wildfire-fill',
 } as const;
 
 // Default visibility for each layer
@@ -38,6 +45,11 @@ const DEFAULT_VISIBILITY: MapLayerVisibility = {
   [LAYER_IDS.INCIDENTS_CIRCLE]:       true,
   [LAYER_IDS.INCIDENTS_LABEL]:        false,
   [LAYER_IDS.INCIDENTS_HEATMAP]:      false,
+  // Risk layers off by default — analyst must enable explicitly
+  [LAYER_IDS.RISK_FLOOD_FILL]:        false,
+  [LAYER_IDS.RISK_LANDSLIDE_FILL]:    false,
+  [LAYER_IDS.RISK_SEISMIC_FILL]:      false,
+  [LAYER_IDS.RISK_WILDFIRE_FILL]:     false,
 };
 
 interface MapState {
@@ -68,6 +80,16 @@ interface MapState {
   setSeverityFilter: (severity: number) => void;
   statusFilter: string; // 'ALL' | 'ACTIVE' | 'MONITORING' | ...
   setStatusFilter: (status: string) => void;
+
+  // Risk predictions (published, loaded per hazard type)
+  riskPredictions: Record<HazardType, RiskPrediction[]>;
+  setRiskPredictions: (hazardType: HazardType, predictions: RiskPrediction[]) => void;
+
+  // HITL review panel
+  isReviewPanelOpen: boolean;
+  toggleReviewPanel: () => void;
+  selectedPrediction: RiskPrediction | null;
+  selectPrediction: (p: RiskPrediction | null) => void;
 }
 
 export const useMapStore = create<MapState>((set, get) => ({
@@ -111,4 +133,15 @@ export const useMapStore = create<MapState>((set, get) => ({
 
   statusFilter: 'ACTIVE',
   setStatusFilter: (status) => set({ statusFilter: status }),
+
+  riskPredictions: { flood: [], landslide: [], seismic: [], wildfire: [] },
+  setRiskPredictions: (hazardType, predictions) =>
+    set((s) => ({
+      riskPredictions: { ...s.riskPredictions, [hazardType]: predictions },
+    })),
+
+  isReviewPanelOpen: false,
+  toggleReviewPanel: () => set((s) => ({ isReviewPanelOpen: !s.isReviewPanelOpen })),
+  selectedPrediction: null,
+  selectPrediction: (p) => set({ selectedPrediction: p }),
 }));

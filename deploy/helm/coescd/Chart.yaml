@@ -1,0 +1,24 @@
+apiVersion: v2
+name: coescd
+description: >
+  CoESCD Unified Digital Platform — Helm Chart.
+  Government-grade, sovereign on-premises emergency management system
+  for the Committee of Emergency Situations and Civil Defense of Tajikistan.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - emergency-management
+  - government
+  - tajikistan
+  - gis
+  - analytics
+
+maintainers:
+  - name: CoESCD Platform Team
+    email: platform@coescd.tj
+
+annotations:
+  # All data stays on government-controlled infrastructure; no cloud dependencies.
+  coescd.gov.tj/deployment-model: "on-premises-sovereign"

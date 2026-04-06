@@ -1,0 +1,371 @@
+# =============================================================================
+# CoESCD Platform — Helm Values (default / development)
+# Copy and override in values.production.yaml for production deployments.
+# =============================================================================
+
+global:
+  # Container image registry (self-hosted Harbor or Docker Hub mirror)
+  imageRegistry: ""
+  # Image pull secret (create with `kubectl create secret docker-registry`)
+  imagePullSecret: ""
+  # Kubernetes namespace
+  namespace: coescd
+  # Deployment environment label
+  environment: development
+  # Storage class for all PersistentVolumeClaims
+  storageClass: "standard"
+  # Node selector applied to all workloads
+  nodeSelector: {}
+  # Tolerations applied to all workloads
+  tolerations: []
+
+# -----------------------------------------------------------------------------
+# PostgreSQL 16 + PostGIS 3.4
+# -----------------------------------------------------------------------------
+postgres:
+  enabled: true
+  image: postgis/postgis:16-3.4-alpine
+  replicas: 1
+  resources:
+    requests: { cpu: "500m", memory: "512Mi" }
+    limits:   { cpu: "2",    memory: "2Gi"  }
+  storage:
+    size: 50Gi
+    # Separate volume for WAL (recommended for I/O isolation)
+    walSize: 10Gi
+  service:
+    port: 5432
+  credentials:
+    # Override in production using external secrets manager
+    user: coescd
+    database: coescd
+    # existingSecret: coescd-postgres-secret   # key: postgres-password
+    password: "CHANGE_IN_PRODUCTION"
+  config:
+    maxConnections: 200
+    sharedBuffers: "256MB"
+    effectiveCacheSize: "768MB"
+    maintenanceWorkMem: "64MB"
+    walBuffers: "16MB"
+    logMinDurationStatement: 1000
+  nodeSelector:
+    coescd.gov.tj/tier: database
+
+# -----------------------------------------------------------------------------
+# Redis 7
+# -----------------------------------------------------------------------------
+redis:
+  enabled: true
+  image: redis:7-alpine
+  replicas: 1
+  resources:
+    requests: { cpu: "100m", memory: "128Mi" }
+    limits:   { cpu: "500m", memory: "512Mi" }
+  storage:
+    size: 5Gi
+  service:
+    port: 6379
+  credentials:
+    # existingSecret: coescd-redis-secret   # key: redis-password
+    password: "CHANGE_IN_PRODUCTION"
+  config:
+    maxmemory: "400mb"
+    maxmemoryPolicy: "allkeys-lru"
+  nodeSelector:
+    coescd.gov.tj/tier: cache
+
+# -----------------------------------------------------------------------------
+# RabbitMQ 3.13
+# -----------------------------------------------------------------------------
+rabbitmq:
+  enabled: true
+  image: rabbitmq:3.13-management-alpine
+  replicas: 1
+  resources:
+    requests: { cpu: "200m", memory: "256Mi" }
+    limits:   { cpu: "1",    memory: "1Gi"  }
+  storage:
+    size: 10Gi
+  service:
+    amqpPort: 5672
+    mgmtPort: 15672
+  credentials:
+    user: coescd
+    vhost: coescd
+    # existingSecret: coescd-rabbitmq-secret   # key: rabbitmq-password
+    password: "CHANGE_IN_PRODUCTION"
+  nodeSelector:
+    coescd.gov.tj/tier: messaging
+
+# -----------------------------------------------------------------------------
+# MinIO — S3-compatible object storage
+# -----------------------------------------------------------------------------
+minio:
+  enabled: true
+  image: minio/minio:RELEASE.2024-04-06T05-26-02Z
+  replicas: 1
+  resources:
+    requests: { cpu: "200m", memory: "256Mi" }
+    limits:   { cpu: "1",    memory: "2Gi"  }
+  storage:
+    size: 100Gi
+  service:
+    apiPort: 9000
+    consolePort: 9001
+  credentials:
+    # existingSecret: coescd-minio-secret
+    rootUser: "coescd_admin"
+    rootPassword: "CHANGE_IN_PRODUCTION"
+  nodeSelector:
+    coescd.gov.tj/tier: storage
+
+# -----------------------------------------------------------------------------
+# OpenSearch 2.13
+# -----------------------------------------------------------------------------
+opensearch:
+  enabled: true
+  image: opensearchproject/opensearch:2.13.0
+  replicas: 1
+  resources:
+    requests: { cpu: "500m", memory: "1Gi"  }
+    limits:   { cpu: "2",    memory: "2Gi"  }
+  storage:
+    size: 20Gi
+  service:
+    port: 9200
+  javaOpts: "-Xms512m -Xmx512m"
+  nodeSelector:
+    coescd.gov.tj/tier: search
+
+# -----------------------------------------------------------------------------
+# TimescaleDB (analytics time-series store)
+# -----------------------------------------------------------------------------
+timescaledb:
+  enabled: true
+  image: timescale/timescaledb:latest-pg16
+  replicas: 1
+  resources:
+    requests: { cpu: "500m", memory: "512Mi" }
+    limits:   { cpu: "2",    memory: "4Gi"  }
+  storage:
+    size: 50Gi
+  service:
+    port: 5432
+  credentials:
+    user: coescd_analytics
+    database: coescd_analytics
+    # existingSecret: coescd-timescaledb-secret
+    password: "CHANGE_IN_PRODUCTION"
+  config:
+    maxConnections: 100
+    sharedBuffers: "512MB"
+    effectiveCacheSize: "1536MB"
+    workMem: "32MB"
+  nodeSelector:
+    coescd.gov.tj/tier: analytics
+
+# -----------------------------------------------------------------------------
+# Backend — NestJS Modular Monolith
+# -----------------------------------------------------------------------------
+backend:
+  enabled: true
+  image:
+    repository: coescd/backend
+    tag: ""        # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests: { cpu: "250m", memory: "512Mi" }
+    limits:   { cpu: "1",    memory: "1Gi"  }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  service:
+    port: 4000
+  env:
+    NODE_ENV: production
+    PORT: "4000"
+    HOST: "0.0.0.0"
+    THROTTLE_TTL: "60000"
+    THROTTLE_LIMIT: "100"
+  # existingSecret with JWT_SECRET, DB_PASSWORD, REDIS_PASSWORD, etc.
+  existingSecret: coescd-backend-secret
+  livenessProbe:
+    httpGet: { path: /api/health, port: 4000 }
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    failureThreshold: 3
+  readinessProbe:
+    httpGet: { path: /api/health, port: 4000 }
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    failureThreshold: 3
+  nodeSelector:
+    coescd.gov.tj/tier: app
+
+# -----------------------------------------------------------------------------
+# Gateway — WebSocket real-time service
+# -----------------------------------------------------------------------------
+gateway:
+  enabled: true
+  image:
+    repository: coescd/gateway
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits:   { cpu: "500m", memory: "512Mi" }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 60
+  service:
+    port: 4001
+  existingSecret: coescd-gateway-secret
+  livenessProbe:
+    httpGet: { path: /health, port: 4001 }
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readinessProbe:
+    httpGet: { path: /health, port: 4001 }
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  nodeSelector:
+    coescd.gov.tj/tier: app
+
+# -----------------------------------------------------------------------------
+# Media — Mediasoup SFU (WebRTC audio/video)
+# Requires hostNetwork: true or specific node port range for RTP/RTCP
+# -----------------------------------------------------------------------------
+media:
+  enabled: true
+  image:
+    repository: coescd/media
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1   # Scale by adding dedicated media nodes
+  resources:
+    requests: { cpu: "500m", memory: "512Mi" }
+    limits:   { cpu: "2",    memory: "2Gi"  }
+  # hostNetwork allows Mediasoup to bind RTP ports directly
+  hostNetwork: true
+  service:
+    port: 4002
+  config:
+    workers: "2"
+    rtcMinPort: "10000"
+    rtcMaxPort: "10100"
+    # Must match the external IP of the media node
+    announcedIp: "127.0.0.1"
+  existingSecret: coescd-media-secret
+  nodeSelector:
+    coescd.gov.tj/tier: media
+    # Pin to dedicated media nodes with enough CPU for codec processing
+    coescd.gov.tj/media-node: "true"
+
+# -----------------------------------------------------------------------------
+# Martin — Vector tile server
+# -----------------------------------------------------------------------------
+martin:
+  enabled: true
+  image: ghcr.io/maplibre/martin:v0.14.0
+  replicas: 2
+  resources:
+    requests: { cpu: "100m", memory: "128Mi" }
+    limits:   { cpu: "500m", memory: "512Mi" }
+  service:
+    port: 3002
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+  nodeSelector:
+    coescd.gov.tj/tier: gis
+
+# -----------------------------------------------------------------------------
+# Ingress (Nginx Ingress Controller expected in cluster)
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  # TLS secret must be pre-created: kubectl create secret tls coescd-tls ...
+  tlsSecretName: coescd-tls
+  host: coescd.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # WebSocket upgrade for gateway
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+
+# -----------------------------------------------------------------------------
+# Observability
+# -----------------------------------------------------------------------------
+prometheus:
+  enabled: true
+  image: prom/prometheus:v2.51.0
+  replicas: 1
+  resources:
+    requests: { cpu: "200m", memory: "512Mi" }
+    limits:   { cpu: "1",    memory: "2Gi"  }
+  storage:
+    size: 30Gi
+  retentionTime: "30d"
+  service:
+    port: 9090
+  nodeSelector:
+    coescd.gov.tj/tier: obs
+
+grafana:
+  enabled: true
+  image: grafana/grafana:10.4.0
+  replicas: 1
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits:   { cpu: "500m", memory: "512Mi" }
+  storage:
+    size: 5Gi
+  service:
+    port: 3000
+  existingSecret: coescd-grafana-secret
+  nodeSelector:
+    coescd.gov.tj/tier: obs
+
+loki:
+  enabled: true
+  image: grafana/loki:2.9.6
+  replicas: 1
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits:   { cpu: "500m", memory: "1Gi"  }
+  storage:
+    size: 20Gi
+  service:
+    port: 3100
+  nodeSelector:
+    coescd.gov.tj/tier: obs
+
+jaeger:
+  enabled: true
+  image: jaegertracing/all-in-one:1.56
+  replicas: 1
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits:   { cpu: "500m", memory: "1Gi"  }
+  storage:
+    size: 10Gi
+  service:
+    uiPort: 16686
+    otlpGrpcPort: 4317
+    otlpHttpPort: 4318
+  nodeSelector:
+    coescd.gov.tj/tier: obs

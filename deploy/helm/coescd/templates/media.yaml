@@ -1,0 +1,107 @@
+{{- if .Values.media.enabled }}
+# =============================================================================
+# Media — Mediasoup SFU (WebRTC audio/video)
+# Uses hostNetwork: true so Mediasoup can bind RTP/RTCP ports directly.
+# Must be pinned to a dedicated media node via nodeSelector.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "coescd.fullname" . }}-media
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "media" "root" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.media.replicas }}
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "media" "root" .) | nindent 6 }}
+  # Recreate because hostNetwork pods can't have >1 instance on same node
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "media" "root" .) | nindent 8 }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.media "root" .) | nindent 6 }}
+      # hostNetwork required for Mediasoup to bind RTP/RTCP ports
+      hostNetwork: {{ .Values.media.hostNetwork | default true }}
+      dnsPolicy: ClusterFirstWithHostNet
+      # One media pod per node (hostNetwork — ports would conflict)
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  {{- include "coescd.selectorLabels" (dict "component" "media" "root" .) | nindent 18 }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: media
+          image: {{ include "coescd.image" (dict "repository" .Values.media.image.repository "tag" .Values.media.image.tag "root" .) }}
+          imagePullPolicy: {{ .Values.media.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.media.service.port }}
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: {{ .Values.media.service.port | quote }}
+            - name: MEDIASOUP_WORKERS
+              value: {{ .Values.media.config.workers | quote }}
+            - name: RTC_MIN_PORT
+              value: {{ .Values.media.config.rtcMinPort | quote }}
+            - name: RTC_MAX_PORT
+              value: {{ .Values.media.config.rtcMaxPort | quote }}
+            - name: ANNOUNCED_IP
+              value: {{ .Values.media.config.announcedIp | quote }}
+          {{- if .Values.media.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.media.existingSecret }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.media.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+---
+# Service with clusterIP None since hostNetwork pods register their node IP
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-media
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "media" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.media.service.port }}
+      targetPort: http
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "media" "root" .) | nindent 4 }}
+{{- end }}

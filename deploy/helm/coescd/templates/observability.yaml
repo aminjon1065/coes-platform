@@ -1,0 +1,493 @@
+{{- if .Values.prometheus.enabled }}
+# =============================================================================
+# Prometheus — Metrics collection
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coescd.fullname" . }}-prometheus-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: 'coescd-backend'
+        static_configs:
+          - targets: ['{{ include "coescd.fullname" . }}-backend:{{ .Values.backend.service.port }}']
+        metrics_path: /api/metrics
+
+      - job_name: 'coescd-gateway'
+        static_configs:
+          - targets: ['{{ include "coescd.fullname" . }}-gateway:{{ .Values.gateway.service.port }}']
+        metrics_path: /metrics
+
+      - job_name: 'coescd-martin'
+        static_configs:
+          - targets: ['{{ include "coescd.fullname" . }}-martin:{{ .Values.martin.service.port }}']
+        metrics_path: /metrics
+
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['{{ .Values.global.namespace }}']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "coescd.fullname" . }}-prometheus
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "prometheus" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "coescd.fullname" . }}-prometheus
+  replicas: {{ .Values.prometheus.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "prometheus" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "prometheus" "root" .) | nindent 8 }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.prometheus "root" .) | nindent 6 }}
+      serviceAccountName: {{ include "coescd.fullname" . }}-prometheus
+      securityContext:
+        fsGroup: 65534
+        runAsUser: 65534
+        runAsNonRoot: true
+      containers:
+        - name: prometheus
+          image: {{ .Values.prometheus.image }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+            - "--storage.tsdb.retention.time={{ .Values.prometheus.retentionTime }}"
+            - "--web.enable-lifecycle"
+          ports:
+            - name: http
+              containerPort: {{ .Values.prometheus.service.port }}
+          resources:
+            {{- toYaml .Values.prometheus.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "coescd.fullname" . }}-prometheus-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "coescd.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ include "coescd.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.prometheus.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-prometheus
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "prometheus" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.prometheus.service.port }}
+      targetPort: http
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "prometheus" "root" .) | nindent 4 }}
+---
+# ServiceAccount + ClusterRole for pod discovery
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "coescd.fullname" . }}-prometheus
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "coescd.fullname" . }}-prometheus
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/proxy, services, endpoints, pods]
+    verbs: [get, list, watch]
+  - nonResourceURLs: [/metrics]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "coescd.fullname" . }}-prometheus
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "coescd.fullname" . }}-prometheus
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "coescd.fullname" . }}-prometheus
+    namespace: {{ .Values.global.namespace }}
+{{- end }}
+---
+{{- if .Values.grafana.enabled }}
+# =============================================================================
+# Grafana — Dashboards
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "coescd.fullname" . }}-grafana
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "grafana" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "coescd.fullname" . }}-grafana
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "grafana" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "grafana" "root" .) | nindent 8 }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.grafana "root" .) | nindent 6 }}
+      securityContext:
+        fsGroup: 472
+        runAsUser: 472
+        runAsNonRoot: true
+      containers:
+        - name: grafana
+          image: {{ .Values.grafana.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {{ .Values.grafana.service.port }}
+          env:
+            - name: GF_SERVER_ROOT_URL
+              value: "https://{{ .Values.ingress.host }}/grafana/"
+            - name: GF_SERVER_SERVE_FROM_SUB_PATH
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "false"
+          {{- if .Values.grafana.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.grafana.existingSecret }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.grafana.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "coescd.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ include "coescd.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.grafana.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-grafana
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "grafana" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.grafana.service.port }}
+      targetPort: http
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "grafana" "root" .) | nindent 4 }}
+{{- end }}
+---
+{{- if .Values.loki.enabled }}
+# =============================================================================
+# Loki — Log aggregation
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "coescd.fullname" . }}-loki
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "loki" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "coescd.fullname" . }}-loki
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "loki" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "loki" "root" .) | nindent 8 }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.loki "root" .) | nindent 6 }}
+      securityContext:
+        fsGroup: 10001
+        runAsUser: 10001
+        runAsNonRoot: true
+      containers:
+        - name: loki
+          image: {{ .Values.loki.image }}
+          imagePullPolicy: IfNotPresent
+          args: ["-config.file=/etc/loki/loki.yaml"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.loki.service.port }}
+          resources:
+            {{- toYaml .Values.loki.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+            - name: data
+              mountPath: /loki
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "coescd.fullname" . }}-loki-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "coescd.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ include "coescd.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.loki.storage.size }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coescd.fullname" . }}-loki-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+data:
+  loki.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: {{ .Values.loki.service.port }}
+    common:
+      path_prefix: /loki
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory: /loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+    schema_config:
+      configs:
+        - from: 2024-01-01
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    limits_config:
+      retention_period: 744h   # 31 days
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-loki
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "loki" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.loki.service.port }}
+      targetPort: http
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "loki" "root" .) | nindent 4 }}
+{{- end }}
+---
+{{- if .Values.jaeger.enabled }}
+# =============================================================================
+# Jaeger — Distributed tracing (all-in-one)
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "coescd.fullname" . }}-jaeger
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "jaeger" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "coescd.fullname" . }}-jaeger
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "jaeger" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "jaeger" "root" .) | nindent 8 }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.jaeger "root" .) | nindent 6 }}
+      containers:
+        - name: jaeger
+          image: {{ .Values.jaeger.image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SPAN_STORAGE_TYPE
+              value: badger
+            - name: BADGER_EPHEMERAL
+              value: "false"
+            - name: BADGER_DIRECTORY_VALUE
+              value: /badger/data
+            - name: BADGER_DIRECTORY_KEY
+              value: /badger/key
+          ports:
+            - name: ui
+              containerPort: {{ .Values.jaeger.service.uiPort }}
+            - name: otlp-grpc
+              containerPort: {{ .Values.jaeger.service.otlpGrpcPort }}
+            - name: otlp-http
+              containerPort: {{ .Values.jaeger.service.otlpHttpPort }}
+          resources:
+            {{- toYaml .Values.jaeger.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /badger
+          livenessProbe:
+            httpGet:
+              path: /
+              port: ui
+            initialDelaySeconds: 30
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "coescd.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ include "coescd.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.jaeger.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-jaeger
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "jaeger" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: ui
+      port: {{ .Values.jaeger.service.uiPort }}
+      targetPort: ui
+    - name: otlp-grpc
+      port: {{ .Values.jaeger.service.otlpGrpcPort }}
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: {{ .Values.jaeger.service.otlpHttpPort }}
+      targetPort: otlp-http
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "jaeger" "root" .) | nindent 4 }}
+{{- end }}

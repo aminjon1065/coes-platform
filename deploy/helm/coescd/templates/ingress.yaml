@@ -1,0 +1,84 @@
+{{- if .Values.ingress.enabled }}
+# =============================================================================
+# Ingress — Nginx Ingress Controller
+# Routes all CoESCD services under a single host.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "coescd.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.ingress.className }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          # REST API
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "coescd.fullname" . }}-backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+          # WebSocket gateway
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "coescd.fullname" . }}-gateway
+                port:
+                  number: {{ .Values.gateway.service.port }}
+          # Martin vector tiles
+          - path: /tiles
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "coescd.fullname" . }}-martin
+                port:
+                  number: {{ .Values.martin.service.port }}
+          # Grafana observability dashboard
+          - path: /grafana
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "coescd.fullname" . }}-grafana
+                port:
+                  number: {{ .Values.grafana.service.port }}
+          # Jaeger tracing UI (internal/ops only — restrict via IP allowlist in annotations)
+          - path: /jaeger
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "coescd.fullname" . }}-jaeger
+                port:
+                  number: {{ .Values.jaeger.service.uiPort }}
+          # Map client (served as static SPA from backend or separate Nginx)
+          - path: /map
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "coescd.fullname" . }}-backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+          # Root → backend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "coescd.fullname" . }}-backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+{{- end }}

@@ -1,0 +1,112 @@
+{{- if .Values.timescaledb.enabled }}
+# =============================================================================
+# TimescaleDB — Analytics time-series store (StatefulSet)
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "coescd.fullname" . }}-timescaledb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "timescaledb" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "coescd.fullname" . }}-timescaledb
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "timescaledb" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "timescaledb" "root" .) | nindent 8 }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+        runAsNonRoot: true
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.timescaledb "root" .) | nindent 6 }}
+      containers:
+        - name: timescaledb
+          image: {{ .Values.timescaledb.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: {{ .Values.timescaledb.service.port }}
+              protocol: TCP
+          args:
+            - "-c"
+            - "max_connections={{ .Values.timescaledb.config.maxConnections }}"
+            - "-c"
+            - "shared_buffers={{ .Values.timescaledb.config.sharedBuffers }}"
+            - "-c"
+            - "effective_cache_size={{ .Values.timescaledb.config.effectiveCacheSize }}"
+            - "-c"
+            - "work_mem={{ .Values.timescaledb.config.workMem }}"
+            - "-c"
+            - "timescaledb.telemetry_level=off"
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.timescaledb.credentials.user | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.timescaledb.credentials.database | quote }}
+            - name: POSTGRES_PASSWORD
+              {{- if .Values.timescaledb.credentials.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.timescaledb.credentials.existingSecret }}
+                  key: timescaledb-password
+              {{- else }}
+              value: {{ .Values.timescaledb.credentials.password | quote }}
+              {{- end }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            {{- toYaml .Values.timescaledb.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.timescaledb.credentials.user | quote }}]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.timescaledb.credentials.user | quote }}]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "coescd.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ include "coescd.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.timescaledb.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-timescaledb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "timescaledb" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: {{ .Values.timescaledb.service.port }}
+      targetPort: postgres
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "timescaledb" "root" .) | nindent 4 }}
+{{- end }}

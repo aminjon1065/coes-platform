@@ -1,4 +1,5 @@
 import { useMapStore, LAYER_IDS } from '@/store/mapStore';
+import { RISK_TIER_COLORS } from '@/types/ml';
 
 interface LayerToggleProps {
   layerId: string;
@@ -61,9 +62,31 @@ function SectionHeader({ icon, title }: { icon: string; title: string }) {
   );
 }
 
+function RiskTierLegend() {
+  return (
+    <div className="flex gap-1.5 py-1 pb-2">
+      {([1, 2, 3, 4] as const).map((tier) => (
+        <div key={tier} className="flex items-center gap-1">
+          <span
+            className="w-3 h-3 rounded-sm flex-shrink-0 opacity-80"
+            style={{ backgroundColor: RISK_TIER_COLORS[tier] }}
+          />
+          <span className="text-xs text-gray-400">
+            {['Low', 'Med', 'High', 'Crit'][tier - 1]}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function LayerPanel() {
-  const { isLayerPanelOpen, toggleLayerPanel, severityFilter, setSeverityFilter, statusFilter, setStatusFilter } =
-    useMapStore();
+  const {
+    isLayerPanelOpen, toggleLayerPanel,
+    severityFilter, setSeverityFilter,
+    statusFilter, setStatusFilter,
+    toggleReviewPanel,
+  } = useMapStore();
 
   return (
     <>
@@ -105,6 +128,20 @@ export function LayerPanel() {
           <LayerToggle layerId={LAYER_IDS.HAZARD_LANDSLIDE_FILL} label="Landslide susceptibility" color="#a16207" />
           <LayerToggle layerId={LAYER_IDS.HAZARD_SEISMIC_FILL}   label="Seismic hazard zones" color="#dc2626" />
           <LayerToggle layerId={LAYER_IDS.HAZARD_WILDFIRE_FILL}  label="Wildfire risk zones" color="#f97316" />
+
+          {/* ML Risk Predictions */}
+          <SectionHeader icon="🤖" title="AI Risk Forecasts" />
+          <RiskTierLegend />
+          <LayerToggle layerId={LAYER_IDS.RISK_FLOOD_FILL}     label="Flood risk (ML)" color={RISK_TIER_COLORS[3]} />
+          <LayerToggle layerId={LAYER_IDS.RISK_LANDSLIDE_FILL} label="Landslide risk (ML)" color={RISK_TIER_COLORS[3]} />
+          <LayerToggle layerId={LAYER_IDS.RISK_SEISMIC_FILL}   label="Seismic risk (ML)" color={RISK_TIER_COLORS[3]} />
+          <LayerToggle layerId={LAYER_IDS.RISK_WILDFIRE_FILL}  label="Wildfire risk (ML)" color={RISK_TIER_COLORS[3]} />
+          <button
+            onClick={toggleReviewPanel}
+            className="mt-1 w-full text-xs text-left px-2 py-1.5 bg-gray-800 hover:bg-gray-700 text-amber-400 rounded transition-colors border border-gray-600"
+          >
+            Review pending forecasts →
+          </button>
 
           {/* Incidents */}
           <SectionHeader icon="🚨" title="Incidents" />

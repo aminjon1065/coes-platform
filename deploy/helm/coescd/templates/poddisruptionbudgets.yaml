@@ -1,0 +1,85 @@
+# =============================================================================
+# PodDisruptionBudgets — Protect availability during voluntary disruptions
+# (node drains, rolling upgrades, etc.)
+# =============================================================================
+
+{{- if .Values.backend.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "coescd.fullname" . }}-backend
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "backend" "root" .) | nindent 6 }}
+{{- end }}
+---
+{{- if .Values.gateway.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "coescd.fullname" . }}-gateway
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "gateway" "root" .) | nindent 6 }}
+{{- end }}
+---
+{{- if .Values.martin.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "coescd.fullname" . }}-martin
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "martin" "root" .) | nindent 6 }}
+{{- end }}
+---
+{{- if .Values.rabbitmq.enabled }}
+{{- if gt (int .Values.rabbitmq.replicas) 1 }}
+# Only applies when running as a cluster (3+ nodes)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "coescd.fullname" . }}-rabbitmq
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  # Keep majority alive for quorum
+  minAvailable: {{ div (int .Values.rabbitmq.replicas) 2 | add1 }}
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 6 }}
+{{- end }}
+{{- end }}
+---
+{{- if .Values.opensearch.enabled }}
+{{- if gt (int .Values.opensearch.replicas) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "coescd.fullname" . }}-opensearch
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ div (int .Values.opensearch.replicas) 2 | add1 }}
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "opensearch" "root" .) | nindent 6 }}
+{{- end }}
+{{- end }}

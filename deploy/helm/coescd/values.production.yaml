@@ -1,0 +1,122 @@
+# =============================================================================
+# CoESCD Platform — Production Values Override
+# All secrets MUST use existingSecret references pointing to secrets
+# pre-created in the cluster (never store passwords here).
+# =============================================================================
+
+global:
+  imageRegistry: "registry.coescd.gov.tj"
+  imagePullSecret: "coescd-registry-pull"
+  namespace: coescd-prod
+  environment: production
+  storageClass: "fast-nvme"        # Use SSD-backed StorageClass in production
+  nodeSelector:
+    node-role.kubernetes.io/worker: "true"
+
+# Production resource sizing
+postgres:
+  replicas: 1   # Promote to HA with streaming replica in follow-up phase
+  resources:
+    requests: { cpu: "2",    memory: "4Gi"  }
+    limits:   { cpu: "4",    memory: "8Gi"  }
+  storage:
+    size: 200Gi
+    walSize: 50Gi
+  config:
+    maxConnections: 300
+    sharedBuffers: "1GB"
+    effectiveCacheSize: "3GB"
+    maintenanceWorkMem: "256MB"
+    walBuffers: "64MB"
+    logMinDurationStatement: 500
+
+redis:
+  resources:
+    requests: { cpu: "200m", memory: "512Mi" }
+    limits:   { cpu: "1",    memory: "1Gi"  }
+  storage:
+    size: 20Gi
+  config:
+    maxmemory: "800mb"
+
+rabbitmq:
+  replicas: 3   # Clustering for HA
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits:   { cpu: "2",    memory: "2Gi" }
+  storage:
+    size: 30Gi
+
+minio:
+  # 4-node distributed MinIO for production (each node: 25Gi → 100Gi total)
+  replicas: 4
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits:   { cpu: "2",    memory: "4Gi" }
+  storage:
+    size: 250Gi
+
+opensearch:
+  replicas: 3
+  resources:
+    requests: { cpu: "1",    memory: "4Gi" }
+    limits:   { cpu: "4",    memory: "8Gi" }
+  storage:
+    size: 100Gi
+  javaOpts: "-Xms2g -Xmx2g"
+
+timescaledb:
+  resources:
+    requests: { cpu: "2",    memory: "4Gi" }
+    limits:   { cpu: "4",    memory: "8Gi" }
+  storage:
+    size: 200Gi
+  config:
+    maxConnections: 200
+    sharedBuffers: "1GB"
+    effectiveCacheSize: "3GB"
+    workMem: "128MB"
+
+backend:
+  replicas: 3
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits:   { cpu: "2",    memory: "2Gi" }
+  hpa:
+    minReplicas: 3
+    maxReplicas: 12
+
+gateway:
+  replicas: 3
+  resources:
+    requests: { cpu: "200m", memory: "512Mi" }
+    limits:   { cpu: "1",    memory: "1Gi"  }
+  hpa:
+    minReplicas: 3
+    maxReplicas: 10
+
+media:
+  replicas: 2
+  resources:
+    requests: { cpu: "2",    memory: "2Gi" }
+    limits:   { cpu: "4",    memory: "4Gi" }
+  config:
+    workers: "4"
+
+martin:
+  replicas: 3
+  resources:
+    requests: { cpu: "200m", memory: "256Mi" }
+    limits:   { cpu: "1",    memory: "512Mi" }
+
+ingress:
+  host: coescd.gov.tj
+
+prometheus:
+  storage:
+    size: 100Gi
+  retentionTime: "90d"
+
+grafana:
+  storage:
+    size: 20Gi

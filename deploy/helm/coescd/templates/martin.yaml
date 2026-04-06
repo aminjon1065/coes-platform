@@ -1,0 +1,147 @@
+{{- if .Values.martin.enabled }}
+# =============================================================================
+# Martin — Vector tile server (Rust, MapLibre MVT from PostGIS)
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coescd.fullname" . }}-martin-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    # Martin configuration
+    listen_addresses: "0.0.0.0:{{ .Values.martin.service.port }}"
+    keep_alive: 75
+    worker_processes: 8
+    web_ui: false
+
+    postgres:
+      connection_string: "postgresql://$(DB_USER):$(DB_PASSWORD)@{{ include "coescd.fullname" . }}-postgres.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.postgres.service.port }}/{{ .Values.postgres.credentials.database }}"
+      pool_size: 20
+      auto_publish:
+        tables:
+          source_schema: gis
+          id_columns: [id]
+          clip_geom: true
+          buffer: 64
+          extent: 4096
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "coescd.fullname" . }}-martin
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "martin" "root" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.martin.replicas }}
+  selector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "martin" "root" .) | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "coescd.labels" . | nindent 8 }}
+        {{- include "coescd.selectorLabels" (dict "component" "martin" "root" .) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/martin.yaml") . | sha256sum }}
+    spec:
+      {{- include "coescd.imagePullSecrets" . | nindent 6 }}
+      {{- include "coescd.tolerations" . | nindent 6 }}
+      {{- include "coescd.nodeSelector" (dict "component" .Values.martin "root" .) | nindent 6 }}
+      containers:
+        - name: martin
+          image: {{ .Values.martin.image }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--config"
+            - "/etc/martin/config.yaml"
+          ports:
+            - name: http
+              containerPort: {{ .Values.martin.service.port }}
+              protocol: TCP
+          env:
+            - name: DB_USER
+              value: {{ .Values.postgres.credentials.user | quote }}
+            - name: DB_PASSWORD
+              {{- if .Values.postgres.credentials.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.credentials.existingSecret }}
+                  key: postgres-password
+              {{- else }}
+              value: {{ .Values.postgres.credentials.password | quote }}
+              {{- end }}
+          resources:
+            {{- toYaml .Values.martin.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/martin
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "coescd.fullname" . }}-martin-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coescd.fullname" . }}-martin
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+    {{- include "coescd.selectorLabels" (dict "component" "martin" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.martin.service.port }}
+      targetPort: http
+  selector:
+    {{- include "coescd.selectorLabels" (dict "component" "martin" "root" .) | nindent 4 }}
+---
+{{- if .Values.martin.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "coescd.fullname" . }}-martin
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "coescd.fullname" . }}-martin
+  minReplicas: {{ .Values.martin.hpa.minReplicas }}
+  maxReplicas: {{ .Values.martin.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.martin.hpa.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}

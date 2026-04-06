@@ -1,0 +1,68 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║           CoESCD Unified Digital Platform — Deployment Notes                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Release:     {{ .Release.Name }}
+Namespace:   {{ .Values.global.namespace }}
+Environment: {{ .Values.global.environment }}
+Version:     {{ .Chart.AppVersion }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PLATFORM ENDPOINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  REST API:       https://{{ .Values.ingress.host }}/api/
+  Map Client:     https://{{ .Values.ingress.host }}/map/
+  Vector Tiles:   https://{{ .Values.ingress.host }}/tiles/
+  GeoServer:      https://{{ .Values.ingress.host }}/geoserver/
+  WebSocket:      wss://{{ .Values.ingress.host }}/ws/
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  OPERATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Check rollout status:
+    kubectl rollout status deployment/coescd-backend -n {{ .Values.global.namespace }}
+    kubectl rollout status deployment/coescd-gateway -n {{ .Values.global.namespace }}
+
+  View backend logs:
+    kubectl logs -l app.kubernetes.io/component=backend -n {{ .Values.global.namespace }} --tail=100 -f
+
+  Run database migration (one-off Job):
+    kubectl exec -it deploy/coescd-backend -n {{ .Values.global.namespace }} \
+      -- node dist/infra/database/run-migrations.js
+
+  Port-forward for local access:
+    kubectl port-forward svc/coescd-backend 4000:4000 -n {{ .Values.global.namespace }}
+    kubectl port-forward svc/coescd-postgres 5432:5432 -n {{ .Values.global.namespace }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PRE-REQUISITES (must exist before first install)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Secrets (create once, never in values files):
+    kubectl create secret generic coescd-postgres-secret \
+      --from-literal=postgres-password='<PASSWORD>' -n {{ .Values.global.namespace }}
+    kubectl create secret generic coescd-redis-secret \
+      --from-literal=redis-password='<PASSWORD>' -n {{ .Values.global.namespace }}
+    kubectl create secret generic coescd-backend-secret \
+      --from-literal=JWT_SECRET='<SECRET>' \
+      --from-literal=DB_PASSWORD='<PASSWORD>' \
+      --from-literal=REDIS_PASSWORD='<PASSWORD>' \
+      -n {{ .Values.global.namespace }}
+
+  TLS certificate:
+    kubectl create secret tls coescd-tls \
+      --cert=tls.crt --key=tls.key -n {{ .Values.global.namespace }}
+
+  Image pull secret:
+    kubectl create secret docker-registry coescd-registry-pull \
+      --docker-server=registry.coescd.gov.tj \
+      --docker-username=<USER> --docker-password=<TOKEN> \
+      -n {{ .Values.global.namespace }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SUPPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Platform Team: platform@coescd.tj
+  Sovereign deployment — no external network access required.

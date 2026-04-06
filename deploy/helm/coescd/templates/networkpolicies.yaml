@@ -1,0 +1,233 @@
+# =============================================================================
+# NetworkPolicies — Zero-trust pod-to-pod communication
+# Default deny-all; explicit allow rules for each service.
+# =============================================================================
+
+# Deny all ingress/egress by default within namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coescd.fullname" . }}-default-deny
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Allow DNS resolution for all pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coescd.fullname" . }}-allow-dns
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# Backend: ingress from ingress controller; egress to all data services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coescd.fullname" . }}-backend
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "backend" "root" .) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Accept traffic from nginx ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: {{ .Values.backend.service.port }}
+    # Accept from Prometheus scrape
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "prometheus" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.backend.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "postgres" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.postgres.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "redis" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.redis.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.rabbitmq.service.amqpPort }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "minio" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.minio.service.apiPort }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "opensearch" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.opensearch.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "timescaledb" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.timescaledb.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "jaeger" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.jaeger.service.otlpGrpcPort }}
+        - port: {{ .Values.jaeger.service.otlpHttpPort }}
+---
+# Gateway: ingress from nginx; egress to redis + rabbitmq
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coescd.fullname" . }}-gateway
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "gateway" "root" .) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: {{ .Values.gateway.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "redis" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.redis.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "rabbitmq" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.rabbitmq.service.amqpPort }}
+---
+# Martin: ingress from nginx + backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coescd.fullname" . }}-martin
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "martin" "root" .) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "backend" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.martin.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "postgres" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.postgres.service.port }}
+---
+# Postgres: ingress from backend + martin + timescaledb
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coescd.fullname" . }}-postgres
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "postgres" "root" .) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "backend" "root" .) | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "martin" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.postgres.service.port }}
+---
+# Prometheus: ingress from grafana; egress to all app pods for scraping
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coescd.fullname" . }}-prometheus
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coescd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coescd.selectorLabels" (dict "component" "prometheus" "root" .) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "coescd.selectorLabels" (dict "component" "grafana" "root" .) | nindent 14 }}
+      ports:
+        - port: {{ .Values.prometheus.service.port }}
+  egress:
+    # Allow scraping all pods in namespace on any port
+    - to:
+        - podSelector: {}
