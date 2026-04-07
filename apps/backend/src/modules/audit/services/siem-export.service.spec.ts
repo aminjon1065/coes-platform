@@ -47,6 +47,7 @@ describe('SiemExportService', () => {
   let archiveRepo: ReturnType<typeof makeRepo>;
 
   const mockQb = {
+    where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
@@ -63,6 +64,7 @@ describe('SiemExportService', () => {
 
     // Reset all mock call counts
     Object.values(mockQb).forEach((fn: any) => fn.mockClear?.());
+    mockQb.where.mockReturnThis();
     mockQb.andWhere.mockReturnThis();
     mockQb.orderBy.mockReturnThis();
     mockQb.limit.mockReturnThis();
@@ -124,9 +126,8 @@ describe('SiemExportService', () => {
     it('escapes pipe characters in event type', () => {
       const event = makeEvent({ eventType: 'type|with|pipes' });
       const cef = service.formatCef(event);
-      // The header should not have unescaped pipes within field values
-      const parts = cef.split('|');
-      expect(parts.length).toBe(8); // 7 header separators + extension
+      const separators = cef.match(/(?<!\\)\|/g) ?? [];
+      expect(separators).toHaveLength(7);
     });
 
     it('maps CRITICAL severity to CEF severity 9', () => {

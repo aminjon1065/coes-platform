@@ -31,7 +31,7 @@ export class Message {
    * Client-supplied idempotency key — prevents duplicate send on retry.
    * Stored with a TTL-based uniqueness window.
    */
-  @Column({ name: 'idempotency_key', nullable: true })
+  @Column({ name: 'idempotency_key', type: 'varchar', nullable: true })
   @Index({ unique: true, where: 'idempotency_key IS NOT NULL' })
   idempotencyKey: string | null;
 
@@ -51,7 +51,7 @@ export class Message {
   senderId: string;
 
   /** Position the sender occupied at send time */
-  @Column({ name: 'sender_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'sender_position_id', nullable: true })
   senderPositionId: string | null;
 
   /** Message body (plain text / markdown) */
@@ -80,7 +80,7 @@ export class Message {
 
   // ─── Threading (shallow — no nested threads) ─────────────────────────────────
 
-  @Column({ name: 'parent_message_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'parent_message_id', nullable: true })
   parentMessageId: string | null;
 
   /** Count of direct replies (for display without loading replies) */
@@ -108,7 +108,7 @@ export class Message {
   @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
-  @Column({ name: 'deleted_by_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'deleted_by_id', nullable: true })
   deletedById: string | null;
 
   @OneToMany(() => MessageEdit, (e) => e.messageId, { cascade: true })

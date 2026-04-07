@@ -179,7 +179,13 @@ describe('FilesService', () => {
     };
 
     minioService = {
-      uploadStream: jest.fn().mockResolvedValue('etag-abc'),
+      uploadStream: jest.fn(async (_key: string, stream: Readable) => {
+        for await (const _chunk of stream) {
+          // Consume the stream to mirror MinIO upload semantics.
+        }
+        return 'etag-abc';
+      }),
+      moveObject: jest.fn().mockResolvedValue(undefined),
       presignedGetUrl: jest.fn().mockResolvedValue('https://minio/presigned'),
       deleteObject: jest.fn().mockResolvedValue(undefined),
       buildStorageKey: jest.fn().mockReturnValue('cls1/file-1/1/abc.pdf'),
@@ -238,6 +244,10 @@ describe('FilesService', () => {
       const result = await service.uploadFile(makeStream(), meta, 'user-1', 'pos-1');
 
       expect(minioService.uploadStream).toHaveBeenCalled();
+      expect(minioService.moveObject).toHaveBeenCalledWith(
+        expect.stringContaining('tmp/'),
+        'cls1/file-1/1/abc.pdf',
+      );
       expect(dataSource.transaction).toHaveBeenCalled();
       expect(auditService.emit).toHaveBeenCalledWith(
         expect.objectContaining({ eventType: 'FILES_FILE_UPLOADED' }),
@@ -305,6 +315,10 @@ describe('FilesService', () => {
 
       expect(result.versionCount).toBe(2);
       expect(result.scanStatus).toBe(ScanStatus.PENDING);
+      expect(minioService.moveObject).toHaveBeenCalledWith(
+        expect.stringContaining('tmp/file-1/'),
+        'cls1/file-1/1/abc.pdf',
+      );
       expect(auditService.emit).toHaveBeenCalledWith(
         expect.objectContaining({ eventType: 'FILES_NEW_VERSION_UPLOADED' }),
       );
@@ -597,11 +611,7 @@ describe('FilesService', () => {
     it('returns active permissions for a file', async () => {
       const file = makeFile({ ownerPositionId: 'pos-1' });
       fileRepo.findOne.mockResolvedValue(file);
-      permissionRepo.find
-        // first call from assertFileAccess (returns empty → owner so no throw)
-        .mockResolvedValueOnce([])
-        // second call from listPermissions itself
-        .mockResolvedValueOnce([makePermission()]);
+      permissionRepo.find.mockResolvedValue([makePermission()]);
 
       const result = await service.listPermissions('file-1', 'pos-1', 2);
 
@@ -721,15 +731,29 @@ describe('FilesService', () => {
         } as FileVersion,
       });
       fileRepo.findOne.mockResolvedValue(file);
+      versionRepo.find.mockResolvedValue([
+        {
+          id: 'ver-1',
+          storageKey: 'cls1/file-1/1/abc.pdf',
+        },
+        {
+          id: 'ver-2',
+          storageKey: 'cls1/file-1/2/def.pdf',
+        },
+      ]);
       fileRepo.save.mockResolvedValue(file);
 
-      await service.processScanResult('file-1', 'infected', 'system');
+      await service.processScanResult('file-1', 'infected', 'system', 'Eicar-Test-Signature');
 
       expect(file.scanStatus).toBe(ScanStatus.INFECTED);
       expect(file.deletedAt).not.toBeNull();
       expect(minioService.deleteObject).toHaveBeenCalledWith('cls1/file-1/1/abc.pdf');
+      expect(minioService.deleteObject).toHaveBeenCalledWith('cls1/file-1/2/def.pdf');
       expect(auditService.emit).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: 'FILES_INFECTED_FILE_QUARANTINED' }),
+        expect.objectContaining({
+          eventType: 'FILES_INFECTED_FILE_QUARANTINED',
+          metadata: expect.objectContaining({ threatSignature: 'Eicar-Test-Signature' }),
+        }),
       );
     });
 
@@ -738,6 +762,36 @@ describe('FilesService', () => {
 
       await expect(
         service.processScanResult('ghost', 'clean', 'system'),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('processScanFailure', () => {
+    it('marks file as SCAN_FAILED and emits audit + completion event', async () => {
+      const file = makeFile({ scanStatus: ScanStatus.PENDING });
+      fileRepo.findOne.mockResolvedValue(file);
+      fileRepo.save.mockResolvedValue(file);
+
+      await service.processScanFailure('file-1', 'system', 'ClamAV timed out');
+
+      expect(file.scanStatus).toBe(ScanStatus.SCAN_FAILED);
+      expect(auditService.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'FILES_SCAN_FAILED',
+          metadata: expect.objectContaining({ reason: 'ClamAV timed out' }),
+        }),
+      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'file.scan_complete',
+        expect.objectContaining({ result: 'scan_failed', reason: 'ClamAV timed out' }),
+      );
+    });
+
+    it('is idempotent when the file is already gone', async () => {
+      fileRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.processScanFailure('ghost', 'system', 'missing object'),
       ).resolves.toBeUndefined();
     });
   });

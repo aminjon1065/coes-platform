@@ -32,10 +32,10 @@ export class AdministrativeBoundary {
   @Column({ name: 'name_local', length: 200 })
   nameLocal: string;
 
-  @Column({ name: 'name_ru', length: 200, nullable: true })
+  @Column({ type: 'varchar',  name: 'name_ru', length: 200, nullable: true })
   nameRu: string | null;
 
-  @Column({ name: 'name_en', length: 200, nullable: true })
+  @Column({ type: 'varchar',  name: 'name_en', length: 200, nullable: true })
   nameEn: string | null;
 
   @Column({

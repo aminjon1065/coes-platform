@@ -119,7 +119,11 @@ export class SiemExportService {
     let sent = 0;
     let errors = 0;
 
-    const socket = dgram.createSocket(siemConfig.protocol);
+    if (siemConfig.protocol !== 'udp4') {
+      throw new Error(`Unsupported SIEM protocol: ${siemConfig.protocol}`);
+    }
+
+    const socket = dgram.createSocket('udp4');
 
     for (const event of events) {
       const message = Buffer.from(this.formatSyslog(event));

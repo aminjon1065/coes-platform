@@ -37,10 +37,10 @@ export class FileRecord {
   @Column({ name: 'original_filename', length: 500 })
   originalFilename: string;
 
-  @Column({ name: 'mime_type', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'mime_type', length: 100, nullable: true })
   mimeType: string | null;
 
-  @Column({ name: 'folder_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'folder_id', nullable: true })
   folderId: string | null;
 
   @ManyToOne(() => FileFolder, { nullable: true, onDelete: 'SET NULL' })
@@ -58,7 +58,7 @@ export class FileRecord {
   uploadedById: string;
 
   /** FK to current (latest) version — DEFERRABLE in DB, nullable until first version is saved */
-  @Column({ name: 'current_version_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'current_version_id', nullable: true })
   currentVersionId: string | null;
 
   @ManyToOne('FileVersion', { nullable: true, eager: true })

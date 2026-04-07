@@ -53,14 +53,14 @@ export class WorkflowInstance {
   status: WorkflowInstanceStatus;
 
   /** Step order of the currently active step */
-  @Column({ name: 'current_step_order', nullable: true })
+  @Column({ type: 'int',  name: 'current_step_order', nullable: true })
   currentStepOrder: number | null;
 
   /** Who initiated this workflow instance */
   @Column({ name: 'initiated_by_id' })
   initiatedById: string;
 
-  @Column({ name: 'initiated_by_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'initiated_by_position_id', nullable: true })
   initiatedByPositionId: string | null;
 
   /** Deadline for the entire workflow (may differ from individual step deadlines) */

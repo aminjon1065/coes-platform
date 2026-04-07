@@ -77,7 +77,7 @@ export class Document {
    * Format: <series>-<seq>/<year>  e.g. "ВС-0147/2026"
    * NULL until the document is registered.
    */
-  @Column({ name: 'registration_number', length: 50, nullable: true })
+  @Column({ type: 'varchar',  name: 'registration_number', length: 50, nullable: true })
   registrationNumber: string | null;
 
   @Column({ name: 'registered_at', type: 'timestamptz', nullable: true })
@@ -92,14 +92,14 @@ export class Document {
   classification: number;
 
   // ─── Sender (position-based for internal; free text for external) ───────
-  @Column({ name: 'sender_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'sender_position_id', nullable: true })
   senderPositionId: string | null;
 
-  @Column({ name: 'sender_name', length: 300, nullable: true })
+  @Column({ type: 'varchar',  name: 'sender_name', length: 300, nullable: true })
   senderName: string | null;
 
   /** External reference number (e.g. the number on an incoming letter) */
-  @Column({ name: 'external_ref_number', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'external_ref_number', length: 100, nullable: true })
   externalRefNumber: string | null;
 
   // ─── Recipient(s) stored as JSONB array of {positionId?, name, type} ────
@@ -119,7 +119,7 @@ export class Document {
   deadline: string | null;
 
   /** Links: response_to, based_on, supersedes */
-  @Column({ name: 'related_document_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'related_document_id', nullable: true })
   relatedDocumentId: string | null;
 
   /** The user (credentialId) who created this draft */
@@ -127,13 +127,13 @@ export class Document {
   createdById: string;
 
   /** The position from which the document was created */
-  @Column({ name: 'created_by_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'created_by_position_id', nullable: true })
   createdByPositionId: string | null;
 
   @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true })
   cancelledAt: Date | null;
 
-  @Column({ name: 'cancel_reason', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'cancel_reason', length: 500, nullable: true })
   cancelReason: string | null;
 
   /** Set when document transitions to ARCHIVED */
@@ -141,7 +141,7 @@ export class Document {
   archivedAt: Date | null;
 
   /** Credential ID of the user (or 'system' for auto-archive) who archived the document */
-  @Column({ name: 'archived_by_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'archived_by_id', nullable: true })
   archivedById: string | null;
 
   /** Date at which the archive copy must be reviewed per retention policy (archivedAt + retentionYears) */

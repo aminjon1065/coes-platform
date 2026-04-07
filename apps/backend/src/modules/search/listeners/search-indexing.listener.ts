@@ -3,6 +3,8 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { Document } from '../../edms/entities/document.entity';
+import { Task } from '../../tasks/entities/task.entity';
 import { SearchIndexService } from '../services/search-index.service';
 
 // ─── Payload shapes (mirroring what each domain emits) ────────────────────────
@@ -45,6 +47,10 @@ export class SearchIndexingListener {
   private readonly logger = new Logger(SearchIndexingListener.name);
 
   constructor(
+    @InjectRepository(Document)
+    private readonly documentRepo: Repository<Document>,
+    @InjectRepository(Task)
+    private readonly taskRepo: Repository<Task>,
     private readonly indexService: SearchIndexService,
   ) {}
 
@@ -55,15 +61,38 @@ export class SearchIndexingListener {
   @OnEvent('edms.document.registered', { async: true })
   @OnEvent('edms.document.status_changed', { async: true })
   async handleDocumentChange(payload: DocumentEvent): Promise<void> {
-    // We need to reload from DB since events carry only IDs.
-    // Import is deferred to avoid circular DI — the listener gets a raw DataSource.
-    // Pattern: emit event → listener fetches fresh doc → indexes it.
-    this.logger.debug(`Queuing document index refresh: ${payload.documentId}`);
-    // The actual DB fetch is handled by the SearchIndexService via a lazy-inject
-    // strategy. For now we emit a re-index trigger that the service resolves.
-    // (Concrete implementation requires injecting DocumentRepository here.)
-    // TODO: inject DocumentRepository and call indexService.indexDocument(...)
-    // This stub is sufficient for wiring; DB-backed indexing is added in 3.3 tests.
+    try {
+      this.logger.debug(`Queuing document index refresh: ${payload.documentId}`);
+
+      const doc = await this.documentRepo.findOne({
+        where: { id: payload.documentId },
+      });
+
+      if (!doc) {
+        this.logger.warn(`Document ${payload.documentId} not found during reindex; deleting stale index entry`);
+        await this.indexService.deleteDocument(payload.documentId);
+        return;
+      }
+
+      await this.indexService.indexDocument({
+        id: doc.id,
+        subject: doc.subject,
+        body: doc.body,
+        status: doc.status,
+        direction: doc.direction,
+        typeId: doc.typeId,
+        typeName: doc.type?.name ?? null,
+        registrationNumber: doc.registrationNumber,
+        classification: doc.classification,
+        createdById: doc.createdById,
+        createdAt: doc.createdAt.toISOString(),
+        updatedAt: doc.updatedAt.toISOString(),
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to refresh document index ${payload.documentId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   @OnEvent('edms.document.status_changed', { async: true })
@@ -81,8 +110,35 @@ export class SearchIndexingListener {
   @OnEvent('task.updated', { async: true })
   @OnEvent('task.status_changed', { async: true })
   async handleTaskChange(payload: TaskEvent): Promise<void> {
-    this.logger.debug(`Queuing task index refresh: ${payload.taskId}`);
-    // TODO: inject TaskRepository and call indexService.indexTask(...)
+    try {
+      this.logger.debug(`Queuing task index refresh: ${payload.taskId}`);
+
+      const task = await this.taskRepo.findOne({
+        where: { id: payload.taskId },
+      });
+
+      if (!task) {
+        this.logger.warn(`Task ${payload.taskId} not found during reindex; deleting stale index entry`);
+        await this.indexService.deleteTask(payload.taskId);
+        return;
+      }
+
+      await this.indexService.indexTask({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        priority: task.priority,
+        classification: task.classification,
+        responsiblePositionId: task.responsiblePositionId,
+        createdById: task.createdById,
+        deadline: task.deadline,
+        createdAt: task.createdAt.toISOString(),
+        updatedAt: task.updatedAt.toISOString(),
+      });
+    } catch (err) {
+      this.logger.error(`Failed to refresh task index ${payload.taskId}: ${(err as Error).message}`);
+    }
   }
 
   // ─── Chat messages ────────────────────────────────────────────────────────────

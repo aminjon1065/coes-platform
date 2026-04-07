@@ -28,6 +28,14 @@ export class UpdatePreferenceDto {
   sms?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  telegram?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  push?: boolean;
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(1440) // max 24 hours throttle
@@ -36,4 +44,8 @@ export class UpdatePreferenceDto {
   @IsOptional()
   @IsEnum(NotificationPriority)
   smsMinPriority?: NotificationPriority;
+
+  @IsOptional()
+  @IsEnum(NotificationPriority)
+  telegramMinPriority?: NotificationPriority;
 }

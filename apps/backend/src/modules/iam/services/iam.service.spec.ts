@@ -2,7 +2,7 @@ import { ConflictException, UnauthorizedException, ForbiddenException } from '@n
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Repository } from 'typeorm';
+import { Repository, ObjectLiteral } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
 import { IamService } from './iam.service';
@@ -11,7 +11,7 @@ import { RefreshToken } from '../entities/refresh-token.entity';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function mockRepo<T>(): jest.Mocked<Repository<T>> {
+function mockRepo<T extends ObjectLiteral>(): jest.Mocked<Repository<T>> {
   return {
     findOne: jest.fn(),
     find: jest.fn(),
@@ -40,6 +40,10 @@ function makeCredential(overrides: Partial<UserCredential> = {}): UserCredential
     lastLoginAt: null,
     passwordChangedAt: null,
     isServiceAccount: false,
+    ssoProvider: null,
+    ssoSubjectId: null,
+    ssoAttributes: null,
+    ssoLinkedAt: null,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
     ...overrides,

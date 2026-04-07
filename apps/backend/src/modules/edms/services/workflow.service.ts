@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { Document, DocumentStatus } from '../entities/document.entity';
@@ -122,7 +122,7 @@ export class WorkflowService {
   }
 
   async listTemplates(documentTypeId?: string): Promise<WorkflowTemplate[]> {
-    const where: Partial<WorkflowTemplate> = { active: true };
+    const where: FindOptionsWhere<WorkflowTemplate> = { active: true };
     if (documentTypeId) where.documentTypeId = documentTypeId;
     return this.templateRepo.find({ where, relations: ['steps'] });
   }

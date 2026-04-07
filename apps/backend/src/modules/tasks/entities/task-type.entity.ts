@@ -18,10 +18,10 @@ export class TaskType {
   @Column({ length: 100, unique: true })
   name: string;
 
-  @Column({ name: 'name_ru', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'name_ru', length: 100, nullable: true })
   nameRu: string | null;
 
-  @Column({ name: 'name_tg', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'name_tg', length: 100, nullable: true })
   nameTg: string | null;
 
   @Column({ type: 'text', nullable: true })
@@ -32,7 +32,7 @@ export class TaskType {
   defaultPriority: number;
 
   /** Days from assignment to default deadline (null = no default) */
-  @Column({ name: 'default_deadline_days', nullable: true })
+  @Column({ type: 'int',  name: 'default_deadline_days', nullable: true })
   defaultDeadlineDays: number | null;
 
   /** Whether executor must explicitly ACCEPT before work begins */

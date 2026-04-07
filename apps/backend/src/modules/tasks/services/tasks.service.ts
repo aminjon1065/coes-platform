@@ -269,6 +269,12 @@ export class TasksService {
       details: { changes: dto, reason: dto.changeReason },
     });
 
+    this.eventEmitter.emit('task.updated', {
+      taskId: task.id,
+      actorId,
+      actorPositionId,
+    });
+
     return task;
   }
 

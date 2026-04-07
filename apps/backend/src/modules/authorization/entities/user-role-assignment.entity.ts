@@ -30,14 +30,14 @@ export class UserRoleAssignment {
   role: Role;
 
   // Optional: restrict this role assignment to a specific department scope
-  @Column({ name: 'department_scope_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'department_scope_id', nullable: true })
   departmentScopeId: string | null;
 
   // Optional: restrict this role assignment to a specific position
-  @Column({ name: 'position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'position_id', nullable: true })
   positionId: string | null;
 
-  @Column({ name: 'granted_by_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'granted_by_id', nullable: true })
   grantedById: string | null;
 
   @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })

@@ -79,7 +79,7 @@ export class WorkflowStep {
   positionId: string;
 
   /** Snapshot of occupant at activation time (for display) */
-  @Column({ name: 'assigned_user_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'assigned_user_id', nullable: true })
   assignedUserId: string | null;
 
   /** Whether this step operates in parallel with sibling steps */
@@ -112,18 +112,18 @@ export class WorkflowStep {
   actionTaken: WorkflowStepAction | null;
 
   /** User who acted on this step */
-  @Column({ name: 'actor_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'actor_id', nullable: true })
   actorId: string | null;
 
   /** Position from which the actor acted */
-  @Column({ name: 'actor_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'actor_position_id', nullable: true })
   actorPositionId: string | null;
 
   /**
    * Delegation ID if the actor was acting under delegation.
    * Links to Authorization.Delegation entity.
    */
-  @Column({ name: 'delegation_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'delegation_id', nullable: true })
   delegationId: string | null;
 
   /** Formal remarks attached to the action */

@@ -7,13 +7,13 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — builder
 # ---------------------------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
 # Install dependencies first (layer cache)
-COPY package.json ./
-RUN npm install --frozen-lockfile
+COPY package*.json ./
+RUN npm install
 
 # Copy source and build
 COPY . .

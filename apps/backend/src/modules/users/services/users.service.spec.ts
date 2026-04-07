@@ -54,6 +54,15 @@ const mockPrefs = (): UserPreferences =>
   } as UserPreferences);
 
 function makeRepo<T>() {
+  const qb = {
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    offset: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+  };
+
   return {
     create: jest.fn((d) => ({ ...d })),
     save: jest.fn(async (d) => ({ id: uid(), ...d })),
@@ -61,6 +70,8 @@ function makeRepo<T>() {
     find: jest.fn(),
     findAndCount: jest.fn(),
     update: jest.fn(),
+    createQueryBuilder: jest.fn().mockReturnValue(qb),
+    _qb: qb,
   };
 }
 
@@ -210,7 +221,7 @@ describe('UsersService', () => {
 
   describe('listProfiles', () => {
     it('returns paginated profiles', async () => {
-      profileRepo.findAndCount.mockResolvedValue([[mockProfile(), mockProfile()], 2]);
+      profileRepo._qb.getManyAndCount.mockResolvedValue([[mockProfile(), mockProfile()], 2]);
 
       const [items, total] = await service.listProfiles({ limit: 20, offset: 0 });
 
@@ -219,14 +230,13 @@ describe('UsersService', () => {
     });
 
     it('filters by status when provided', async () => {
-      profileRepo.findAndCount.mockResolvedValue([[mockProfile()], 1]);
+      profileRepo._qb.getManyAndCount.mockResolvedValue([[mockProfile()], 1]);
 
       await service.listProfiles({ status: UserStatus.ACTIVE });
 
-      expect(profileRepo.findAndCount).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ status: UserStatus.ACTIVE }),
-        }),
+      expect(profileRepo._qb.where).toHaveBeenCalledWith(
+        'p.status = :status',
+        { status: UserStatus.ACTIVE },
       );
     });
   });
@@ -285,11 +295,11 @@ describe('UsersService', () => {
     it('sets vacatedAt on active assignment', async () => {
       profileRepo.findOne.mockResolvedValue(mockProfile());
       assignmentRepo.findOne.mockResolvedValue(mockAssignment());
-      assignmentRepo.save.mockResolvedValue({ ...mockAssignment(), vacatedAt: new Date() });
 
       await service.vacatePosition('usr-1', 'pos-1', 'actor-1');
 
-      expect(assignmentRepo.save).toHaveBeenCalledWith(
+      expect(assignmentRepo.update).toHaveBeenCalledWith(
+        'asgn-1',
         expect.objectContaining({ vacatedAt: expect.any(Date) }),
       );
     });
@@ -322,12 +332,13 @@ describe('UsersService', () => {
 
   describe('getPositionOccupant', () => {
     it('returns the user occupying the position', async () => {
-      assignmentRepo.findOne.mockResolvedValue(mockAssignment());
-      profileRepo.findOne.mockResolvedValue(mockProfile());
+      assignmentRepo.findOne.mockResolvedValue(
+        mockAssignment({ user: mockProfile() } as Partial<UserPositionAssignment>),
+      );
 
       const result = await service.getPositionOccupant('pos-1');
 
-      expect(result).not.toBeNull();
+      expect(result).toEqual(expect.objectContaining({ id: 'usr-1' }));
     });
 
     it('returns null when position is vacant', async () => {
@@ -375,16 +386,13 @@ describe('UsersService', () => {
     it('deactivates user and vacates all positions', async () => {
       profileRepo.findOne.mockResolvedValue(mockProfile({ status: UserStatus.ACTIVE }));
       assignmentRepo.find.mockResolvedValue([mockAssignment(), mockAssignment({ id: 'asgn-2' })]);
-      assignmentRepo.save.mockResolvedValue({});
-      profileRepo.save.mockResolvedValue(mockProfile({ status: UserStatus.INACTIVE }));
 
       await service.offboard('usr-1', 'actor-1');
 
-      // Should vacate all active assignments
-      expect(assignmentRepo.save).toHaveBeenCalledTimes(2);
-      // Should mark user inactive
-      expect(profileRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ status: UserStatus.INACTIVE }),
+      expect(assignmentRepo.update).toHaveBeenCalledTimes(2);
+      expect(profileRepo.update).toHaveBeenCalledWith(
+        'usr-1',
+        { status: UserStatus.OFFBOARDED },
       );
       expect(events.emit).toHaveBeenCalledWith(
         'users.profile.offboarded',

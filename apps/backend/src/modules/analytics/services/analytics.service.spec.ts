@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, getDataSourceToken } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, ObjectLiteral } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   NotFoundException,
@@ -12,7 +12,7 @@ import {
 import { AnalyticsService, RequestContext } from './analytics.service';
 import { Incident, IncidentStatus, IncidentSeverity } from '../entities/incident.entity';
 import { IncidentResponse, ResponseAction } from '../entities/incident-response.entity';
-import { ResourceDeployment } from '../entities/resource-deployment.entity';
+import { ResourceDeployment, ResourceType } from '../entities/resource-deployment.entity';
 import { DataCollectionForm, FormStatus } from '../entities/data-collection-form.entity';
 import { FormSubmission, SubmissionStatus } from '../entities/form-submission.entity';
 import { GeneratedReport } from '../entities/generated-report.entity';
@@ -22,7 +22,7 @@ import { AuditService } from '../../audit/services/audit.service';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function mockRepo<T>(entity: new () => T): jest.Mocked<Repository<T>> {
+function mockRepo<T extends ObjectLiteral>(entity: new () => T): jest.Mocked<Repository<T>> {
   return {
     create: jest.fn(),
     save: jest.fn(),
@@ -310,7 +310,11 @@ describe('AnalyticsService', () => {
 
       const result = await service.deployResource(
         'inc-1',
-        { resourceType: 'personnel', resourceName: 'SAR Team Alpha', quantity: 12 },
+        {
+          resourceType: ResourceType.PERSONNEL,
+          resourceName: 'SAR Team Alpha',
+          quantity: 12,
+        },
         CTX_L1,
       );
 
@@ -457,15 +461,18 @@ describe('AnalyticsService', () => {
 
   describe('reviewSubmission', () => {
     it('updates status and records reviewer', async () => {
-      const sub = Object.assign(new FormSubmission(), { id: 'sub-1', status: SubmissionStatus.PENDING });
+      const sub = Object.assign(new FormSubmission(), {
+        id: 'sub-1',
+        status: SubmissionStatus.SUBMITTED,
+      });
       submissionRepo.findOne.mockResolvedValue(sub);
       submissionRepo.save.mockImplementation(async (s: any) => s);
 
-      await service.reviewSubmission('sub-1', SubmissionStatus.APPROVED, 'Looks good', CTX_L1);
+      await service.reviewSubmission('sub-1', SubmissionStatus.ACCEPTED, 'Looks good', CTX_L1);
 
       expect(submissionRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          status: SubmissionStatus.APPROVED,
+          status: SubmissionStatus.ACCEPTED,
           reviewNotes: 'Looks good',
           reviewedById: CTX_L1.userId,
           reviewedAt: expect.any(Date),

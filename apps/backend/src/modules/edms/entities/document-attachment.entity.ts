@@ -41,7 +41,7 @@ export class DocumentAttachment {
   @Column({ length: 255 })
   filename: string;
 
-  @Column({ name: 'mime_type', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'mime_type', length: 100, nullable: true })
   mimeType: string | null;
 
   @Column({ name: 'file_size_bytes', type: 'bigint', nullable: true })

@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, getDataSourceToken } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, ObjectLiteral } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   NotFoundException,
@@ -12,7 +12,7 @@ import {
 import { GisService, RequestContext } from './gis.service';
 import { SpatialLayer, LayerStatus, GeometryType, UpdateCadence } from '../entities/spatial-layer.entity';
 import { SpatialFeature } from '../entities/spatial-feature.entity';
-import { HazardZone } from '../entities/hazard-zone.entity';
+import { HazardZone, HazardClass, HazardSeverity } from '../entities/hazard-zone.entity';
 import { IncidentLocation } from '../entities/incident-location.entity';
 import { AdministrativeBoundary } from '../entities/administrative-boundary.entity';
 import { AuditService } from '../../audit/services/audit.service';
@@ -21,7 +21,7 @@ import { AuditService } from '../../audit/services/audit.service';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function mockRepo<T>(entity: new () => T): jest.Mocked<Repository<T>> {
+function mockRepo<T extends ObjectLiteral>(entity: new () => T): jest.Mocked<Repository<T>> {
   return {
     create: jest.fn(),
     save: jest.fn(),
@@ -290,22 +290,27 @@ describe('GisService', () => {
 
       const zone = Object.assign(new HazardZone(), {
         id: 'zone-1',
-        hazardClass: 'FLOOD',
-        severity: 3,
+        hazardClass: HazardClass.FLOOD,
+        severity: HazardSeverity.HIGH,
         classification: 1,
       });
       hazardZoneRepo.create.mockReturnValue(zone);
       hazardZoneRepo.save.mockResolvedValue(zone);
 
       await service.createHazardZone(
-        { featureId: 'feat-1', hazardClass: 'FLOOD' as any, severity: 3, classification: 1 },
+        {
+          featureId: 'feat-1',
+          hazardClass: HazardClass.FLOOD,
+          severity: HazardSeverity.HIGH,
+          classification: 1,
+        },
         CTX_L1,
       );
 
       expect(hazardZoneRepo.save).toHaveBeenCalled();
       expect(events.emit).toHaveBeenCalledWith(
         'gis.hazard_zone.created',
-        expect.objectContaining({ hazardZoneId: 'zone-1', hazardClass: 'FLOOD' }),
+        expect.objectContaining({ hazardZoneId: 'zone-1', hazardClass: HazardClass.FLOOD }),
       );
     });
   });
@@ -317,8 +322,8 @@ describe('GisService', () => {
 
     it('inserts incident, emits event, and returns GeoJSON', async () => {
       dataSource.query
-        .mockResolvedValueOnce([{ id: 'inc-1' }])           // INSERT incident
         .mockResolvedValueOnce([])                            // resolveAdministrativeCode (no match)
+        .mockResolvedValueOnce([{ id: 'inc-1' }])           // INSERT incident
         .mockResolvedValueOnce([{ id: 'inc-1', classification: 1, location, incidentType: 'FLOOD' }]); // getIncidentAsGeoJson
 
       const result = await service.reportIncident(

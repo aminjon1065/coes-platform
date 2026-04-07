@@ -54,10 +54,10 @@ export class UserCredential {
 
   // ── SSO columns (Phase 6.1) ──────────────────────────────────────────────
 
-  @Column({ name: 'sso_provider', length: 50, nullable: true })
+  @Column({ name: 'sso_provider', type: 'varchar', length: 50, nullable: true })
   ssoProvider: string | null;
 
-  @Column({ name: 'sso_subject_id', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'sso_subject_id', length: 500, nullable: true })
   ssoSubjectId: string | null;
 
   @Column({ name: 'sso_attributes', type: 'jsonb', nullable: true })

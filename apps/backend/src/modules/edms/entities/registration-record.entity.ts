@@ -38,7 +38,7 @@ export class RegistrationRecord {
   registrarId: string;
 
   /** The position from which registration was performed */
-  @Column({ name: 'registrar_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'registrar_position_id', nullable: true })
   registrarPositionId: string | null;
 
   @CreateDateColumn({ name: 'registered_at', type: 'timestamptz' })

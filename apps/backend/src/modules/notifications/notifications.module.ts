@@ -4,10 +4,17 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Notification } from './entities/notification.entity';
 import { NotificationPreference } from './entities/notification-preference.entity';
 import { NotificationDelivery } from './entities/notification-delivery.entity';
+import { PushSubscription } from './entities/push-subscription.entity';
+import { TelegramSubscription } from './entities/telegram-subscription.entity';
+import { UserProfile } from '../users/entities/user-profile.entity';
+import { UserPositionAssignment } from '../users/entities/user-position-assignment.entity';
+import { UserCredential } from '../iam/entities/user-credential.entity';
 
 import { NotificationService } from './services/notification.service';
 import { EmailNotificationProvider } from './providers/email-notification.provider';
 import { SmsNotificationProvider } from './providers/sms-notification.provider';
+import { PushNotificationProvider } from './providers/push-notification.provider';
+import { TelegramNotificationProvider } from './providers/telegram-notification.provider';
 
 import { NotificationController } from './controllers/notification.controller';
 import { NotificationDomainListener } from './listeners/notification-domain.listener';
@@ -18,8 +25,10 @@ import { NotificationDomainListener } from './listeners/notification-domain.list
  * Listens to 'notification.requested' events emitted by all domain modules
  * (Tasks, EDMS, IAM, etc.) and dispatches notifications via:
  *   - In-app (persisted in DB, queried via REST)
- *   - Email (via EmailNotificationProvider — SMTP stub)
- *   - SMS   (via SmsNotificationProvider  — gateway stub)
+ *   - Email
+ *   - Telegram bot
+ *   - Web Push
+ *   - SMS (legacy optional adapter)
  *
  * Preferences are stored per-user per-notification-type (2.6.5).
  * Delivery is tracked per-channel (2.6.7).
@@ -32,6 +41,11 @@ import { NotificationDomainListener } from './listeners/notification-domain.list
       Notification,
       NotificationPreference,
       NotificationDelivery,
+      PushSubscription,
+      TelegramSubscription,
+      UserProfile,
+      UserPositionAssignment,
+      UserCredential,
     ]),
   ],
   controllers: [NotificationController],
@@ -39,6 +53,8 @@ import { NotificationDomainListener } from './listeners/notification-domain.list
     NotificationService,
     EmailNotificationProvider,
     SmsNotificationProvider,
+    PushNotificationProvider,
+    TelegramNotificationProvider,
     NotificationDomainListener,
   ],
   exports: [NotificationService],

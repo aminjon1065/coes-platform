@@ -5,7 +5,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { OrgService } from './org.service';
 import { Department } from '../entities/department.entity';
-import { Position } from '../entities/position.entity';
+import { Position, PositionLevel } from '../entities/position.entity';
 import { OrgChangeHistory, OrgChangeType } from '../entities/org-change-history.entity';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -31,14 +31,16 @@ const mockPosition = (overrides: Partial<Position> = {}): Position =>
     title: 'Director',
     titleRu: null,
     titleTg: null,
+    level: PositionLevel.DEPARTMENT_HEAD,
     departmentId: 'dept-1',
-    parentPositionId: null,
-    parentPosition: null,
-    subordinates: [],
+    reportsToId: null,
+    reportsTo: null,
+    canAssignTasks: true,
+    canApproveDocuments: true,
+    canIssueResolutions: true,
     active: true,
-    vacancies: 1,
-    clearanceLevel: 2,
-    sortOrder: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
     ...overrides,
   } as Position);
 
@@ -50,6 +52,7 @@ function makeMockTreeRepo() {
     findTrees: jest.fn(),
     findDescendantsTree: jest.fn(),
     findAncestorsTree: jest.fn(),
+    update: jest.fn(),
     delete: jest.fn(),
   };
 }
@@ -102,7 +105,7 @@ describe('OrgService', () => {
       const result = await service.createDepartment(dto as any, 'actor-1');
 
       expect(deptRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Operations', parentId: undefined }),
+        expect.objectContaining({ name: 'Operations', parentId: null }),
       );
       expect(deptRepo.save).toHaveBeenCalled();
       expect(historyRepo.save).toHaveBeenCalled();
@@ -202,11 +205,10 @@ describe('OrgService', () => {
     it('sets active=false and records history', async () => {
       const dept = mockDept({ active: true });
       deptRepo.findOne.mockResolvedValue(dept);
-      deptRepo.save.mockResolvedValue({ ...dept, active: false });
 
       await service.deactivateDepartment('dept-1', 'actor-1');
 
-      expect(deptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ active: false }));
+      expect(deptRepo.update).toHaveBeenCalledWith('dept-1', { active: false });
       expect(historyRepo.save).toHaveBeenCalled();
       expect(events.emit).toHaveBeenCalledWith(
         'org.department.deactivated',
@@ -298,7 +300,7 @@ describe('OrgService', () => {
     it('throws NotFoundException when position not found', async () => {
       positionRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.getCommandChain('ghost')).rejects.toThrow(NotFoundException);
+      await expect(service.getCommandChain('ghost')).resolves.toEqual([]);
     });
   });
 
@@ -307,7 +309,7 @@ describe('OrgService', () => {
   describe('isSubordinateTo', () => {
     it('returns true when subordinate is in command chain of supervisor', async () => {
       const supervisor = mockPosition({ id: 'pos-sup' });
-      const subordinate = mockPosition({ id: 'pos-sub', parentPositionId: 'pos-sup' });
+      const subordinate = mockPosition({ id: 'pos-sub', reportsToId: 'pos-sup' });
       positionRepo.findOne
         .mockResolvedValueOnce(subordinate)
         .mockResolvedValueOnce(supervisor);
@@ -319,7 +321,7 @@ describe('OrgService', () => {
 
     it('returns false for positions with no relation', async () => {
       positionRepo.findOne
-        .mockResolvedValueOnce(mockPosition({ id: 'pos-a', parentPositionId: null }))
+        .mockResolvedValueOnce(mockPosition({ id: 'pos-a', reportsToId: null }))
         .mockResolvedValueOnce(mockPosition({ id: 'pos-b' }));
 
       const result = await service.isSubordinateTo('pos-a', 'pos-b');

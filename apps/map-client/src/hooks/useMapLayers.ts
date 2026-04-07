@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import { useMapStore, LAYER_IDS } from '@/store/mapStore';
-import type { HazardType, RiskPrediction } from '@/types/ml';
+import type { HazardType } from '@/types/ml';
 import { RISK_TIER_COLORS } from '@/types/ml';
 
 const SEVERITY_COLOR_EXPR = [

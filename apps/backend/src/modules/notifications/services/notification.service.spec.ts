@@ -1,5 +1,5 @@
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, ObjectLiteral } from 'typeorm';
 
 import { NotificationService, NotificationRequest } from './notification.service';
 import { Notification, NotificationPriority } from '../entities/notification.entity';
@@ -9,8 +9,19 @@ import {
   DeliveryChannel,
   DeliveryStatus,
 } from '../entities/notification-delivery.entity';
+import {
+  PushSubscription,
+  PushSubscriptionStatus,
+} from '../entities/push-subscription.entity';
+import {
+  TelegramSubscription,
+  TelegramSubscriptionStatus,
+} from '../entities/telegram-subscription.entity';
 import { EmailNotificationProvider } from '../providers/email-notification.provider';
 import { SmsNotificationProvider } from '../providers/sms-notification.provider';
+import { PushNotificationProvider } from '../providers/push-notification.provider';
+import { TelegramNotificationProvider } from '../providers/telegram-notification.provider';
+import { UserPositionAssignment, AssignmentType } from '../../users/entities/user-position-assignment.entity';
 
 // ── Mock helpers ───────────────────────────────────────────────────────────────
 
@@ -23,13 +34,16 @@ function makeThrottleQb(recentDelivery: NotificationDelivery | null = null) {
   };
 }
 
-function mockRepo<T>(throttleQb = makeThrottleQb()): jest.Mocked<Repository<T>> {
+function mockRepo<T extends ObjectLiteral>(
+  throttleQb = makeThrottleQb(),
+): jest.Mocked<Repository<T>> {
   return {
-    create: jest.fn((dto: Partial<T>) => ({ id: 'generated-id', ...dto }) as T),
+    create: jest.fn((dto: Partial<T>) => ({ id: 'generated-id', ...dto }) as unknown as T),
     save: jest.fn().mockImplementation(async (entity: T) => entity),
     find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn().mockResolvedValue(null),
     update: jest.fn().mockResolvedValue({ affected: 1 }),
+    delete: jest.fn().mockResolvedValue({ affected: 1 }),
     count: jest.fn().mockResolvedValue(0),
     createQueryBuilder: jest.fn().mockReturnValue(throttleQb),
   } as unknown as jest.Mocked<Repository<T>>;
@@ -79,12 +93,77 @@ function makePreference(overrides: Partial<NotificationPreference> = {}): Notifi
     inApp: true,
     email: true,
     sms: false,
+    telegram: false,
+    push: true,
     emailThrottleMinutes: 0,
     smsMinPriority: NotificationPriority.HIGH,
+    telegramMinPriority: NotificationPriority.HIGH,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
   } as NotificationPreference;
+}
+
+function makePushSubscription(overrides: Partial<PushSubscription> = {}): PushSubscription {
+  return {
+    id: 'push-1',
+    userId: 'user-1',
+    endpoint: 'https://push.example.test/subscription/1',
+    p256dhKey: 'p256dh-key',
+    authKey: 'auth-key',
+    expirationTime: null,
+    userAgent: 'Field PWA',
+    status: PushSubscriptionStatus.ACTIVE,
+    failureCount: 0,
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastFailureReason: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  } as PushSubscription;
+}
+
+function makeTelegramSubscription(
+  overrides: Partial<TelegramSubscription> = {},
+): TelegramSubscription {
+  return {
+    id: 'tg-1',
+    userId: 'user-1',
+    chatId: '123456789',
+    username: 'coescd_user',
+    displayName: 'CoES User',
+    status: TelegramSubscriptionStatus.ACTIVE,
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastFailureReason: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  } as TelegramSubscription;
+}
+
+function makeAssignment(overrides: Partial<UserPositionAssignment> = {}): UserPositionAssignment {
+  return {
+    id: 'assignment-1',
+    userId: 'profile-1',
+    user: {
+      id: 'profile-1',
+      credentialId: 'user-1',
+      email: 'user@coescd.tj',
+      phone: '+992501234567',
+      status: 'active',
+    } as any,
+    positionId: 'pos-1',
+    type: AssignmentType.PRIMARY,
+    assignedAt: new Date('2026-01-01T00:00:00Z'),
+    vacatedAt: null,
+    assignedById: null,
+    vacatedById: null,
+    notes: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  } as UserPositionAssignment;
 }
 
 // ── Test suite ─────────────────────────────────────────────────────────────────
@@ -94,14 +173,22 @@ describe('NotificationService', () => {
   let notifRepo: jest.Mocked<Repository<Notification>>;
   let prefRepo: jest.Mocked<Repository<NotificationPreference>>;
   let deliveryRepo: jest.Mocked<Repository<NotificationDelivery>>;
+  let pushSubscriptionRepo: jest.Mocked<Repository<PushSubscription>>;
+  let telegramSubscriptionRepo: jest.Mocked<Repository<TelegramSubscription>>;
+  let assignmentRepo: jest.Mocked<Repository<UserPositionAssignment>>;
   let emailProvider: jest.Mocked<Pick<EmailNotificationProvider, 'resolveEmailAddress' | 'send'>>;
   let smsProvider: jest.Mocked<Pick<SmsNotificationProvider, 'resolvePhoneNumber' | 'send'>>;
+  let pushProvider: jest.Mocked<Pick<PushNotificationProvider, 'isEnabled' | 'send'>>;
+  let telegramProvider: jest.Mocked<Pick<TelegramNotificationProvider, 'isEnabled' | 'send'>>;
   let dataSource: { query: jest.Mock };
 
   beforeEach(() => {
     notifRepo    = mockRepo<Notification>();
     prefRepo     = mockRepo<NotificationPreference>();
     deliveryRepo = mockRepo<NotificationDelivery>();
+    pushSubscriptionRepo = mockRepo<PushSubscription>();
+    telegramSubscriptionRepo = mockRepo<TelegramSubscription>();
+    assignmentRepo = mockRepo<UserPositionAssignment>();
 
     emailProvider = {
       resolveEmailAddress: jest.fn().mockResolvedValue('user@coescd.tj'),
@@ -111,14 +198,27 @@ describe('NotificationService', () => {
       resolvePhoneNumber: jest.fn().mockResolvedValue('+992501234567'),
       send: jest.fn().mockResolvedValue({ success: true, messageId: 'sms-1' }),
     };
+    pushProvider = {
+      isEnabled: jest.fn().mockReturnValue(true),
+      send: jest.fn().mockResolvedValue({ success: true, statusCode: 201 }),
+    };
+    telegramProvider = {
+      isEnabled: jest.fn().mockReturnValue(true),
+      send: jest.fn().mockResolvedValue({ success: true, messageId: 'tg-msg-1' }),
+    };
     dataSource = { query: jest.fn().mockResolvedValue(undefined) };
 
     service = new NotificationService(
       notifRepo    as any,
       prefRepo     as any,
       deliveryRepo as any,
+      pushSubscriptionRepo as any,
+      telegramSubscriptionRepo as any,
+      assignmentRepo as any,
       emailProvider as any,
       smsProvider   as any,
+      pushProvider  as any,
+      telegramProvider as any,
       dataSource    as unknown as DataSource,
     );
   });
@@ -127,6 +227,8 @@ describe('NotificationService', () => {
 
   describe('dispatch', () => {
     it('creates in-app only delivery when no recipientUserId', async () => {
+      assignmentRepo.find.mockResolvedValue([]);
+
       const req: NotificationRequest = {
         type: 'TASK_OVERDUE_EXECUTOR',
         recipientPositionId: 'pos-1',
@@ -142,6 +244,21 @@ describe('NotificationService', () => {
       expect(deliveryCalls[0].status).toBe(DeliveryStatus.SENT);
       // email provider must NOT be called
       expect(emailProvider.send).not.toHaveBeenCalled();
+    });
+
+    it('resolves recipient credential from active position assignment when recipientUserId is omitted', async () => {
+      assignmentRepo.find.mockResolvedValue([makeAssignment()]);
+      prefRepo.find.mockResolvedValue([makePreference({ email: true, sms: false })]);
+
+      await service.dispatch({
+        type: 'TASK_OVERDUE_EXECUTOR',
+        recipientPositionId: 'pos-1',
+        payload: { taskTitle: 'Survey', taskId: 't-1' },
+      });
+
+      const created = notifRepo.create.mock.calls[0][0] as Partial<Notification>;
+      expect(created.recipientUserId).toBe('user-1');
+      expect(emailProvider.resolveEmailAddress).toHaveBeenCalledWith('user-1');
     });
 
     it('maps notification type to correct template title', async () => {
@@ -199,6 +316,7 @@ describe('NotificationService', () => {
       );
       expect(channels).toContain(DeliveryChannel.IN_APP);
       expect(channels).toContain(DeliveryChannel.EMAIL);
+      expect(channels).toContain(DeliveryChannel.PUSH);
       expect(emailProvider.send).toHaveBeenCalledTimes(1);
     });
 
@@ -271,6 +389,46 @@ describe('NotificationService', () => {
       });
 
       expect(smsProvider.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends web push to active subscriptions when push preferences are enabled', async () => {
+      prefRepo.find.mockResolvedValue([makePreference({ push: true, email: false, sms: false })]);
+      pushSubscriptionRepo.find.mockResolvedValue([makePushSubscription()]);
+
+      await service.dispatch({
+        type: 'TASK_OVERDUE_EXECUTOR',
+        recipientPositionId: 'pos-1',
+        recipientUserId: 'user-1',
+        payload: { taskTitle: 'Survey', taskId: 't-1' },
+      });
+
+      expect(pushProvider.send).toHaveBeenCalledTimes(1);
+      expect(pushSubscriptionRepo.update).toHaveBeenCalledWith(
+        'push-1',
+        expect.objectContaining({
+          status: PushSubscriptionStatus.ACTIVE,
+          failureCount: 0,
+          lastSuccessAt: expect.any(Date),
+        }),
+      );
+    });
+
+    it('marks push delivery as skipped when no active subscriptions exist', async () => {
+      prefRepo.find.mockResolvedValue([makePreference({ push: true, email: false, sms: false })]);
+      pushSubscriptionRepo.find.mockResolvedValue([]);
+
+      await service.dispatch({
+        type: 'TASK_OVERDUE_EXECUTOR',
+        recipientPositionId: 'pos-1',
+        recipientUserId: 'user-1',
+        payload: { taskTitle: 'Survey', taskId: 't-1' },
+      });
+
+      expect(dataSource.query).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE'),
+        expect.arrayContaining(['skipped', null, 'no active push subscriptions']),
+      );
+      expect(pushProvider.send).not.toHaveBeenCalled();
     });
   });
 
@@ -379,6 +537,30 @@ describe('NotificationService', () => {
         expect.arrayContaining(['failed']),
       );
     });
+
+    it('sends Telegram when prefs.telegram=true and priority meets telegramMinPriority', async () => {
+      prefRepo.find.mockResolvedValue([
+        makePreference({ telegram: true, telegramMinPriority: NotificationPriority.HIGH, email: false, push: false }),
+      ]);
+      telegramSubscriptionRepo.findOne.mockResolvedValue(makeTelegramSubscription());
+
+      await service.dispatch({
+        type: 'TASK_OVERDUE_EXECUTOR',
+        recipientPositionId: 'pos-1',
+        recipientUserId: 'user-1',
+        priority: 'high',
+        payload: { taskTitle: 'Survey', taskId: 't-1' },
+      });
+
+      expect(telegramProvider.send).toHaveBeenCalledTimes(1);
+      expect(telegramSubscriptionRepo.update).toHaveBeenCalledWith(
+        'tg-1',
+        expect.objectContaining({
+          status: TelegramSubscriptionStatus.ACTIVE,
+          lastSuccessAt: expect.any(Date),
+        }),
+      );
+    });
   });
 
   // ── SMS provider outcome ───────────────────────────────────────────────────────
@@ -440,8 +622,11 @@ describe('NotificationService', () => {
       expect(prefs.inApp).toBe(true);
       expect(prefs.email).toBe(true);
       expect(prefs.sms).toBe(false);
+      expect(prefs.telegram).toBe(false);
+      expect(prefs.push).toBe(true);
       expect(prefs.emailThrottleMinutes).toBe(0);
       expect(prefs.smsMinPriority).toBe(NotificationPriority.HIGH);
+      expect(prefs.telegramMinPriority).toBe(NotificationPriority.HIGH);
     });
 
     it('uses default (null type) row when no specific override', async () => {
@@ -452,6 +637,8 @@ describe('NotificationService', () => {
       const prefs = await service.resolvePreferences('user-1', 'TASK_OVERDUE_EXECUTOR');
 
       expect(prefs.sms).toBe(true);
+      expect(prefs.telegram).toBe(false);
+      expect(prefs.push).toBe(true);
       expect(prefs.emailThrottleMinutes).toBe(30);
     });
 
@@ -465,6 +652,82 @@ describe('NotificationService', () => {
 
       expect(prefs.email).toBe(false);
       expect(prefs.sms).toBe(true);
+    });
+  });
+
+  describe('telegram subscriptions', () => {
+    it('upserts the current user telegram binding', async () => {
+      telegramSubscriptionRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(makeTelegramSubscription({ userId: 'user-1' }));
+
+      const result = await service.registerTelegramSubscription('user-1', {
+        chatId: '987654321',
+        username: 'field_user',
+        displayName: 'Field User',
+      });
+
+      expect(telegramSubscriptionRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          chatId: '987654321',
+          username: 'field_user',
+          displayName: 'Field User',
+          status: TelegramSubscriptionStatus.ACTIVE,
+        }),
+      );
+      expect(result.chatId).toBe('987654321');
+    });
+
+    it('marks the current user telegram binding as revoked on delete', async () => {
+      telegramSubscriptionRepo.findOne.mockResolvedValue(makeTelegramSubscription());
+
+      await service.removeTelegramSubscription('user-1');
+
+      expect(telegramSubscriptionRepo.update).toHaveBeenCalledWith(
+        'tg-1',
+        expect.objectContaining({ status: TelegramSubscriptionStatus.REVOKED }),
+      );
+    });
+  });
+
+  // ── push subscriptions ────────────────────────────────────────────────────────
+
+  describe('push subscriptions', () => {
+    it('upserts an existing endpoint for the current user', async () => {
+      pushSubscriptionRepo.findOne.mockResolvedValue(makePushSubscription({ userId: 'user-2' }));
+
+      const result = await service.registerPushSubscription(
+        'user-1',
+        {
+          endpoint: 'https://push.example.test/subscription/1',
+          expirationTime: 1767225600000,
+          keys: { p256dh: 'new-p256dh', auth: 'new-auth' },
+        },
+        'Field PWA 1.0',
+      );
+
+      expect(pushSubscriptionRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          endpoint: 'https://push.example.test/subscription/1',
+          p256dhKey: 'new-p256dh',
+          authKey: 'new-auth',
+          status: PushSubscriptionStatus.ACTIVE,
+          failureCount: 0,
+          userAgent: 'Field PWA 1.0',
+        }),
+      );
+      expect(result.userId).toBe('user-1');
+    });
+
+    it('deletes a push subscription by userId and endpoint', async () => {
+      await service.removePushSubscription('user-1', 'https://push.example.test/subscription/1');
+
+      expect(pushSubscriptionRepo.delete).toHaveBeenCalledWith({
+        userId: 'user-1',
+        endpoint: 'https://push.example.test/subscription/1',
+      });
     });
   });
 
@@ -506,7 +769,7 @@ describe('NotificationService', () => {
   // ── escalateUnreadCritical ─────────────────────────────────────────────────────
 
   describe('escalateUnreadCritical', () => {
-    it('re-dispatches SMS for old CRITICAL unread notifications', async () => {
+    it('re-dispatches Telegram for old CRITICAL unread notifications before SMS fallback', async () => {
       const oldCritical = makeNotification({
         priority: NotificationPriority.CRITICAL,
         isRead: false,
@@ -514,10 +777,12 @@ describe('NotificationService', () => {
         createdAt: new Date(Date.now() - 31 * 60_000),  // 31 minutes ago
       });
       notifRepo.find.mockResolvedValue([oldCritical]);
+      telegramSubscriptionRepo.findOne.mockResolvedValue(makeTelegramSubscription());
 
       await service.escalateUnreadCritical();
 
-      expect(smsProvider.send).toHaveBeenCalledTimes(1);
+      expect(telegramProvider.send).toHaveBeenCalledTimes(1);
+      expect(smsProvider.send).not.toHaveBeenCalled();
     });
 
     it('skips notifications created less than 30 minutes ago', async () => {

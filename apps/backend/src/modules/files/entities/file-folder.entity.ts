@@ -20,7 +20,7 @@ export class FileFolder {
   @Column({ length: 255 })
   name: string;
 
-  @Column({ name: 'parent_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'parent_id', nullable: true })
   parentId: string | null;
 
   @ManyToOne(() => FileFolder, (f) => f.children, { nullable: true, onDelete: 'RESTRICT' })

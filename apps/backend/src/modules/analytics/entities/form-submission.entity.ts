@@ -39,7 +39,7 @@ export class FormSubmission {
   incidentId: string | null;
 
   /** Fallback ref if incident not yet formally registered */
-  @Column({ name: 'incident_ref', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'incident_ref', length: 100, nullable: true })
   incidentRef: string | null;
 
   @Column({

@@ -40,18 +40,18 @@ export class ReportExecution {
   format: ReportFormat;
 
   /** MinIO object key where the rendered report is stored */
-  @Column({ name: 'artifact_key', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'artifact_key', length: 500, nullable: true })
   artifactKey: string | null;
 
   /** Signed download URL (pre-signed S3 URL, 1h TTL) */
-  @Column({ name: 'download_url', length: 1000, nullable: true })
+  @Column({ type: 'varchar',  name: 'download_url', length: 1000, nullable: true })
   downloadUrl: string | null;
 
   /** Inline JSON payload for small JSON reports (< 1 MB) */
   @Column({ name: 'inline_result', type: 'jsonb', nullable: true })
   inlineResult: object | null;
 
-  @Column({ name: 'row_count', nullable: true })
+  @Column({ type: 'int',  name: 'row_count', nullable: true })
   rowCount: number | null;
 
   @Column({ name: 'file_size_bytes', type: 'bigint', nullable: true })
@@ -63,7 +63,7 @@ export class ReportExecution {
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
   completedAt: Date | null;
 
-  @Column({ name: 'duration_ms', nullable: true })
+  @Column({ type: 'int',  name: 'duration_ms', nullable: true })
   durationMs: number | null;
 
   @Column({ name: 'error_message', type: 'text', nullable: true })

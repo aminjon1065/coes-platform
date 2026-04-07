@@ -9,21 +9,29 @@ const mockOsClient = {
   search: jest.fn(),
   index:  jest.fn(),
   delete: jest.fn(),
+  ping: jest.fn(),
+  indices: {
+    exists: jest.fn(),
+    create: jest.fn(),
+    refresh: jest.fn(),
+  },
 };
+
+const getClientMock = jest.fn(() => mockOsClient);
+const indexNameMock = jest.fn((n: SearchIndexName) => n);
 
 // ─── SearchIndexService mock ──────────────────────────────────────────────────
 
-const mockIndexService: jest.Mocked<Partial<SearchIndexService>> = {
+const mockIndexService = {
   indexDocument:  jest.fn(),
   indexTask:      jest.fn(),
   indexMessage:   jest.fn(),
   deleteDocument: jest.fn(),
   deleteTask:     jest.fn(),
   deleteMessage:  jest.fn(),
-  getClient:      jest.fn().mockReturnValue(mockOsClient),
-  // Returns the index name as-is so query assertions are simple
-  indexName:      jest.fn((n: SearchIndexName) => n),
-};
+  getClient:      getClientMock,
+  indexName:      indexNameMock,
+} as unknown as jest.Mocked<SearchIndexService>;
 
 // ─── Helper to build a minimal OpenSearch response ────────────────────────────
 
@@ -50,9 +58,8 @@ describe('SearchQueryService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    // Restore default mock behaviour for getClient after each test
-    mockIndexService.getClient!.mockReturnValue(mockOsClient);
-    mockIndexService.indexName!.mockImplementation((n: SearchIndexName) => n);
+    getClientMock.mockReturnValue(mockOsClient);
+    indexNameMock.mockImplementation((n: SearchIndexName) => n);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -490,6 +497,30 @@ describe('SearchIndexService (indexing operations)', () => {
       expect(indexService.indexName(SearchIndexName.DOCUMENTS)).toBe('coescd-documents');
       expect(indexService.indexName(SearchIndexName.TASKS)).toBe('coescd-tasks');
       expect(indexService.indexName(SearchIndexName.MESSAGES)).toBe('coescd-messages');
+    });
+  });
+
+  describe('getHealth', () => {
+    it('returns healthy when OpenSearch is reachable and indices exist', async () => {
+      mockOsClient.ping.mockResolvedValue({ statusCode: 200 });
+      mockOsClient.indices.exists.mockResolvedValue({ body: true });
+
+      const result = await indexService.getHealth();
+
+      expect(result.status).toBe('healthy');
+      expect(result.available).toBe(true);
+      expect(result.indices).toHaveLength(3);
+      expect(mockOsClient.indices.exists).toHaveBeenCalledTimes(3);
+    });
+
+    it('returns degraded when ping fails', async () => {
+      mockOsClient.ping.mockRejectedValue(new Error('connection refused'));
+
+      const result = await indexService.getHealth();
+
+      expect(result.status).toBe('degraded');
+      expect(result.available).toBe(false);
+      expect(result.indices.every((entry) => entry.exists === false)).toBe(true);
     });
   });
 });

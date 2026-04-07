@@ -57,7 +57,7 @@ export class Notification {
   payload: Record<string, unknown> | null;
 
   /** Deep-link path: e.g. /tasks/uuid, /documents/uuid */
-  @Column({ length: 500, name: 'action_url', nullable: true })
+  @Column({ type: 'varchar',  length: 500, name: 'action_url', nullable: true })
   actionUrl: string | null;
 
   @Column({ name: 'is_read', default: false })

@@ -59,7 +59,7 @@ describe('AuditService', () => {
     it('sets integrityHash before save (non-null, hex string)', async () => {
       await service.emit({ eventType: 'iam:login', actorId: 'user-1' });
 
-      const saved = auditRepo.create.mock.calls[0][0] as Partial<AuditEvent>;
+      const saved = auditRepo.save.mock.calls[0][0] as Partial<AuditEvent>;
       expect(saved.integrityHash).toMatch(/^[0-9a-f]{64}$/);
     });
 
@@ -108,7 +108,7 @@ describe('AuditService', () => {
       await service.emit({ eventType: 'ev-1', actorId: 'u1' });
       await service.emit({ eventType: 'ev-2', actorId: 'u1' });
 
-      const [call1, call2] = auditRepo.create.mock.calls;
+      const [call1, call2] = auditRepo.save.mock.calls;
       const hash1 = (call1[0] as Partial<AuditEvent>).integrityHash;
       const hash2 = (call2[0] as Partial<AuditEvent>).integrityHash;
       expect(hash1).not.toBe(hash2);

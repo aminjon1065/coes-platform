@@ -37,10 +37,10 @@ export class Position {
   @Column({ length: 255 })
   title: string;
 
-  @Column({ name: 'title_ru', length: 255, nullable: true })
+  @Column({ type: 'varchar',  name: 'title_ru', length: 255, nullable: true })
   titleRu: string | null;
 
-  @Column({ name: 'title_tg', length: 255, nullable: true })
+  @Column({ type: 'varchar',  name: 'title_tg', length: 255, nullable: true })
   titleTg: string | null;
 
   @Column({
@@ -58,7 +58,7 @@ export class Position {
   department: Department;
 
   // The position this one reports to (command chain)
-  @Column({ name: 'reports_to_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'reports_to_id', nullable: true })
   reportsToId: string | null;
 
   @ManyToOne(() => Position, { nullable: true, onDelete: 'SET NULL' })

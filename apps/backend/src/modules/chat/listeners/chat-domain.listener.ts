@@ -3,6 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { ChatService } from '../services/chat.service';
 import { PresenceService, PresenceStatus } from '../services/presence.service';
 import { ChannelType } from '../entities/channel.entity';
+import { MemberRole } from '../entities/channel-member.entity';
 
 /**
  * Subscribes to domain events from Tasks, EDMS, and Org modules
@@ -68,7 +69,13 @@ export class ChatDomainListener {
       });
       if (!channel) return;
 
-      await this.chatService['addMember'](channel.id, payload.positionId, null, 'member', 'task_derived');
+      await this.chatService['addMember'](
+        channel.id,
+        payload.positionId,
+        null,
+        MemberRole.MEMBER,
+        'task_derived',
+      );
     } catch (err) {
       this.logger.error(
         `Failed to add executor ${payload.positionId} to task channel for task ${payload.taskId}: ${(err as Error).message}`,
@@ -133,7 +140,13 @@ export class ChatDomainListener {
         where: { linkedEntityId: payload.documentId, linkedEntityType: 'document' },
       });
       if (!channel) return;
-      await this.chatService['addMember'](channel.id, payload.positionId, null, 'member', 'document_derived');
+      await this.chatService['addMember'](
+        channel.id,
+        payload.positionId,
+        null,
+        MemberRole.MEMBER,
+        'document_derived',
+      );
     } catch (err) {
       this.logger.error(
         `Failed to add workflow participant to document channel: ${(err as Error).message}`,

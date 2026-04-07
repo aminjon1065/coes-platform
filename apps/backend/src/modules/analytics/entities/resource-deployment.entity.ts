@@ -51,7 +51,7 @@ export class ResourceDeployment {
   @Column({ type: 'int', default: 1 })
   quantity: number;
 
-  @Column({ length: 50, nullable: true })
+  @Column({ type: 'varchar',  length: 50, nullable: true })
   unit: string | null;
 
   @Column({ name: 'dept_id', type: 'uuid', nullable: true })

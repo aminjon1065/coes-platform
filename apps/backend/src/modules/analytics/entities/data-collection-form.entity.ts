@@ -30,7 +30,7 @@ export class DataCollectionForm {
   description: string | null;
 
   /** NULL = generic form applicable to any incident type */
-  @Column({ name: 'incident_type', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'incident_type', length: 100, nullable: true })
   incidentType: string | null;
 
   @Column({ type: 'int', default: 1 })

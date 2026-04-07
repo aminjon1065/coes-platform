@@ -33,7 +33,7 @@ export class OrgChangeHistory {
   @Column({ name: 'entity_id' })
   entityId: string;
 
-  @Column({ name: 'changed_by_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'changed_by_id', nullable: true })
   changedById: string | null;
 
   @Column({ type: 'jsonb', nullable: true })

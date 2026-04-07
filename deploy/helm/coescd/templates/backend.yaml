@@ -29,6 +29,36 @@ data:
   MINIO_ENDPOINT: {{ include "coescd.fullname" . }}-minio-api.{{ .Values.global.namespace }}.svc.cluster.local
   MINIO_PORT: {{ .Values.minio.service.apiPort | quote }}
   MINIO_USE_SSL: "false"
+  CLAMAV_ENABLED: {{ .Values.backend.env.CLAMAV_ENABLED | quote }}
+  CLAMAV_HOST: {{ .Values.backend.env.CLAMAV_HOST | quote }}
+  CLAMAV_PORT: {{ .Values.backend.env.CLAMAV_PORT | quote }}
+  CLAMAV_TIMEOUT_MS: {{ .Values.backend.env.CLAMAV_TIMEOUT_MS | quote }}
+  CLAMAV_CHUNK_SIZE: {{ .Values.backend.env.CLAMAV_CHUNK_SIZE | quote }}
+  SMTP_ENABLED: {{ .Values.backend.env.SMTP_ENABLED | quote }}
+  SMTP_HOST: {{ .Values.backend.env.SMTP_HOST | quote }}
+  SMTP_PORT: {{ .Values.backend.env.SMTP_PORT | quote }}
+  SMTP_SECURE: {{ .Values.backend.env.SMTP_SECURE | quote }}
+  SMTP_FROM: {{ .Values.backend.env.SMTP_FROM | quote }}
+  SMTP_REPLY_TO: {{ .Values.backend.env.SMTP_REPLY_TO | quote }}
+  SMTP_TIMEOUT_MS: {{ .Values.backend.env.SMTP_TIMEOUT_MS | quote }}
+  SMTP_REQUIRE_TLS: {{ .Values.backend.env.SMTP_REQUIRE_TLS | quote }}
+  SMTP_IGNORE_TLS: {{ .Values.backend.env.SMTP_IGNORE_TLS | quote }}
+  SMS_ENABLED: {{ .Values.backend.env.SMS_ENABLED | quote }}
+  SMS_PROVIDER_URL: {{ .Values.backend.env.SMS_PROVIDER_URL | quote }}
+  SMS_PROVIDER_AUTH_HEADER: {{ .Values.backend.env.SMS_PROVIDER_AUTH_HEADER | quote }}
+  SMS_PROVIDER_TOKEN_PREFIX: {{ .Values.backend.env.SMS_PROVIDER_TOKEN_PREFIX | quote }}
+  SMS_SENDER: {{ .Values.backend.env.SMS_SENDER | quote }}
+  SMS_TIMEOUT_MS: {{ .Values.backend.env.SMS_TIMEOUT_MS | quote }}
+  SMS_DEFAULT_COUNTRY_CODE: {{ .Values.backend.env.SMS_DEFAULT_COUNTRY_CODE | quote }}
+  TELEGRAM_ENABLED: {{ .Values.backend.env.TELEGRAM_ENABLED | quote }}
+  TELEGRAM_API_BASE_URL: {{ .Values.backend.env.TELEGRAM_API_BASE_URL | quote }}
+  TELEGRAM_TIMEOUT_MS: {{ .Values.backend.env.TELEGRAM_TIMEOUT_MS | quote }}
+  TELEGRAM_DISABLE_LINK_PREVIEW: {{ .Values.backend.env.TELEGRAM_DISABLE_LINK_PREVIEW | quote }}
+  WEB_PUSH_ENABLED: {{ .Values.backend.env.WEB_PUSH_ENABLED | quote }}
+  WEB_PUSH_SUBJECT: {{ .Values.backend.env.WEB_PUSH_SUBJECT | quote }}
+  WEB_PUSH_VAPID_PUBLIC_KEY: {{ .Values.backend.env.WEB_PUSH_VAPID_PUBLIC_KEY | quote }}
+  WEB_PUSH_TTL_SECONDS: {{ .Values.backend.env.WEB_PUSH_TTL_SECONDS | quote }}
+  WEB_PUSH_URGENCY: {{ .Values.backend.env.WEB_PUSH_URGENCY | quote }}
   OPENSEARCH_HOST: {{ include "coescd.fullname" . }}-opensearch-client.{{ .Values.global.namespace }}.svc.cluster.local
   OPENSEARCH_PORT: {{ .Values.opensearch.service.port | quote }}
   TIMESCALEDB_HOST: {{ include "coescd.fullname" . }}-timescaledb.{{ .Values.global.namespace }}.svc.cluster.local

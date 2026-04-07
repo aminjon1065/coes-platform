@@ -33,7 +33,7 @@ export class Channel {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ length: 300, nullable: true })
+  @Column({ type: 'varchar',  length: 300, nullable: true })
   name: string | null;
 
   @Column({ type: 'text', nullable: true })
@@ -57,20 +57,20 @@ export class Channel {
   classification: number;
 
   /** Creator position (null for system-created channels) */
-  @Column({ name: 'created_by_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'created_by_position_id', nullable: true })
   createdByPositionId: string | null;
 
-  @Column({ name: 'created_by_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'created_by_id', nullable: true })
   createdById: string | null;
 
   // ─── Linked entity (task, document, department) ──────────────────────────────
 
   /** ID of the task / document / department this channel is linked to */
-  @Column({ name: 'linked_entity_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'linked_entity_id', nullable: true })
   linkedEntityId: string | null;
 
   /** 'task' | 'document' | 'department' */
-  @Column({ name: 'linked_entity_type', length: 50, nullable: true })
+  @Column({ type: 'varchar',  name: 'linked_entity_type', length: 50, nullable: true })
   linkedEntityType: string | null;
 
   // ─── Message sequencing ──────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ export class Channel {
   // ─── Retention policy ────────────────────────────────────────────────────────
 
   /** Days to retain messages (null = indefinite) */
-  @Column({ name: 'retention_days', nullable: true })
+  @Column({ type: 'int',  name: 'retention_days', nullable: true })
   retentionDays: number | null;
 
   /** Whether this channel is under a legal hold (deletion blocked) */

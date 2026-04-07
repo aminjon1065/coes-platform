@@ -30,7 +30,7 @@ export class TaskComment {
   @Column({ name: 'author_id' })
   authorId: string;
 
-  @Column({ name: 'author_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'author_position_id', nullable: true })
   authorPositionId: string | null;
 
   @Column({ type: 'text' })

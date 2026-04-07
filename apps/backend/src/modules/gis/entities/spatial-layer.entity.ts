@@ -106,7 +106,7 @@ export class SpatialLayer {
   @Column({ name: 'last_validated_at', type: 'timestamptz', nullable: true })
   lastValidatedAt: Date | null;
 
-  @Column({ name: 'source_name', length: 300, nullable: true })
+  @Column({ type: 'varchar',  name: 'source_name', length: 300, nullable: true })
   sourceName: string | null;
 
   @Column({ name: 'source_url', type: 'text', nullable: true })

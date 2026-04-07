@@ -46,7 +46,7 @@ export class GeneratedReport {
   periodTo: Date | null;
 
   /** MinIO object key — set when report is ready */
-  @Column({ name: 'storage_key', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'storage_key', length: 500, nullable: true })
   storageKey: string | null;
 
   @Column({ name: 'row_count', type: 'int', nullable: true })

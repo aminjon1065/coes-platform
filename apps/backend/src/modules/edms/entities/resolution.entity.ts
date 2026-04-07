@@ -31,7 +31,7 @@ export class Resolution {
   documentId: string;
 
   /** The step in the workflow instance where the resolution was issued */
-  @Column({ name: 'workflow_step_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'workflow_step_id', nullable: true })
   workflowStepId: string | null;
 
   /** Position issuing the resolution */

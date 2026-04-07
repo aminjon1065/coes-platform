@@ -82,13 +82,13 @@ export class SamlService {
     return new SAML({
       entryPoint: config.entryPoint,
       issuer: config.issuer,
-      cert: config.cert,
+      idpCert: config.cert,
       callbackUrl: config.callbackUrl,
       identifierFormat: config.identifierFormat ?? 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
       privateKey: config.privateKey,
       signatureAlgorithm: (config.signatureAlgorithm ?? 'sha256') as any,
       digestAlgorithm: (config.digestAlgorithm ?? 'sha256') as any,
-      validateInResponseTo: 'never',
+      validateInResponseTo: 'never' as any,
       disableRequestedAuthnContext: true,
       wantAssertionsSigned: true,
     });

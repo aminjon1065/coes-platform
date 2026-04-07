@@ -42,7 +42,7 @@ export class RiskPrediction {
   @Column({ name: 'administrative_code', length: 20 })
   administrativeCode: string;
 
-  @Column({ name: 'administrative_name', length: 200, nullable: true })
+  @Column({ type: 'varchar',  name: 'administrative_name', length: 200, nullable: true })
   administrativeName: string | null;
 
   /** Risk score: 0.0 (negligible) → 1.0 (extreme) */

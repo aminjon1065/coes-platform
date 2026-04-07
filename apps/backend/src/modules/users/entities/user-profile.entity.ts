@@ -36,21 +36,21 @@ export class UserProfile {
   @Column({ name: 'last_name', length: 100 })
   lastName: string;
 
-  @Column({ name: 'middle_name', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'middle_name', length: 100, nullable: true })
   middleName: string | null;
 
   /** Display name shown in the UI — derived from name fields if not set */
-  @Column({ name: 'display_name', length: 255, nullable: true })
+  @Column({ type: 'varchar',  name: 'display_name', length: 255, nullable: true })
   displayName: string | null;
 
   @Index({ unique: true })
   @Column({ length: 255 })
   email: string;
 
-  @Column({ name: 'phone', length: 30, nullable: true })
+  @Column({ type: 'varchar',  name: 'phone', length: 30, nullable: true })
   phone: string | null;
 
-  @Column({ name: 'avatar_url', length: 512, nullable: true })
+  @Column({ type: 'varchar',  name: 'avatar_url', length: 512, nullable: true })
   avatarUrl: string | null;
 
   @Column({

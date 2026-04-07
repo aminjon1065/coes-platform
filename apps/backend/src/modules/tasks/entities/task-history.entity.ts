@@ -36,7 +36,7 @@ export class TaskHistory {
   actorId: string;
 
   /** Position from which the actor acted */
-  @Column({ name: 'actor_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'actor_position_id', nullable: true })
   actorPositionId: string | null;
 
   /** Previous state value (JSON-serialized) */

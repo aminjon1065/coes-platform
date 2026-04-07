@@ -22,16 +22,16 @@ export class Department {
   @Column({ length: 255 })
   name: string;
 
-  @Column({ name: 'name_ru', length: 255, nullable: true })
+  @Column({ type: 'varchar',  name: 'name_ru', length: 255, nullable: true })
   nameRu: string | null;
 
-  @Column({ name: 'name_tg', length: 255, nullable: true })
+  @Column({ type: 'varchar',  name: 'name_tg', length: 255, nullable: true })
   nameTg: string | null;
 
-  @Column({ name: 'short_code', length: 20, nullable: true })
+  @Column({ type: 'varchar',  name: 'short_code', length: 20, nullable: true })
   shortCode: string | null;
 
-  @Column({ name: 'parent_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'parent_id', nullable: true })
   parentId: string | null;
 
   @TreeParent()

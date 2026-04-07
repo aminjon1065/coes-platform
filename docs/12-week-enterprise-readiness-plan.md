@@ -33,6 +33,23 @@ This plan does **not** add major new business scope. Its purpose is to make the 
 
 ---
 
+## Execution Update — 2026-04-07
+
+- ✅ Root workspace/tooling baseline normalized around root-level `npm` workspaces and `package-lock.json`
+- ✅ `apps/backend` build restored and backend Jest suite is green (`26/26` suites, `525/525` tests)
+- ✅ `apps/gateway` test tooling restored and suite is green
+- ✅ `apps/map-client` and `apps/field-pwa` TypeScript build blockers removed
+- ✅ `apps/media` build/tooling blockers removed
+- ✅ `plan.md` truth alignment, `docs/truth-matrix.md`, and baseline smoke CI gate are in place
+- ✅ Search document/task indexing is now repository-backed and covered by backend smoke tests
+- ✅ ClamAV-backed file scanning, quarantine, and fail-closed `scan_failed` handling are now wired and covered by backend + smoke tests
+- ✅ SMTP-backed email delivery, optional SMS gateway delivery, and position-to-credential recipient resolution are now wired and covered by backend + smoke tests
+- ✅ Mobile push is now wired end-to-end in repo: subscription persistence/API, VAPID-backed web-push delivery, and Field PWA `push`/`notificationclick` handling
+- ✅ Search recovery/backfill tooling and OpenSearch health visibility are now wired and smoke-covered
+- 🔄 Next focus: expand smoke coverage beyond the baseline layer, then add file governance and a Telegram adapter if external escalation is still needed
+
+---
+
 ## Week 12 Exit Criteria
 
 The 12-week plan is considered complete only if all of the following are true:
@@ -76,27 +93,27 @@ The 12-week plan is considered complete only if all of the following are true:
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 1.1.1 | Freeze net-new feature work for stabilization window | ⏳ | No new scope merged until build/test baseline is restored |
-| 1.1.2 | Standardize package manager strategy (npm-only or pnpm+turbo) | ⏳ | Current repo mixes `npm`, missing `package-lock.json`, and `bun.lock` |
-| 1.1.3 | Fix root workspace definitions and scripts | ⏳ | Root `package.json` must include all maintained apps and remove invalid workspace entries |
-| 1.1.4 | Normalize lockfiles and installation flow for local + CI | ⏳ | One installation path only; no hidden per-app drift |
-| 1.1.5 | Create single repo bootstrap command | ⏳ | Fresh checkout -> install -> build -> test -> smoke |
+| 1.1.2 | Standardize package manager strategy (npm-only or pnpm+turbo) | ✅ | Baseline aligned to root-level `npm` workspaces with `package-lock.json` |
+| 1.1.3 | Fix root workspace definitions and scripts | ✅ | Root workspaces/scripts now cover maintained apps and remove invalid entries |
+| 1.1.4 | Normalize lockfiles and installation flow for local + CI | ✅ | App-local `bun.lock` files removed; CI/install path aligned around root install |
+| 1.1.5 | Create single repo bootstrap command | ✅ | Root `build:all`, `check:all`, and `smoke:baseline` provide a single verification entry path |
 
 ### 1.2 Build Recovery
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1.2.1 | Restore green backend build | ⏳ | Fix current compile errors in audit and analytics modules |
-| 1.2.2 | Restore green gateway test tooling | ⏳ | `jest` script exists; tooling is incomplete |
-| 1.2.3 | Restore green media build | ⏳ | Fix mediasoup codec typing and compatibility |
-| 1.2.4 | Restore green map-client build | ⏳ | Remove TS errors and unused imports/types |
-| 1.2.5 | Restore green field-pwa build | ⏳ | Fix `import.meta`, PWA typing, and React import issues |
-| 1.2.6 | Add repository-wide `build:all` and `check:all` scripts | ⏳ | Must become the default pre-merge verification path |
+| 1.2.1 | Restore green backend build | ✅ | Backend compile path restored |
+| 1.2.2 | Restore green gateway test tooling | ✅ | Jest tooling added and gateway tests are green |
+| 1.2.3 | Restore green media build | ✅ | Media build/tooling blockers removed |
+| 1.2.4 | Restore green map-client build | ✅ | TS/import blockers removed |
+| 1.2.5 | Restore green field-pwa build | ✅ | Vite/PWA/React TS blockers removed |
+| 1.2.6 | Add repository-wide `build:all` and `check:all` scripts | ✅ | Root-level verification scripts added |
 
 ### 1.3 Plan / Status Reconciliation
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1.3.1 | Audit every `✅` item in `plan.md` against code + build + tests | ⏳ | Create a truth matrix: confirmed / partial / unverified |
-| 1.3.2 | Downgrade overstated statuses in `plan.md` | ⏳ | Especially stub integrations and non-building apps |
-| 1.3.3 | Add evidence-based completion rule to `plan.md` | ⏳ | A task cannot be `✅` without code + verification artifact |
+| 1.3.1 | Audit every `✅` item in `plan.md` against code + build + tests | ✅ | Truth reconciliation completed and captured in `docs/truth-matrix.md` |
+| 1.3.2 | Downgrade overstated statuses in `plan.md` | ✅ | Operational stubs and partial domains were downgraded, then re-promoted only after evidence turned green |
+| 1.3.3 | Add evidence-based completion rule to `plan.md` | ✅ | Completion rule is now mirrored directly into `plan.md` |
 | 1.3.4 | Define ownership per subsystem | ⏳ | Backend, realtime, media, web, GIS/PWA, infra, QA |
 
 ### Exit Criteria
@@ -150,26 +167,26 @@ The 12-week plan is considered complete only if all of the following are true:
 ### 3.1 Search Infrastructure Completion
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.1.1 | Complete document indexing from EDMS events | ⏳ | Replace listener stub with repository-backed indexing |
-| 3.1.2 | Complete task indexing from task events | ⏳ | Index create/update/status changes with full search document |
-| 3.1.3 | Add reindex command for backfill/recovery | ⏳ | Required after mapping changes or data repair |
-| 3.1.4 | Add OpenSearch health and index drift checks | ⏳ | Detect stale or partial indexing early |
+| 3.1.1 | Complete document indexing from EDMS events | ✅ | EDMS document update flow now emits reindex events consumed by repository-backed search listeners |
+| 3.1.2 | Complete task indexing from task events | ✅ | Task update flow now emits reindex events consumed by repository-backed search listeners |
+| 3.1.3 | Add reindex command for backfill/recovery | ✅ | Backend now exposes repository-backed search reindex/backfill tooling for documents, tasks, and messages |
+| 3.1.4 | Add OpenSearch health and index drift checks | ✅ | Backend now exposes OpenSearch connectivity/index-readiness health and can recover missing indices before reindex |
 
 ### 3.2 File Security Completion
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.2.1 | Replace ClamAV stub with real malware scanning integration | ⏳ | Streaming scan path from MinIO object source |
-| 3.2.2 | Add quarantine / infected-file workflow | ⏳ | Prevent presigned URL generation for suspect files |
+| 3.2.1 | Replace ClamAV stub with real malware scanning integration | ✅ | Backend now streams stored MinIO objects into ClamAV via TCP `INSTREAM` and records `clean` / `infected` / `scan_failed` outcomes |
+| 3.2.2 | Add quarantine / infected-file workflow | ✅ | Infected files are soft-deleted, all known object-storage copies are removed, and download remains blocked unless scan status is `clean` |
 | 3.2.3 | Add file retention / legal hold policy enforcement | ⏳ | Enterprise governance requirement |
 | 3.2.4 | Add audit evidence for all file access paths | ⏳ | Read, download, share, quarantine, delete |
 
 ### 3.3 Notification Productionization
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.3.1 | Replace email provider stub with SMTP/Nodemailer adapter | ⏳ | Environment-driven transport with retries |
-| 3.3.2 | Replace SMS provider stub with real gateway adapter | ⏳ | Priority-aware delivery and provider error mapping |
-| 3.3.3 | Implement verified email/phone resolution path | ⏳ | Pull from IAM/users instead of returning null |
-| 3.3.4 | Implement push subscription backend endpoints end-to-end | ⏳ | Field PWA flow must be fully wired |
+| 3.3.1 | Replace email provider stub with SMTP/Nodemailer adapter | ✅ | SMTP transport is env-driven, tracks provider message IDs, and preserves delivery status transitions |
+| 3.3.2 | Replace SMS provider stub with real gateway adapter | ✅ | SMS gateway is env-driven, supports auth headers, and maps non-2xx provider responses into delivery failures; production defaults now keep the adapter disabled to avoid unnecessary cost |
+| 3.3.3 | Implement verified email/phone resolution path | ✅ | Notification delivery resolves active position occupants to IAM credential IDs and reads contact data from IAM/users tables instead of returning `null` |
+| 3.3.4 | Implement push subscription backend endpoints end-to-end | ✅ | Backend persists push subscriptions, dispatches VAPID/web-push notifications, and the Field PWA now uses a custom service worker for `push` and `notificationclick` |
 
 ### 3.4 GIS / Analytics Completion
 | # | Task | Status | Notes |

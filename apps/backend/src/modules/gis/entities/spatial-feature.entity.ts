@@ -24,7 +24,7 @@ export class SpatialFeature {
   @JoinColumn({ name: 'layer_id' })
   layer: Relation<SpatialLayer>;
 
-  @Column({ name: 'external_id', length: 200, nullable: true })
+  @Column({ type: 'varchar',  name: 'external_id', length: 200, nullable: true })
   externalId: string | null;
 
   @Column({ type: 'jsonb', default: '{}' })
@@ -54,7 +54,7 @@ export class SpatialFeature {
   @Column({ name: 'valid_to', type: 'timestamptz', nullable: true })
   validTo: Date | null;
 
-  @Column({ name: 'source_ref', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'source_ref', length: 500, nullable: true })
   sourceRef: string | null;
 
   @Column({ name: 'created_by_id', type: 'uuid' })

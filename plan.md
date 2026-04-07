@@ -3,7 +3,7 @@
 > **Platform:** CoESCD Unified Digital Platform (Tajikistan Emergency Management)
 > **Type:** Government-grade, sovereign on-premises enterprise system
 > **Total Timeline:** 24–30 months across 6 phases
-> **Last Updated:** 2026-04-06 (Phase 6 complete: 6.1 SSO/LDAP, 6.2 SIEM export, 6.3 Delegated admin, 6.4 Mobile PWA)
+> **Last Updated:** 2026-04-07 (repository stabilization baseline restored; roadmap statuses reconciled against current build/test evidence)
 
 ---
 
@@ -16,6 +16,36 @@
 | ⏳ | Planned / Not Started |
 | 🚫 | Blocked |
 | 🔁 | Recurring / Ongoing |
+
+---
+
+## Evidence-Based Completion Rule
+
+A task should be marked `✅` only when all three are true:
+
+1. The relevant code exists in the repository.
+2. The affected scope has a current verification artifact.
+   Examples: green build, passing test suite, or explicit smoke flow.
+3. There is no known stub, placeholder, or missing backend path on the critical operational path for that task.
+
+If implementation exists but delivery is incomplete because of stubs, TODOs, or missing end-to-end wiring, use `🔄`.
+
+---
+
+## Current Verification Snapshot — 2026-04-07
+
+This snapshot reflects the current engineering baseline after repository stabilization:
+
+| Phase | Roadmap Status | Current Verification Reality |
+|-------|----------------|------------------------------|
+| Phase 0-1 | Partial | Repo/CI/build baseline restored; infrastructure artefacts exist, but operational infra validation remains outside current repo-only verification |
+| Phase 1 | Strongest verified | Backend build is green and backend core suites are green |
+| Phase 2 | Roadmap-complete, repo-verified | Core workflow, search, file security, and notification delivery paths are wired and covered by tests/smoke; live SMTP handshake remains outside the current repo-only verification cycle, and the optional SMS adapter is not enabled in production defaults |
+| Phase 3 | Roadmap-complete, repo-verified | Media now builds, document/task search indexing is wired, and repository-backed OpenSearch health/reindex recovery paths are covered by tests + smoke; live cluster/runtime validation remains outside current repo-only cycle |
+| Phase 4 | Partial | GIS/analytics code is strong, but incident enrichment and async file-report pipeline remain partial |
+| Phase 5 | Code-present, not fully re-verified end-to-end | ML/reporting artefacts exist; current stabilization cycle did not re-verify the full operational path |
+| Phase 6 | Roadmap-complete, repo-verified | SSO/SIEM/delegated admin remain verified, and the Field PWA mobile push path is now wired end-to-end in repo (subscription API, web-push delivery, custom service worker); live browser push-service handshake remains outside repo-only verification |
+| Phase 7 | Verified build baseline | Main web app exists and builds, but full UAT/operational readiness is still separate from code completion |
 
 ---
 
@@ -39,7 +69,7 @@
 | 0.2.3 | Install Docker and Docker Compose on all nodes | ✅ | docker-compose.yml with profiles |
 | 0.2.4 | Configure Nginx as API Gateway with TLS 1.3 | ✅ | TLS 1.3, rate limiting, WS proxy |
 | 0.2.5 | Set up internal DNS and service discovery | ⏳ | |
-| 0.2.6 | Configure CI/CD pipeline (GitHub Actions or GitLab CI) | ✅ | `.github/workflows/ci.yml` (lint/test/build/push) + `cd.yml` (helm upgrade --install, smoke test, auto-rollback) |
+| 0.2.6 | Configure CI/CD pipeline (GitHub Actions or GitLab CI) | ✅ | `.github/workflows/ci.yml` (lint/test/build + baseline smoke flows + push gating) + `cd.yml` (helm upgrade --install, smoke test, auto-rollback) |
 
 ### 0.3 Observability Stack
 | # | Task | Status | Notes |
@@ -147,7 +177,7 @@
 | 1.8.2 | Implement connection authentication (JWT validation) | ✅ | Bearer token + query param |
 | 1.8.3 | Implement basic event fan-out to connected clients | ✅ | Room model + sendToUser() |
 | 1.8.4 | Integrate gateway with RabbitMQ event bus | ✅ | AMQP topic exchange consumer |
-| 1.8.5 | Write WebSocket integration tests | ✅ | `apps/gateway/src/gateway.spec.ts` — 17 tests: authentication (no token 4001, invalid token 4003, query-string token), ping/pong, join_room, leave_room, malformed JSON, broadcastToRoom (room filter, closed socket), sendToUser (multi-connection, no-op), disconnect (last conn sets offline, not-last does not) |
+| 1.8.5 | Write WebSocket integration tests | ✅ | `apps/gateway/src/gateway.spec.ts` — 15 tests: authentication (no token 4001, invalid token 4003, query-string token), ping/pong, join_room, leave_room, malformed JSON, broadcastToRoom (room filter, closed socket), sendToUser (multi-connection, no-op), disconnect (last conn sets offline, not-last does not) |
 
 ---
 
@@ -210,13 +240,13 @@
 |---|------|--------|-------|
 | 2.6.1 | Design notification schema and delivery channels | ✅ | Notification, NotificationPreference, NotificationDelivery entities (notifications schema) |
 | 2.6.2 | Implement in-app notification delivery | ✅ | NotificationService.dispatch() + NotificationDomainListener subscribes to notification.requested; listForUser() inbox API |
-| 2.6.3 | Implement email notification delivery | ✅ | EmailNotificationProvider adapter pattern (stub, production-swap ready); throttle-aware dispatchEmail() |
-| 2.6.4 | Implement SMS notification delivery | ✅ | SmsNotificationProvider adapter stub; min-priority gating (smsMinPriority) |
+| 2.6.3 | Implement email notification delivery | ✅ | Email provider now uses an environment-driven SMTP/Nodemailer transport, resolves recipients from IAM/users data, and records provider outcomes in delivery tracking |
+| 2.6.4 | Implement SMS notification delivery | ✅ | SMS provider now uses an environment-driven HTTP gateway adapter, resolves phones from IAM/users data, normalizes numbers, and records provider outcomes in delivery tracking; production defaults can keep this adapter disabled to avoid operational cost |
 | 2.6.5 | Implement user notification preferences | ✅ | NotificationPreference per userId × type; specific overrides default; CRUD via PATCH /notifications/preferences |
 | 2.6.6 | Implement notification batching and throttling | ✅ | emailThrottleMinutes per preference; per-user per-type delivered-within window check; CRITICAL bypasses throttle |
 | 2.6.7 | Implement delivery confirmation tracking | ✅ | NotificationDelivery per channel with status (pending/sent/failed/skipped), attempts, sentAt, providerMessageId |
-| 2.6.8 | Implement alert escalation based on priority | ✅ | escalateUnreadCritical() re-dispatches SMS for CRITICAL unread >30min; CRITICAL bypasses email throttle |
-| 2.6.9 | Write notification service tests | ✅ | notification.service.spec.ts — 27 tests (dispatch, throttle, email/SMS providers, preferences, escalation) |
+| 2.6.8 | Implement alert escalation based on priority | ✅ | CRITICAL unread escalation now re-dispatches through the real SMS delivery path when that channel is enabled, and notifications resolve active position occupants to IAM credential IDs when the emitting domain omits `recipientUserId` |
+| 2.6.9 | Write notification service tests | ✅ | `notification.service.spec.ts` + `push-notification.provider.spec.ts` cover dispatch, throttle, email/SMS/push providers, preferences, escalation, and expired subscription handling |
 
 ### 2.7 File Management
 | # | Task | Status | Notes |
@@ -227,7 +257,7 @@
 | 2.7.4 | Implement folder hierarchy and organization | ✅ | Closure table (folder_closure); createFolder() + listFolderContents() |
 | 2.7.5 | Implement file permissions and sharing | ✅ | FilePermission entity; grantPermission() / revokePermission(); ALLOW/DENY per action |
 | 2.7.6 | Implement file linking (to documents, tasks, messages) | ✅ | FileLink entity; linkFile() / unlinkFile() / getLinksForEntity() |
-| 2.7.7 | Implement virus/malware scanning integration | ✅ | FileScanListener stub on file.upload_complete; TODO: swap ClamAV node client |
+| 2.7.7 | Implement virus/malware scanning integration | ✅ | File uploads are now scanned via a ClamAV TCP `INSTREAM` client against the stored MinIO object; infected files are quarantined and deleted from object storage, and scan failures are fail-closed as `scan_failed` |
 | 2.7.8 | Implement classification enforcement on files | ✅ | clearance >= classification check in assertFileAccess(); folder classification guard |
 | 2.7.9 | Implement pre-signed URL generation for secure access | ✅ | getPresignedDownloadUrl() — requires scan_status=clean; audit-logged every call |
 | 2.7.10 | Write file management tests | ✅ | `files.service.spec.ts` — 28 tests: uploadFile (happy path, MAX_FILE_SIZE exceeded), uploadNewVersion, getVersions, listFiles, getFile, getPresignedDownloadUrl (clean vs infected guard), createFolder (depth limit), listFolderContents, deleteFolder, grantPermission, revokePermission, listPermissions, linkFile, getLinksForEntity, unlinkFile, processScanResult, deleteFile; classification guards throughout |
@@ -263,10 +293,10 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 3.3.1 | Deploy OpenSearch cluster | ✅ | docker-compose `search` profile; opensearch:2.13.0 + dashboards; opensearch.config.ts |
-| 3.3.2 | Implement document search indexing | ✅ | SearchIndexService: ensureIndices() on boot; indexDocument/indexTask/indexMessage; domain event listeners |
+| 3.3.2 | Implement document search indexing | ✅ | Document/task change listeners now load current entities from TypeORM, reindex on create/update, delete stale search documents when the source entity is missing, and are covered by backend smoke tests |
 | 3.3.3 | Implement full-text search APIs (documents, messages) | ✅ | GET /search?q= (unified); GET /search/channels/:id/messages?q= (channel history) |
 | 3.3.4 | Implement classification-filtered search results | ✅ | Filter `classification <= userClearance` baked into every query — cannot be bypassed |
-| 3.3.5 | Write search tests | ✅ | `search.service.spec.ts` — 20 tests: SearchQueryService.search (multi-index, classification filter, empty results, OpenSearch error graceful fallback), searchMessages (channel-scoped, classification filter); SearchIndexService.indexDocument/indexTask/indexMessage (client.index called), deleteDocument/deleteTask/deleteMessage (client.delete called) |
+| 3.3.5 | Write search tests | ✅ | `search.service.spec.ts` + `search-maintenance.service.spec.ts` cover query filtering, graceful OpenSearch failure handling, health checks, and repository-backed reindex/backfill recovery paths |
 
 ---
 
@@ -284,7 +314,7 @@
 | 4.1.6 | Implement vector tile serving (Martin) | ✅ | Martin v0.14.0 in docker-compose `gis` profile; connects to PostGIS |
 | 4.1.7 | Implement raster tile serving (GeoServer/MapServer) | ✅ | `kartoza/geoserver:2.24.0` under `gis` docker profile; port 8088; PostGIS store connected; GeoWebCache bundled; Nginx proxy at `/geoserver/` with admin UI blocked; volumes: geoserver-data + geoserver-rasters |
 | 4.1.8 | Implement layer management and symbology APIs | ✅ | CRUD + list/filter + publish/deprecate; symbology JSONB field |
-| 4.1.9 | Implement incident location tracking with spatial enrichment | ✅ | reportIncident() with auto admin-code resolution; async enrichment stub |
+| 4.1.9 | Implement incident location tracking with spatial enrichment | 🔄 | reportIncident() resolves admin code and persists incidents, but enrichment remains a no-op placeholder |
 | 4.1.10 | Write GIS domain tests | ✅ | `gis.service.spec.ts` — 30 unit tests; covers createLayer, listLayers (clearance + keyword filter), getLayer (NotFound + Forbidden), publishLayer (conflict), createFeature (invalid geom + success), createHazardZone, reportIncident (with/without adminCode), queryIncidents, resolveIncident (conflict), ingestBoundary (duplicate + missing parent), spatialEnrichPoint, hazardZone radius filter, classification access guard |
 
 ### 4.2 Spatial Data Pipelines
@@ -305,7 +335,7 @@
 | 4.3.5 | Implement response time metrics | ✅ | getResponseTimeMetrics(): mean/stddev/p25/p50/p75/p90/p95/max; GENERATED DB columns |
 | 4.3.6 | Implement resource utilization tracking | ✅ | ResourceDeployment entity; deployResource/withdrawResource; getResourceUtilisation() |
 | 4.3.7 | Implement seasonal pattern analysis | ✅ | getSeasonalPattern(): month-of-year aggregation across multiple years |
-| 4.3.8 | Implement analytics dashboard and report generation | ✅ | GeneratedReport entity; requestReport() inline JSON + async file pipeline stub; daily/weekly/monthly cron snapshots |
+| 4.3.8 | Implement analytics dashboard and report generation | 🔄 | Inline JSON report path exists, but async file-generation pipeline is still stubbed |
 | 4.3.9 | Write analytics tests | ✅ | `analytics.service.spec.ts` — 34 unit tests; covers registerIncident (conflict + default severity), getIncident (NotFound + Forbidden), updateIncident (all 4 status transitions + no-overwrite + event/no-event), recordResponse (auto-transition), deployResource, withdrawResource (conflict + NotFound), createForm (no fields), publishForm (conflict), submitForm (missing required + clearance + success), reviewSubmission, getIncidentStats (clearance + type + date filters), getResponseTimeMetrics, getResourceUtilisation, getTrendAnalysis (bucket mapping), getSeasonalPattern, requestReport (unknown type → failed), getReport, classification guard |
 
 ### 4.4 Frontend — GIS Map Client
@@ -391,6 +421,13 @@
 
 ## Cross-Domain Integration Flows
 
+**Automated baseline today:** `npm run smoke:baseline`
+This currently exercises a representative smoke slice for:
+- EDMS/Task/Chat listener flow
+- File handling/classification flow
+- GIS incident flow
+- Realtime gateway authentication/fan-out path
+
 ### Flow A: Document Resolution → Task
 ```
 EDMS (Resolution issued)
@@ -452,10 +489,10 @@ Task created
 ### 6.4 Mobile Field Operator PWA
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 6.4.1 | React PWA scaffold with offline service worker | ✅ | `apps/field-pwa/` — Vite + React 18 + TypeScript + Tailwind + `vite-plugin-pwa` (Workbox GenerateSW); manifest with standalone display, icons; runtime caching for tasks (StaleWhileRevalidate), tiles (CacheFirst), auth (NetworkOnly) |
+| 6.4.1 | React PWA scaffold with offline service worker | ✅ | `apps/field-pwa/` — Vite + React 18 + TypeScript + Tailwind + `vite-plugin-pwa` (Workbox InjectManifest); manifest with standalone display, icons; runtime caching for tasks (StaleWhileRevalidate), tiles (CacheFirst), auth (NetworkOnly) |
 | 6.4.2 | Task viewer + status update (field operator) | ✅ | `TaskListPage.tsx` (list with status filter, offline fallback to IndexedDB cache); `TaskDetailPage.tsx` (status transitions open→in_progress→completed, offline-queued feedback) |
 | 6.4.3 | Incident reporting from mobile (GeoJSON capture) | ✅ | `ReportIncidentPage.tsx` — Geolocation API GPS capture, incident type/severity selector, offline queue with success confirmation |
-| 6.4.4 | Push notifications (Web Push + service worker) | ✅ | `push-notifications.ts` — `requestPushPermission()`, `subscribeToPush()` sends subscription to `POST /notifications/push-subscription`; VAPID key from `VITE_VAPID_PUBLIC_KEY` env |
+| 6.4.4 | Push notifications (Web Push + service worker) | ✅ | Backend now persists `notifications.push_subscriptions`, exposes `GET/POST/DELETE /notifications/push-subscription`, dispatches web-push notifications through VAPID/web-push, and the Field PWA uses a custom service worker with `push` + `notificationclick` handlers |
 | 6.4.5 | Offline queue sync (IndexedDB → backend on reconnect) | ✅ | `offline-db.ts` (IndexedDB via `idb`: pending_ops + cached_tasks stores); `sync.ts` — `syncPendingOperations()` drains queue on reconnect (max 5 retries); `OfflineBadge` component shows pending count |
 
 ---
@@ -503,17 +540,19 @@ Task created
 
 ## Progress Summary
 
+Status counts below reflect documented roadmap task states after the current reconciliation pass. They are not a substitute for the operational verification snapshot above.
+
 | Phase | Tasks Total | Done | In Progress | Blocked | Completion |
 |-------|-------------|------|-------------|---------|------------|
 | Phase 0-1: Governance & Infra | 19 | 14 | 0 | 0 | 74% |
 | Phase 1: Core Foundation | 53 | 53 | 0 | 0 | 100% |
 | Phase 2: Workflow & Communication | 50 | 50 | 0 | 0 | 100% |
 | Phase 3: Conferencing & K8s | 19 | 19 | 0 | 0 | 100% |
-| Phase 4: Spatial & Analytics | 27 | 27 | 0 | 0 | 100% |
+| Phase 4: Spatial & Analytics | 27 | 25 | 2 | 0 | 93% |
 | Phase 5: AI/ML Forecasting | 16 | 16 | 0 | 0 | 100% |
 | Phase 6: Hardening & Scale-up | 17 | 17 | 0 | 0 | 100% |
 | Phase 7: Main Web Application | 15 | 15 | 0 | 0 | 100% |
-| **Total** | **216** | **211** | **0** | **0** | **98%** |
+| **Total** | **216** | **209** | **2** | **0** | **97%** |
 
 ---
 

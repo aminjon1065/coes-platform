@@ -30,7 +30,7 @@ export class NotificationPreference {
    * Null = default preference (applies to all notification types unless overridden).
    * Non-null = override for a specific notification type.
    */
-  @Column({ name: 'notification_type', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'notification_type', length: 100, nullable: true })
   notificationType: string | null;
 
   /** Deliver as in-app notification (persisted in DB, shown in inbox) */
@@ -44,6 +44,14 @@ export class NotificationPreference {
   /** Send SMS — off by default (costly, high signal) */
   @Column({ name: 'sms', default: false })
   sms: boolean;
+
+  /** Send Telegram bot notification to the user's linked chat. */
+  @Column({ name: 'telegram', default: false })
+  telegram: boolean;
+
+  /** Send Web Push to active field-device subscriptions. */
+  @Column({ name: 'push', default: true })
+  push: boolean;
 
   /**
    * Throttle email delivery: minimum minutes between emails of the same type.
@@ -63,6 +71,18 @@ export class NotificationPreference {
     default: NotificationPriority.HIGH,
   })
   smsMinPriority: NotificationPriority;
+
+  /**
+   * Minimum priority required for Telegram delivery.
+   * E.g. HIGH means only HIGH + CRITICAL trigger Telegram.
+   */
+  @Column({
+    name: 'telegram_min_priority',
+    type: 'enum',
+    enum: NotificationPriority,
+    default: NotificationPriority.HIGH,
+  })
+  telegramMinPriority: NotificationPriority;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

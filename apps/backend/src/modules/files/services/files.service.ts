@@ -11,6 +11,7 @@ import { Repository, DataSource, ILike } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as crypto from 'crypto';
 import { Transform, Readable } from 'stream';
+import { finished } from 'stream/promises';
 import * as path from 'path';
 
 import { FileRecord, ScanStatus } from '../entities/file-record.entity';
@@ -106,11 +107,16 @@ export class FilesService {
 
     // Placeholder key — we'll rename after we know the hash
     const tempKey = `tmp/${fileId}/${Date.now()}`;
-    await this.minioService.uploadStream(tempKey, stream.pipe(measuringTransform), meta.mimeType);
+    const transformedStream = stream.pipe(measuringTransform);
+    await Promise.all([
+      this.minioService.uploadStream(tempKey, transformedStream, meta.mimeType),
+      finished(measuringTransform, { readable: false }),
+    ]);
 
     const sha256 = hashStream.digest('hex');
     const versionNumber = 1;
     const storageKey = this.minioService.buildStorageKey(meta.classification, fileId, versionNumber, sha256, ext);
+    await this.minioService.moveObject(tempKey, storageKey);
 
     // Persist record + version in a deferred transaction (handles circular FK)
     const record = await this.dataSource.transaction(async (em) => {
@@ -196,9 +202,18 @@ export class FilesService {
     });
 
     const tempKey = `tmp/${fileId}/${Date.now()}`;
-    await this.minioService.uploadStream(tempKey, stream.pipe(measuringTransform), file.mimeType ?? 'application/octet-stream');
+    const transformedStream = stream.pipe(measuringTransform);
+    await Promise.all([
+      this.minioService.uploadStream(
+        tempKey,
+        transformedStream,
+        file.mimeType ?? 'application/octet-stream',
+      ),
+      finished(measuringTransform, { readable: false }),
+    ]);
     const sha256 = hashStream.digest('hex');
     const storageKey = this.minioService.buildStorageKey(file.classification, fileId, versionNumber, sha256, ext);
+    await this.minioService.moveObject(tempKey, storageKey);
 
     const updatedRecord = await this.dataSource.transaction(async (em) => {
       const ver = em.getRepository(FileVersion).create({
@@ -572,6 +587,7 @@ export class FilesService {
     fileId: string,
     result: 'clean' | 'infected',
     actorId: string,
+    threatSignature?: string,
   ): Promise<void> {
     const file = await this.fileRepo.findOne({ where: { id: fileId } });
     if (!file) return; // File may have been deleted already
@@ -582,25 +598,58 @@ export class FilesService {
     if (result === 'infected') {
       this.logger.warn(`Infected file detected: ${fileId} — quarantining`);
       file.deletedAt = new Date(); // soft-delete
-      // Remove from object storage
-      if (file.currentVersion?.storageKey) {
+      const versions = await this.versionRepo.find({ where: { fileId } });
+      const storageKeys = Array.from(
+        new Set(
+          [
+            ...versions.map((version) => version.storageKey),
+            file.currentVersion?.storageKey,
+          ].filter((value): value is string => Boolean(value)),
+        ),
+      );
+
+      for (const storageKey of storageKeys) {
         try {
-          await this.minioService.deleteObject(file.currentVersion.storageKey);
+          await this.minioService.deleteObject(storageKey);
         } catch (err) {
           this.logger.error(`Failed to delete infected file from MinIO: ${(err as Error).message}`);
         }
       }
+
       await this.auditService.emit({
         eventType: 'FILES_INFECTED_FILE_QUARANTINED',
         resourceType: 'file',
         resourceId: fileId,
-        actorId: 'system',
-        metadata: { deletedAt: file.deletedAt },
+        actorId,
+        metadata: { deletedAt: file.deletedAt, threatSignature, deletedObjectCount: storageKeys.length },
       });
     }
 
     await this.fileRepo.save(file);
     this.eventEmitter.emit('file.scan_complete', { fileId, result });
+  }
+
+  async processScanFailure(
+    fileId: string,
+    actorId: string,
+    reason: string,
+  ): Promise<void> {
+    const file = await this.fileRepo.findOne({ where: { id: fileId } });
+    if (!file) return;
+
+    file.scanStatus = ScanStatus.SCAN_FAILED;
+    file.scannedAt = new Date();
+    await this.fileRepo.save(file);
+
+    await this.auditService.emit({
+      eventType: 'FILES_SCAN_FAILED',
+      resourceType: 'file',
+      resourceId: fileId,
+      actorId,
+      metadata: { reason },
+    });
+
+    this.eventEmitter.emit('file.scan_complete', { fileId, result: 'scan_failed', reason });
   }
 
   // ─── Soft Delete ──────────────────────────────────────────────────────────────

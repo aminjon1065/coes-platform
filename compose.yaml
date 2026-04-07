@@ -1,0 +1,4 @@
+name: coescd
+
+include:
+  - infra/docker/docker-compose.yml

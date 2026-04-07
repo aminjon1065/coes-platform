@@ -22,10 +22,10 @@ export class DocumentType {
   @Column({ length: 200 })
   name: string;
 
-  @Column({ name: 'name_ru', length: 200, nullable: true })
+  @Column({ type: 'varchar',  name: 'name_ru', length: 200, nullable: true })
   nameRu: string | null;
 
-  @Column({ name: 'name_tg', length: 200, nullable: true })
+  @Column({ type: 'varchar',  name: 'name_tg', length: 200, nullable: true })
   nameTg: string | null;
 
   /**
@@ -49,7 +49,7 @@ export class DocumentType {
   requiresApproval: boolean;
 
   /** Default number of calendar days executors have (null = no default deadline) */
-  @Column({ name: 'default_deadline_days', nullable: true })
+  @Column({ type: 'int',  name: 'default_deadline_days', nullable: true })
   defaultDeadlineDays: number | null;
 
   /** Retention period in years before archival review */

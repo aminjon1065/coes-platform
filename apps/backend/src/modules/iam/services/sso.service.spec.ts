@@ -57,7 +57,7 @@ const LDAP_ATTRS = {
   email: 'john.doe@test.gov.tj',
   displayName: 'John Doe',
   groups: ['Operators', 'FieldTeam'],
-  rawEntry: {},
+  rawEntry: { dn: 'CN=John Doe,OU=Users,DC=test,DC=gov,DC=tj' },
 };
 
 const SAML_ATTRS = {
@@ -180,9 +180,11 @@ describe('SsoService', () => {
       await service.ldapLogin('john.doe', 'Password1!');
 
       expect(credRepo.create).not.toHaveBeenCalled();
-      expect(credRepo.update).toHaveBeenCalledWith(
-        MOCK_CREDENTIAL.id,
-        expect.objectContaining({ email: LDAP_ATTRS.email }),
+      expect(credRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: MOCK_CREDENTIAL.id,
+          email: LDAP_ATTRS.email,
+        }),
       );
       expect(events.emit).toHaveBeenCalledWith('iam.sso.login', expect.any(Object));
     });

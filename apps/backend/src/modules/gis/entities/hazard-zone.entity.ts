@@ -75,7 +75,7 @@ export class HazardZone {
   areaHa: number | null;
 
   /** Oblast/Rayon/Jamoat administrative code */
-  @Column({ name: 'administrative_code', length: 20, nullable: true })
+  @Column({ type: 'varchar',  name: 'administrative_code', length: 20, nullable: true })
   administrativeCode: string | null;
 
   @Column({ type: 'text', nullable: true })

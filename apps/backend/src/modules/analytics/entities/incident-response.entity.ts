@@ -45,7 +45,7 @@ export class IncidentResponse {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ name: 'location_note', length: 300, nullable: true })
+  @Column({ type: 'varchar',  name: 'location_note', length: 300, nullable: true })
   locationNote: string | null;
 
   @Column({ name: 'occurred_at', type: 'timestamptz', default: () => 'now()' })
@@ -58,7 +58,7 @@ export class IncidentResponse {
   @Column({ name: 'resources_used', type: 'jsonb', default: '[]' })
   resourcesUsed: object[];
 
-  @Column({ length: 500, nullable: true })
+  @Column({ type: 'varchar',  length: 500, nullable: true })
   outcome: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

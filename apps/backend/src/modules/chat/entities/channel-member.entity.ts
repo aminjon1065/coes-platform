@@ -48,7 +48,7 @@ export class ChannelMember {
   positionId: string;
 
   /** Snapshot of user at join time (for display purposes) */
-  @Column({ name: 'user_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'user_id', nullable: true })
   userId: string | null;
 
   @Column({
@@ -83,7 +83,7 @@ export class ChannelMember {
   @Column({ name: 'removed_at', type: 'timestamptz', nullable: true })
   removedAt: Date | null;
 
-  @Column({ name: 'removed_by_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'removed_by_id', nullable: true })
   removedById: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

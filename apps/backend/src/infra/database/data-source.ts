@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { existsSync } from 'fs';
 import { DataSource } from 'typeorm';
 import { join } from 'path';
 
@@ -14,8 +15,11 @@ try {
 }
 
 // process.cwd() == apps/backend when migration commands are run from that dir.
-// This works in both CommonJS (__dirname) and ESM (bun's default TS loader).
-const src = join(process.cwd(), 'src');
+// Keep the data-source path resolution independent of the runtime wrapper.
+const appRoot = process.cwd();
+const sourceRoot = existsSync(join(appRoot, 'src'))
+  ? join(appRoot, 'src')
+  : join(appRoot, 'dist');
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -26,6 +30,6 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_NAME ?? 'coescd',
   synchronize: false,
   logging: true,
-  entities: [join(src, '**/*.entity{.ts,.js}')],
-  migrations: [join(src, 'infra/database/migrations/**/*{.ts,.js}')],
+  entities: [join(sourceRoot, '**/*.entity{.ts,.js}')],
+  migrations: [join(sourceRoot, 'infra/database/migrations/**/*{.ts,.js}')],
 });

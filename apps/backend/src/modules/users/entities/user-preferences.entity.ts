@@ -44,10 +44,10 @@ export class UserPreferences {
   notifyInApp: boolean;
 
   /** Quiet hours — no notifications sent between these times (HH:MM format) */
-  @Column({ name: 'quiet_hours_start', length: 5, nullable: true })
+  @Column({ type: 'varchar',  name: 'quiet_hours_start', length: 5, nullable: true })
   quietHoursStart: string | null;
 
-  @Column({ name: 'quiet_hours_end', length: 5, nullable: true })
+  @Column({ type: 'varchar',  name: 'quiet_hours_end', length: 5, nullable: true })
   quietHoursEnd: string | null;
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })

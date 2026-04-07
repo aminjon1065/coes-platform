@@ -162,11 +162,14 @@ export class SsoService {
         throw new UnauthorizedException('Account has been suspended');
       }
 
-      await this.credentialRepo.update(credential.id, {
-        email: profile.email,
-        ssoAttributes: { displayName: profile.displayName, groups: profile.groups, raw: profile.rawAttrs },
-        lastLoginAt: new Date(),
-      });
+      credential.email = profile.email;
+      credential.ssoAttributes = {
+        displayName: profile.displayName,
+        groups: profile.groups,
+        raw: profile.rawAttrs,
+      };
+      credential.lastLoginAt = new Date();
+      await this.credentialRepo.save(credential);
 
       this.events.emit('iam.sso.login', {
         userId: credential.id,

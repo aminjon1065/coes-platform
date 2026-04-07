@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Client as MinioClient } from 'minio';
+import { Client as MinioClient, CopyConditions } from 'minio';
 import { Readable } from 'stream';
 
 @Injectable()
@@ -87,6 +87,29 @@ export class MinioService implements OnModuleInit {
    */
   async presignedPutUrl(storageKey: string, expirySeconds = 900): Promise<string> {
     return this.client.presignedPutObject(this.bucket, storageKey, expirySeconds);
+  }
+
+  /** Read an object stream from MinIO. */
+  async getObjectStream(storageKey: string): Promise<Readable> {
+    return this.client.getObject(this.bucket, storageKey) as Promise<Readable>;
+  }
+
+  /** Copy an object within the bucket. */
+  async copyObject(sourceKey: string, destinationKey: string): Promise<void> {
+    await this.client.copyObject(
+      this.bucket,
+      destinationKey,
+      `/${this.bucket}/${sourceKey}`,
+      new CopyConditions(),
+    );
+  }
+
+  /** Move an object within the bucket by copy + delete. */
+  async moveObject(sourceKey: string, destinationKey: string): Promise<void> {
+    await this.copyObject(sourceKey, destinationKey);
+    if (sourceKey !== destinationKey) {
+      await this.deleteObject(sourceKey);
+    }
   }
 
   /** Remove an object (used for infected file cleanup). */

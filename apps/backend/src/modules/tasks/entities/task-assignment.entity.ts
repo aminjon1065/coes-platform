@@ -46,7 +46,7 @@ export class TaskAssignment {
   positionId: string;
 
   /** Snapshot of the occupying user at assignment time */
-  @Column({ name: 'assigned_user_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'assigned_user_id', nullable: true })
   assignedUserId: string | null;
 
   @Column({
@@ -83,7 +83,7 @@ export class TaskAssignment {
   @Column({ name: 'removed_at', type: 'timestamptz', nullable: true })
   removedAt: Date | null;
 
-  @Column({ name: 'remove_reason', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'remove_reason', length: 500, nullable: true })
   removeReason: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

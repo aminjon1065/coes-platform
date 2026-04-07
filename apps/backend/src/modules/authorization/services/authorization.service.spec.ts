@@ -1,4 +1,4 @@
-import { Repository } from 'typeorm';
+import { Repository, ObjectLiteral } from 'typeorm';
 
 import { AuthorizationService } from './authorization.service';
 import { UserRoleAssignment } from '../entities/user-role-assignment.entity';
@@ -9,7 +9,7 @@ import { OrgService } from '../../org/services/org.service';
 
 // ── Mock helpers ──────────────────────────────────────────────────────────────
 
-function mockRepo<T>(): jest.Mocked<Repository<T>> {
+function mockRepo<T extends ObjectLiteral>(): jest.Mocked<Repository<T>> {
   return {
     findOne: jest.fn(),
     find: jest.fn(),

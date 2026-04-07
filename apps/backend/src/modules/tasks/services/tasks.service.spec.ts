@@ -3,7 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, ObjectLiteral } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { TasksService } from './tasks.service';
@@ -24,7 +24,7 @@ import { OrgService } from '../../org/services/org.service';
 
 // ── Mock helpers ───────────────────────────────────────────────────────────────
 
-function mockRepo<T>(): jest.Mocked<Repository<T>> {
+function mockRepo<T extends ObjectLiteral>(): jest.Mocked<Repository<T>> {
   const qb = {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
@@ -38,7 +38,7 @@ function mockRepo<T>(): jest.Mocked<Repository<T>> {
     getOne: jest.fn().mockResolvedValue(null),
   };
   return {
-    create: jest.fn((dto: Partial<T>) => ({ id: 'generated-id', ...dto }) as T),
+    create: jest.fn((dto: Partial<T>) => ({ id: 'generated-id', ...dto }) as unknown as T),
     save: jest.fn().mockImplementation(async (entity: T) => entity),
     find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn().mockResolvedValue(null),
@@ -446,6 +446,36 @@ describe('TasksService', () => {
         'notification.requested',
         expect.objectContaining({ type: 'TASK_ALL_SUBTASKS_COMPLETE' }),
       );
+    });
+  });
+
+  // ── updateTask ────────────────────────────────────────────────────────────────
+
+  describe('updateTask', () => {
+    it('updates mutable fields and emits task.updated', async () => {
+      const task = makeTask({ status: TaskStatus.ASSIGNED });
+      taskRepo.findOne.mockResolvedValue(task);
+      taskRepo.save.mockImplementation(async (entity: Task) => entity);
+
+      const result = await service.updateTask(
+        'task-1',
+        { title: 'Updated title', description: 'Updated description' } as any,
+        'user-1',
+        'pos-supervisor',
+        3,
+      );
+
+      expect(taskRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Updated title',
+          description: 'Updated description',
+        }),
+      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'task.updated',
+        expect.objectContaining({ taskId: 'task-1', actorId: 'user-1' }),
+      );
+      expect(result.title).toBe('Updated title');
     });
   });
 

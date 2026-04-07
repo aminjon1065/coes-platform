@@ -8,6 +8,7 @@ import { FileLink } from './entities/file-link.entity';
 import { FilePermission } from './entities/file-permission.entity';
 
 import { MinioService } from './services/minio.service';
+import { ClamAvService } from './services/clamav.service';
 import { FilesService } from './services/files.service';
 import { FilesController } from './controllers/files.controller';
 import { FileScanListener } from './listeners/file-scan.listener';
@@ -26,7 +27,7 @@ import { AuditModule } from '../audit/audit.module';
     AuditModule,
   ],
   controllers: [FilesController],
-  providers: [MinioService, FilesService, FileScanListener],
+  providers: [MinioService, ClamAvService, FilesService, FileScanListener],
   exports: [FilesService, MinioService],
 })
 export class FilesModule {}

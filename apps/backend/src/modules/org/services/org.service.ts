@@ -93,6 +93,11 @@ export class OrgService {
       before,
       after: { ...before, active: false },
     });
+
+    this.events.emit('org.department.deactivated', {
+      departmentId: id,
+      requestedBy: requestedBy ?? null,
+    });
   }
 
   // ─────────────────────────────── Positions ──────────────────────────────

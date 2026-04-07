@@ -74,25 +74,25 @@ export class WorkflowStepDefinition {
    * For parallel steps: how many completions needed to advance.
    * null = all must complete.
    */
-  @Column({ name: 'parallel_threshold', nullable: true })
+  @Column({ type: 'int',  name: 'parallel_threshold', nullable: true })
   parallelThreshold: number | null;
 
   /** Hours before the step is marked overdue (null = no timeout) */
-  @Column({ name: 'timeout_hours', nullable: true })
+  @Column({ type: 'int',  name: 'timeout_hours', nullable: true })
   timeoutHours: number | null;
 
   /**
    * Hours after first escalation before secondary escalation fires.
    * null = no secondary escalation.
    */
-  @Column({ name: 'secondary_escalation_hours', nullable: true })
+  @Column({ type: 'int',  name: 'secondary_escalation_hours', nullable: true })
   secondaryEscalationHours: number | null;
 
   /**
    * Which step to return to on revision (by stepOrder).
    * null = return to author.
    */
-  @Column({ name: 'return_to_step', nullable: true })
+  @Column({ type: 'int',  name: 'return_to_step', nullable: true })
   returnToStep: number | null;
 
   /**

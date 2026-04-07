@@ -3,7 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, ObjectLiteral } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ChatService } from './chat.service';
@@ -15,9 +15,9 @@ import { AuditService } from '../../audit/services/audit.service';
 
 // ── Mock helpers ───────────────────────────────────────────────────────────────
 
-function mockRepo<T>(): jest.Mocked<Repository<T>> {
+function mockRepo<T extends ObjectLiteral>(): jest.Mocked<Repository<T>> {
   return {
-    create: jest.fn((dto: Partial<T>) => ({ id: 'generated-id', ...dto }) as T),
+    create: jest.fn((dto: Partial<T>) => ({ id: 'generated-id', ...dto }) as unknown as T),
     save: jest.fn().mockImplementation(async (entity: T) => entity),
     find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn().mockResolvedValue(null),

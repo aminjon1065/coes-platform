@@ -29,14 +29,32 @@ import redisConfig from './infra/config/redis.config';
 import jwtConfig from './infra/config/jwt.config';
 import minioConfig from './infra/config/minio.config';
 import opensearchConfig from './infra/config/opensearch.config';
+import clamavConfig from './infra/config/clamav.config';
+import smtpConfig from './infra/config/smtp.config';
+import smsConfig from './infra/config/sms.config';
+import telegramConfig from './infra/config/telegram.config';
+import webpushConfig from './infra/config/webpush.config';
+import { HealthController } from './health.controller';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     // Configuration — load first, validate eagerly
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateConfig,
-      load: [databaseConfig, redisConfig, jwtConfig, minioConfig, opensearchConfig],
+      load: [
+        databaseConfig,
+        redisConfig,
+        jwtConfig,
+        minioConfig,
+        opensearchConfig,
+        clamavConfig,
+        smtpConfig,
+        smsConfig,
+        telegramConfig,
+        webpushConfig,
+      ],
       envFilePath: ['.env.local', '.env'],
     }),
 

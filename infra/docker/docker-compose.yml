@@ -240,7 +240,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "mc", "ready", "local"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -252,6 +252,24 @@ services:
   # =========================================================================
   # APPLICATION  (profile: app)
   # =========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Mailpit — local SMTP sink and inbox UI for dev / observability alerts
+  # ---------------------------------------------------------------------------
+  mailpit:
+    profiles: [app, obs]
+    image: axllent/mailpit:v1.18.3
+    container_name: coescd-mailpit
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    networks:
+      - coescd-net
+    labels:
+      coescd.service: mailpit
+      coescd.tier: obs
 
   # ---------------------------------------------------------------------------
   # Backend — NestJS Modular Monolith
@@ -266,7 +284,7 @@ services:
     container_name: coescd-backend
     restart: unless-stopped
     logging: *default-logging
-    env_file: ../../.env.local
+    env_file: ../../.env
     environment:
       NODE_ENV:      production
       PORT:          4000
@@ -276,6 +294,45 @@ services:
       REDIS_HOST:    redis
       REDIS_PORT:    6379
       RABBITMQ_URL:  amqp://${RABBITMQ_USER:-coescd}:${RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
+      MINIO_ENDPOINT: minio
+      MINIO_PORT:    9000
+      MINIO_USE_SSL: "false"
+      OPENSEARCH_NODE: http://opensearch:9200
+      CLAMAV_ENABLED: ${CLAMAV_ENABLED:-false}
+      CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
+      CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+      CLAMAV_TIMEOUT_MS: ${CLAMAV_TIMEOUT_MS:-30000}
+      CLAMAV_CHUNK_SIZE: ${CLAMAV_CHUNK_SIZE:-65536}
+      SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@coescd.local}
+      SMTP_REPLY_TO: ${SMTP_REPLY_TO:-}
+      SMTP_TIMEOUT_MS: ${SMTP_TIMEOUT_MS:-10000}
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-false}
+      SMTP_IGNORE_TLS: ${SMTP_IGNORE_TLS:-false}
+      SMS_ENABLED: ${SMS_ENABLED:-false}
+      SMS_PROVIDER_URL: ${SMS_PROVIDER_URL:-}
+      SMS_PROVIDER_TOKEN: ${SMS_PROVIDER_TOKEN:-}
+      SMS_PROVIDER_AUTH_HEADER: ${SMS_PROVIDER_AUTH_HEADER:-Authorization}
+      SMS_PROVIDER_TOKEN_PREFIX: ${SMS_PROVIDER_TOKEN_PREFIX:-Bearer }
+      SMS_SENDER: ${SMS_SENDER:-COESCD}
+      SMS_TIMEOUT_MS: ${SMS_TIMEOUT_MS:-10000}
+      SMS_DEFAULT_COUNTRY_CODE: ${SMS_DEFAULT_COUNTRY_CODE:-992}
+      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      TELEGRAM_TIMEOUT_MS: ${TELEGRAM_TIMEOUT_MS:-10000}
+      TELEGRAM_DISABLE_LINK_PREVIEW: ${TELEGRAM_DISABLE_LINK_PREVIEW:-true}
+      WEB_PUSH_ENABLED: ${WEB_PUSH_ENABLED:-false}
+      WEB_PUSH_SUBJECT: ${WEB_PUSH_SUBJECT:-mailto:alerts@coescd.local}
+      WEB_PUSH_VAPID_PUBLIC_KEY: ${WEB_PUSH_VAPID_PUBLIC_KEY:-}
+      WEB_PUSH_VAPID_PRIVATE_KEY: ${WEB_PUSH_VAPID_PRIVATE_KEY:-}
+      WEB_PUSH_TTL_SECONDS: ${WEB_PUSH_TTL_SECONDS:-300}
+      WEB_PUSH_URGENCY: ${WEB_PUSH_URGENCY:-high}
     depends_on:
       postgres:
         condition: service_healthy
@@ -288,7 +345,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -310,7 +367,7 @@ services:
     container_name: coescd-gateway
     restart: unless-stopped
     logging: *default-logging
-    env_file: ../../.env.local
+    env_file: ../../.env
     environment:
       NODE_ENV:     production
       PORT:         4001
@@ -328,7 +385,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -352,7 +409,6 @@ services:
       - ./nginx/certs:/etc/nginx/certs:ro
     ports:
       - "80:80"
-      - "443:443"
     depends_on:
       backend:
         condition: service_healthy
@@ -398,7 +454,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/healthy"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -415,19 +471,22 @@ services:
     container_name: coescd-alertmanager
     restart: unless-stopped
     logging: *default-logging
-    command:
-      - --config.file=/etc/alertmanager/alertmanager.yml
-      - --storage.path=/alertmanager
-      - --web.external-url=http://localhost:9093
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    environment:
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
     volumes:
-      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./prometheus/alertmanager-entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
+      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml.tmpl:ro
       - alertmanager-data:/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9093/-/healthy"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -465,7 +524,7 @@ services:
       loki:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -492,7 +551,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3100/ready"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -513,8 +572,6 @@ services:
     command: -config.file=/etc/promtail/promtail.yml
     volumes:
       - ./loki/promtail.yml:/etc/promtail/promtail.yml:ro
-      - /var/log:/var/log:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - coescd-net
@@ -540,6 +597,7 @@ services:
       BADGER_EPHEMERAL:       "false"
       BADGER_DIRECTORY_VALUE: /badger/data
       BADGER_DIRECTORY_KEY:   /badger/key
+    user: "0:0"
     volumes:
       - jaeger-data:/badger
     ports:
@@ -549,7 +607,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:14269/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:14269/"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -571,7 +629,7 @@ services:
       - --path.rootfs=/host
       - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|run)($$|/)
     volumes:
-      - /:/host:ro,rslave
+      - /:/host:ro
     networks:
       - coescd-net
     labels:
@@ -615,7 +673,7 @@ services:
     container_name: coescd-media
     restart: unless-stopped
     logging: *default-logging
-    env_file: ../../.env.local
+    env_file: ../../.env
     environment:
       NODE_ENV:                production
       PORT:                    4002
@@ -639,7 +697,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4002/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -713,7 +771,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qv '\"status\":\"red\"'"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9200/_cluster/health | grep -qv '\"status\":\"red\"'"]
       interval: 20s
       timeout: 10s
       retries: 5
@@ -815,7 +873,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3003/index.html"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3003/index.html"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -868,7 +926,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/geoserver/web/ | grep -q GeoServer || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/geoserver/web/ | grep -q GeoServer || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 5
@@ -902,7 +960,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 3
@@ -986,7 +1044,7 @@ services:
       airflow-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1052,7 +1110,7 @@ services:
         soft: 262144
         hard: 262144
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q Ok"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -1120,7 +1178,7 @@ services:
       mlflow-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5000/health"]
       interval: 20s
       timeout: 10s
       retries: 5

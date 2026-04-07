@@ -1,11 +1,17 @@
-# Infra only (local dev — just postgres, redis, rabbitmq, minio)
+# First-time setup
+cp .env.example .env
+
+# Main app stack from repo root
+docker compose up -d
+
+# Infra only (postgres, redis, rabbitmq, minio)
 npm run infra:up
 
-# Infra + app services (backend, gateway, nginx)
+# App + infra
 npm run app:up
 
-# Infra + observability (prometheus, grafana, loki, jaeger)
-npm run obs:up
+# App + infra + media
+npm run media:up
 
-# Everything
+# Everything including observability
 npm run all:up

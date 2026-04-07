@@ -45,7 +45,6 @@ export class WorkflowTemplate {
   @OneToMany('WorkflowStepDefinition', 'template', {
     cascade: true,
     eager: true,
-    orderBy: { stepOrder: 'ASC' },
   })
   steps: Relation<WorkflowStepDefinition[]>;
 

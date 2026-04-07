@@ -17,10 +17,27 @@ import {
   DeliveryChannel,
   DeliveryStatus,
 } from '../entities/notification-delivery.entity';
+import {
+  PushSubscription,
+  PushSubscriptionStatus,
+} from '../entities/push-subscription.entity';
+import {
+  TelegramSubscription,
+  TelegramSubscriptionStatus,
+} from '../entities/telegram-subscription.entity';
 import { EmailNotificationProvider } from '../providers/email-notification.provider';
 import { SmsNotificationProvider } from '../providers/sms-notification.provider';
+import {
+  PushNotificationProvider,
+  type PushPayload,
+} from '../providers/push-notification.provider';
+import { TelegramNotificationProvider } from '../providers/telegram-notification.provider';
 import { ListNotificationsDto } from '../dto/list-notifications.dto';
 import { UpdatePreferenceDto } from '../dto/update-preference.dto';
+import { RegisterPushSubscriptionDto } from '../dto/register-push-subscription.dto';
+import { RegisterTelegramSubscriptionDto } from '../dto/register-telegram-subscription.dto';
+import { UserPositionAssignment, AssignmentType } from '../../users/entities/user-position-assignment.entity';
+import type { PushSubscription as WebPushSubscription } from 'web-push';
 
 /** Payload shape emitted by all domain services via 'notification.requested' */
 export interface NotificationRequest {
@@ -82,6 +99,12 @@ const PRIORITY_WEIGHT: Record<NotificationPriority, number> = {
   [NotificationPriority.CRITICAL]: 3,
 };
 
+const ASSIGNMENT_WEIGHT: Record<AssignmentType, number> = {
+  [AssignmentType.PRIMARY]: 0,
+  [AssignmentType.ACTING]: 1,
+  [AssignmentType.CONCURRENT]: 2,
+};
+
 /**
  * 2.6.1–2.6.8 — Core notification service.
  *
@@ -90,9 +113,11 @@ const PRIORITY_WEIGHT: Record<NotificationPriority, number> = {
  *  - Resolving delivery preferences per user/type
  *  - Throttling email delivery
  *  - Dispatching to Email and SMS providers
+ *  - Dispatching to Telegram bot provider
+ *  - Dispatching to Web Push providers
  *  - Delivery tracking
  *  - Read-state management
- *  - Priority-based escalation (CRITICAL bypasses throttle)
+ *  - Priority-based escalation (CRITICAL prefers Telegram, falls back to legacy SMS)
  */
 @Injectable()
 export class NotificationService {
@@ -108,8 +133,19 @@ export class NotificationService {
     @InjectRepository(NotificationDelivery)
     private readonly deliveryRepo: Repository<NotificationDelivery>,
 
+    @InjectRepository(PushSubscription)
+    private readonly pushSubscriptionRepo: Repository<PushSubscription>,
+
+    @InjectRepository(TelegramSubscription)
+    private readonly telegramSubscriptionRepo: Repository<TelegramSubscription>,
+
+    @InjectRepository(UserPositionAssignment)
+    private readonly assignmentRepo: Repository<UserPositionAssignment>,
+
     private readonly emailProvider: EmailNotificationProvider,
     private readonly smsProvider: SmsNotificationProvider,
+    private readonly pushProvider: PushNotificationProvider,
+    private readonly telegramProvider: TelegramNotificationProvider,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -124,12 +160,13 @@ export class NotificationService {
     const tpl =
       TEMPLATES[req.type]?.(req.payload ?? {}) ??
       DEFAULT_TEMPLATE(req.type, req.payload ?? {});
+    const recipientUserId = await this.resolveRecipientCredentialId(req);
 
     // ── Create in-app notification (always) ───────────────────────────────────
     const notification = this.notifRepo.create({
       type: req.type,
       recipientPositionId: req.recipientPositionId,
-      recipientUserId: req.recipientUserId ?? null,
+      recipientUserId: recipientUserId,
       priority,
       title: tpl.title,
       body: tpl.body,
@@ -139,7 +176,7 @@ export class NotificationService {
     await this.notifRepo.save(notification);
 
     // ── Resolve delivery preferences ──────────────────────────────────────────
-    const userId = req.recipientUserId;
+    const userId = recipientUserId;
     if (!userId) {
       // No resolved user — in-app only (will be picked up when user logs in)
       await this.createDelivery(notification.id, DeliveryChannel.IN_APP, DeliveryStatus.SENT);
@@ -170,6 +207,72 @@ export class NotificationService {
     } else {
       await this.createDelivery(notification.id, DeliveryChannel.SMS, DeliveryStatus.SKIPPED);
     }
+
+    const meetsTelegramPriority =
+      priority === NotificationPriority.CRITICAL ||
+      PRIORITY_WEIGHT[priority] >= PRIORITY_WEIGHT[prefs.telegramMinPriority];
+
+    if (prefs.telegram && meetsTelegramPriority) {
+      await this.dispatchTelegram(notification, userId);
+    }
+
+    // Web Push — only for users with active subscriptions
+    if (prefs.push) {
+      await this.dispatchPush(notification, userId);
+    } else {
+      await this.createDelivery(notification.id, DeliveryChannel.PUSH, DeliveryStatus.SKIPPED);
+    }
+  }
+
+  // ─── Telegram dispatch ────────────────────────────────────────────────────────
+
+  private async dispatchTelegram(
+    notification: Notification,
+    userId: string,
+  ): Promise<boolean> {
+    const delivery = await this.createDelivery(
+      notification.id,
+      DeliveryChannel.TELEGRAM,
+      DeliveryStatus.PENDING,
+    );
+
+    if (!this.telegramProvider.isEnabled()) {
+      await this.updateDelivery(delivery.id, DeliveryStatus.SKIPPED, null, 'telegram delivery disabled');
+      return false;
+    }
+
+    const subscription = await this.telegramSubscriptionRepo.findOne({
+      where: { userId },
+    });
+
+    if (!subscription || subscription.status !== TelegramSubscriptionStatus.ACTIVE) {
+      await this.updateDelivery(delivery.id, DeliveryStatus.SKIPPED, null, 'no active telegram subscription');
+      return false;
+    }
+
+    const result = await this.telegramProvider.send({
+      chatId: subscription.chatId,
+      text: this.buildTelegramText(notification),
+    });
+
+    if (result.success) {
+      await this.telegramSubscriptionRepo.update(subscription.id, {
+        status: TelegramSubscriptionStatus.ACTIVE,
+        lastSuccessAt: new Date(),
+        lastFailureAt: null,
+        lastFailureReason: null,
+      });
+      await this.updateDelivery(delivery.id, DeliveryStatus.SENT, result.messageId ?? null);
+      return true;
+    }
+
+    await this.telegramSubscriptionRepo.update(subscription.id, {
+      status: result.invalid ? TelegramSubscriptionStatus.INVALID : subscription.status,
+      lastFailureAt: new Date(),
+      lastFailureReason: result.error ?? 'telegram delivery failed',
+    });
+    await this.updateDelivery(delivery.id, DeliveryStatus.FAILED, null, result.error);
+    return false;
   }
 
   // ─── Email dispatch ───────────────────────────────────────────────────────────
@@ -268,6 +371,99 @@ export class NotificationService {
     }
   }
 
+  // ─── Web Push dispatch ────────────────────────────────────────────────────────
+
+  private async dispatchPush(notification: Notification, userId: string): Promise<void> {
+    const delivery = await this.createDelivery(
+      notification.id,
+      DeliveryChannel.PUSH,
+      DeliveryStatus.PENDING,
+    );
+
+    if (!this.pushProvider.isEnabled()) {
+      await this.updateDelivery(delivery.id, DeliveryStatus.SKIPPED, null, 'web push disabled');
+      return;
+    }
+
+    const subscriptions = await this.pushSubscriptionRepo.find({
+      where: { userId, status: PushSubscriptionStatus.ACTIVE },
+      order: { updatedAt: 'DESC' },
+    });
+
+    if (!subscriptions.length) {
+      await this.updateDelivery(delivery.id, DeliveryStatus.SKIPPED, null, 'no active push subscriptions');
+      return;
+    }
+
+    const payload: PushPayload = {
+      title: notification.title,
+      body: notification.body,
+      actionUrl: notification.actionUrl,
+      tag: notification.id,
+      data: {
+        notificationId: notification.id,
+        type: notification.type,
+        priority: notification.priority,
+        actionUrl: notification.actionUrl,
+        payload: notification.payload ?? {},
+      },
+    };
+
+    let successCount = 0;
+    const errors: string[] = [];
+
+    for (const subscription of subscriptions) {
+      const result = await this.pushProvider.send(
+        this.toWebPushSubscription(subscription),
+        payload,
+      );
+
+      if (result.success) {
+        successCount += 1;
+        await this.pushSubscriptionRepo.update(subscription.id, {
+          status: PushSubscriptionStatus.ACTIVE,
+          failureCount: 0,
+          lastSuccessAt: new Date(),
+          lastFailureAt: null,
+          lastFailureReason: null,
+        });
+        continue;
+      }
+
+      errors.push(result.error ?? 'push delivery failed');
+
+      if (result.expired) {
+        await this.pushSubscriptionRepo.update(subscription.id, {
+          status: PushSubscriptionStatus.EXPIRED,
+          failureCount: subscription.failureCount + 1,
+          lastFailureAt: new Date(),
+          lastFailureReason: result.error ?? 'push subscription expired',
+        });
+        continue;
+      }
+
+      await this.pushSubscriptionRepo.update(subscription.id, {
+        failureCount: subscription.failureCount + 1,
+        lastFailureAt: new Date(),
+        lastFailureReason: result.error ?? 'push delivery failed',
+      });
+    }
+
+    if (successCount > 0) {
+      const summary =
+        errors.length > 0 ? `partial push delivery: ${successCount}/${subscriptions.length}` : undefined;
+      await this.updateDelivery(delivery.id, DeliveryStatus.SENT, null, summary);
+      return;
+    }
+
+    await this.updateDelivery(
+      delivery.id,
+      DeliveryStatus.FAILED,
+      null,
+      errors.join('; ').substring(0, 500) || 'push delivery failed',
+    );
+  }
+
   // ─── Preference resolution (2.6.5) ───────────────────────────────────────────
 
   /**
@@ -278,12 +474,15 @@ export class NotificationService {
   async resolvePreferences(
     userId: string,
     type: string,
-  ): Promise<{
+   ): Promise<{
     inApp: boolean;
     email: boolean;
     sms: boolean;
+    telegram: boolean;
+    push: boolean;
     emailThrottleMinutes: number;
     smsMinPriority: NotificationPriority;
+    telegramMinPriority: NotificationPriority;
   }> {
     const rows = await this.prefRepo.find({
       where: [
@@ -302,8 +501,11 @@ export class NotificationService {
       inApp: effective?.inApp ?? true,
       email: effective?.email ?? true,
       sms: effective?.sms ?? false,
+      telegram: effective?.telegram ?? false,
+      push: effective?.push ?? true,
       emailThrottleMinutes: effective?.emailThrottleMinutes ?? 0,
       smsMinPriority: effective?.smsMinPriority ?? NotificationPriority.HIGH,
+      telegramMinPriority: effective?.telegramMinPriority ?? NotificationPriority.HIGH,
     };
   }
 
@@ -395,17 +597,107 @@ export class NotificationService {
     if (dto.inApp !== undefined) pref.inApp = dto.inApp;
     if (dto.email !== undefined) pref.email = dto.email;
     if (dto.sms !== undefined) pref.sms = dto.sms;
+    if (dto.telegram !== undefined) pref.telegram = dto.telegram;
+    if (dto.push !== undefined) pref.push = dto.push;
     if (dto.emailThrottleMinutes !== undefined) pref.emailThrottleMinutes = dto.emailThrottleMinutes;
     if (dto.smsMinPriority !== undefined) pref.smsMinPriority = dto.smsMinPriority;
+    if (dto.telegramMinPriority !== undefined) pref.telegramMinPriority = dto.telegramMinPriority;
 
     return this.prefRepo.save(pref);
+  }
+
+  // ─── Push subscription management ─────────────────────────────────────────────
+
+  async listPushSubscriptions(userId: string): Promise<PushSubscription[]> {
+    return this.pushSubscriptionRepo.find({
+      where: { userId },
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
+  async registerPushSubscription(
+    userId: string,
+    dto: RegisterPushSubscriptionDto,
+    userAgent?: string | null,
+  ): Promise<PushSubscription> {
+    const existing = await this.pushSubscriptionRepo.findOne({
+      where: { endpoint: dto.endpoint },
+    });
+
+    const subscription = existing ?? this.pushSubscriptionRepo.create();
+    subscription.userId = userId;
+    subscription.endpoint = dto.endpoint;
+    subscription.p256dhKey = dto.keys.p256dh;
+    subscription.authKey = dto.keys.auth;
+    subscription.expirationTime =
+      dto.expirationTime !== undefined && dto.expirationTime !== null
+        ? new Date(dto.expirationTime)
+        : null;
+    subscription.userAgent = userAgent ?? null;
+    subscription.status = PushSubscriptionStatus.ACTIVE;
+    subscription.failureCount = 0;
+    subscription.lastFailureAt = null;
+    subscription.lastFailureReason = null;
+
+    return this.pushSubscriptionRepo.save(subscription);
+  }
+
+  async removePushSubscription(userId: string, endpoint: string): Promise<void> {
+    await this.pushSubscriptionRepo.delete({ userId, endpoint });
+  }
+
+  // ─── Telegram subscription management ────────────────────────────────────────
+
+  async getTelegramSubscription(userId: string): Promise<TelegramSubscription | null> {
+    return this.telegramSubscriptionRepo.findOne({ where: { userId } });
+  }
+
+  async registerTelegramSubscription(
+    userId: string,
+    dto: RegisterTelegramSubscriptionDto,
+  ): Promise<TelegramSubscription> {
+    const existingByChat = await this.telegramSubscriptionRepo.findOne({
+      where: { chatId: dto.chatId },
+    });
+    if (existingByChat && existingByChat.userId !== userId) {
+      throw new ForbiddenException('Telegram chat is already linked to another user');
+    }
+
+    const existingByUser = await this.telegramSubscriptionRepo.findOne({
+      where: { userId },
+    });
+
+    const subscription = existingByUser ?? existingByChat ?? this.telegramSubscriptionRepo.create();
+    subscription.userId = userId;
+    subscription.chatId = dto.chatId;
+    subscription.username = dto.username?.trim() || null;
+    subscription.displayName = dto.displayName?.trim() || null;
+    subscription.status = TelegramSubscriptionStatus.ACTIVE;
+    subscription.lastFailureAt = null;
+    subscription.lastFailureReason = null;
+
+    return this.telegramSubscriptionRepo.save(subscription);
+  }
+
+  async removeTelegramSubscription(userId: string): Promise<void> {
+    const subscription = await this.telegramSubscriptionRepo.findOne({ where: { userId } });
+    if (!subscription) {
+      return;
+    }
+
+    await this.telegramSubscriptionRepo.update(subscription.id, {
+      status: TelegramSubscriptionStatus.REVOKED,
+      lastFailureAt: null,
+      lastFailureReason: null,
+    });
   }
 
   // ─── Escalation (2.6.8) ───────────────────────────────────────────────────────
 
   /**
-   * Re-sends a notification via a higher-priority channel if delivery failed
-   * or the notification remains unread past the escalation threshold.
+   * Re-sends a notification via Telegram first if the notification remains
+   * unread past the escalation threshold. Falls back to legacy SMS only when
+   * Telegram is unavailable and SMS integration remains enabled.
    *
    * Called by a scheduled job (e.g. every 30 min) for CRITICAL / HIGH unread notifications.
    */
@@ -426,8 +718,10 @@ export class NotificationService {
 
       this.logger.warn(`Escalating unread CRITICAL notification ${notif.id} for user ${notif.recipientUserId}`);
 
-      // Re-dispatch SMS regardless of preferences
-      await this.dispatchSms(notif, notif.recipientUserId);
+      const telegramSent = await this.dispatchTelegram(notif, notif.recipientUserId);
+      if (!telegramSent) {
+        await this.dispatchSms(notif, notif.recipientUserId);
+      }
     }
   }
 
@@ -479,5 +773,50 @@ export class NotificationService {
       critical: NotificationPriority.CRITICAL,
     };
     return map[p] ?? NotificationPriority.NORMAL;
+  }
+
+  private async resolveRecipientCredentialId(req: NotificationRequest): Promise<string | null> {
+    if (req.recipientUserId) {
+      return req.recipientUserId;
+    }
+
+    const assignments = await this.assignmentRepo.find({
+      where: { positionId: req.recipientPositionId, vacatedAt: IsNull() },
+      relations: ['user'],
+      order: { assignedAt: 'DESC' },
+    });
+
+    if (!assignments.length) {
+      return null;
+    }
+
+    assignments.sort((left, right) => {
+      const typeDelta = ASSIGNMENT_WEIGHT[left.type] - ASSIGNMENT_WEIGHT[right.type];
+      if (typeDelta !== 0) return typeDelta;
+      return right.assignedAt.getTime() - left.assignedAt.getTime();
+    });
+
+    return assignments[0].user?.credentialId ?? null;
+  }
+
+  private toWebPushSubscription(subscription: PushSubscription): WebPushSubscription {
+    return {
+      endpoint: subscription.endpoint,
+      expirationTime: subscription.expirationTime?.getTime() ?? null,
+      keys: {
+        p256dh: subscription.p256dhKey,
+        auth: subscription.authKey,
+      },
+    };
+  }
+
+  private buildTelegramText(notification: Notification): string {
+    const parts = [
+      notification.title,
+      notification.body ?? null,
+      notification.actionUrl ?? null,
+    ].filter((part): part is string => Boolean(part));
+
+    return parts.join('\n\n').substring(0, 4096);
   }
 }

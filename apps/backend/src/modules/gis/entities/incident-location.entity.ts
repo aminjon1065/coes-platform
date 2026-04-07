@@ -51,7 +51,7 @@ export class IncidentLocation {
   affectedArea: string | null;
 
   /** FK to gis.administrative_boundaries.code */
-  @Column({ name: 'administrative_code', length: 20, nullable: true })
+  @Column({ type: 'varchar',  name: 'administrative_code', length: 20, nullable: true })
   administrativeCode: string | null;
 
   /** Elevation above sea level in metres — populated via DEM lookup on ingest */

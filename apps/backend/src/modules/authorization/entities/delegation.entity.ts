@@ -32,10 +32,10 @@ export class Delegation {
   @Column({ name: 'end_at', type: 'timestamptz' })
   endAt: Date;
 
-  @Column({ length: 500, nullable: true })
+  @Column({ type: 'varchar',  length: 500, nullable: true })
   reason: string | null;
 
-  @Column({ name: 'created_by_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'created_by_id', nullable: true })
   createdById: string | null;
 
   @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })

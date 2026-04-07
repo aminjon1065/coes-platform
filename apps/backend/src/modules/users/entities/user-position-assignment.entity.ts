@@ -54,13 +54,13 @@ export class UserPositionAssignment {
   @Column({ name: 'vacated_at', type: 'timestamptz', nullable: true })
   vacatedAt: Date | null;
 
-  @Column({ name: 'assigned_by_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'assigned_by_id', nullable: true })
   assignedById: string | null;
 
-  @Column({ name: 'vacated_by_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'vacated_by_id', nullable: true })
   vacatedById: string | null;
 
-  @Column({ length: 500, nullable: true })
+  @Column({ type: 'varchar',  length: 500, nullable: true })
   notes: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

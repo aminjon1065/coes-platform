@@ -22,10 +22,14 @@ export async function subscribeToPush(accessToken: string): Promise<void> {
     return;
   }
 
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-  });
+  const serverKey = urlBase64ToArrayBuffer(vapidPublicKey);
+  const existingSubscription = await registration.pushManager.getSubscription();
+  const subscription =
+    existingSubscription ??
+    await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: serverKey,
+    });
 
   // Register subscription with backend
   await fetch(`${BASE}/notifications/push-subscription`, {
@@ -49,15 +53,19 @@ export async function unsubscribeFromPush(accessToken: string): Promise<void> {
 
   await fetch(`${BASE}/notifications/push-subscription`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
     body: JSON.stringify({ endpoint: subscription.endpoint }),
   });
 }
 
-/** Convert base64 VAPID public key to Uint8Array for subscribe() */
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+/** Convert base64 VAPID public key to an ArrayBuffer for subscribe() */
+function urlBase64ToArrayBuffer(base64String: string): ArrayBuffer {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = atob(base64);
-  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  const bytes = Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }

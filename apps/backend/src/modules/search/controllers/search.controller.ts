@@ -1,16 +1,25 @@
 import {
   Controller,
   Get,
+  Post,
   Query,
   Req,
   ParseUUIDPipe,
   Param,
+  Body,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { FastifyRequest } from 'fastify';
 
 import { SearchQueryService } from '../services/search-query.service';
 import { SearchQueryDto } from '../dto/search-query.dto';
+import { ReindexSearchDto } from '../dto/reindex-search.dto';
+import {
+  SearchMaintenanceService,
+  type SearchReindexResult,
+} from '../services/search-maintenance.service';
 
 interface AuthenticatedRequest extends FastifyRequest {
   user: {
@@ -24,7 +33,10 @@ interface AuthenticatedRequest extends FastifyRequest {
 @ApiBearerAuth()
 @Controller({ path: 'search', version: '1' })
 export class SearchController {
-  constructor(private readonly searchQueryService: SearchQueryService) {}
+  constructor(
+    private readonly searchQueryService: SearchQueryService,
+    private readonly searchMaintenanceService: SearchMaintenanceService,
+  ) {}
 
   /**
    * Unified full-text search across documents, tasks, and messages.
@@ -62,5 +74,18 @@ export class SearchController {
       limit:  limit  ? parseInt(limit,  10) : 20,
       offset: offset ? parseInt(offset, 10) : 0,
     });
+  }
+
+  @Get('admin/health')
+  @ApiOperation({ summary: 'Get OpenSearch connectivity and index readiness' })
+  getHealth() {
+    return this.searchMaintenanceService.getHealth();
+  }
+
+  @Post('admin/reindex')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Run a repository-backed search reindex/backfill' })
+  reindex(@Body() dto: ReindexSearchDto): Promise<SearchReindexResult> {
+    return this.searchMaintenanceService.reindex(dto);
   }
 }

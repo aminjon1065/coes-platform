@@ -37,10 +37,10 @@ export class RefreshToken {
   @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })
   revokedAt: Date | null;
 
-  @Column({ name: 'ip_address', length: 45, nullable: true })
+  @Column({ type: 'varchar',  name: 'ip_address', length: 45, nullable: true })
   ipAddress: string | null;
 
-  @Column({ name: 'user_agent', length: 512, nullable: true })
+  @Column({ type: 'varchar',  name: 'user_agent', length: 512, nullable: true })
   userAgent: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

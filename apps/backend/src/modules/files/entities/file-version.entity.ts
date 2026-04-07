@@ -39,7 +39,7 @@ export class FileVersion {
   @Column({ name: 'uploaded_by_id' })
   uploadedById: string;
 
-  @Column({ name: 'upload_note', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'upload_note', length: 500, nullable: true })
   uploadNote: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

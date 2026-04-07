@@ -63,10 +63,10 @@ export class Incident {
   })
   status: IncidentStatus;
 
-  @Column({ name: 'administrative_code', length: 20, nullable: true })
+  @Column({ type: 'varchar',  name: 'administrative_code', length: 20, nullable: true })
   administrativeCode: string | null;
 
-  @Column({ name: 'administrative_name', length: 200, nullable: true })
+  @Column({ type: 'varchar',  name: 'administrative_name', length: 200, nullable: true })
   administrativeName: string | null;
 
   /** Denormalised from GIS domain for query convenience */

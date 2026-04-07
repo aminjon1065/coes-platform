@@ -21,26 +21,26 @@ export class WorkflowHistory {
   @Column({ name: 'document_id' })
   documentId: string;
 
-  @Column({ name: 'instance_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'instance_id', nullable: true })
   instanceId: string | null;
 
-  @Column({ name: 'step_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'step_id', nullable: true })
   stepId: string | null;
 
   /** Type of event: "step_activated", "step_completed", "step_returned", "resolution_issued", "escalated", etc. */
   @Column({ name: 'event_type', length: 100 })
   eventType: string;
 
-  @Column({ name: 'actor_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'actor_id', nullable: true })
   actorId: string | null;
 
-  @Column({ name: 'actor_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'actor_position_id', nullable: true })
   actorPositionId: string | null;
 
   /**
    * Delegation ID if actor was acting under delegation — permanently linked for attribution.
    */
-  @Column({ name: 'delegation_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'delegation_id', nullable: true })
   delegationId: string | null;
 
   /** Structured event data (previous state, new state, etc.) */

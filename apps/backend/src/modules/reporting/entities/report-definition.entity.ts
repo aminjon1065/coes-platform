@@ -74,7 +74,7 @@ export class ReportDefinition {
   isScheduled: boolean;
 
   /** CRON expression (null if not scheduled) */
-  @Column({ name: 'cron_expression', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'cron_expression', length: 100, nullable: true })
   cronExpression: string | null;
 
   @Column({

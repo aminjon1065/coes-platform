@@ -17,11 +17,11 @@ export class Role {
   @Column({ unique: true, length: 100 })
   name: string;
 
-  @Column({ length: 500, nullable: true })
+  @Column({ type: 'varchar',  length: 500, nullable: true })
   description: string | null;
 
   // A role can inherit all permissions of a parent role
-  @Column({ name: 'parent_role_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'parent_role_id', nullable: true })
   parentRoleId: string | null;
 
   @Column({ name: 'is_system_role', default: false })

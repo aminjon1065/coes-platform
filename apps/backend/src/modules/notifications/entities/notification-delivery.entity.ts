@@ -13,6 +13,8 @@ export enum DeliveryChannel {
   IN_APP = 'in_app',
   EMAIL = 'email',
   SMS = 'sms',
+  TELEGRAM = 'telegram',
+  PUSH = 'push',
 }
 
 export enum DeliveryStatus {
@@ -66,7 +68,7 @@ export class NotificationDelivery {
    * External provider message ID (for email/SMS providers that return one).
    * Used for delivery confirmation webhooks.
    */
-  @Column({ name: 'provider_message_id', length: 255, nullable: true })
+  @Column({ type: 'varchar',  name: 'provider_message_id', length: 255, nullable: true })
   providerMessageId: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

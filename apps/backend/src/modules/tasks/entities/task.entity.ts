@@ -152,7 +152,7 @@ export class Task {
 
   // ─── Hierarchy (subtasks) ───────────────────────────────────────────────────
 
-  @Column({ name: 'parent_task_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'parent_task_id', nullable: true })
   parentTaskId: string | null;
 
   @ManyToOne(() => Task, (t) => t.subtasks, { nullable: true, onDelete: 'SET NULL' })
@@ -168,14 +168,14 @@ export class Task {
 
   // ─── EDMS / system integration links ───────────────────────────────────────
 
-  @Column({ name: 'source_document_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'source_document_id', nullable: true })
   sourceDocumentId: string | null;
 
-  @Column({ name: 'source_resolution_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'source_resolution_id', nullable: true })
   sourceResolutionId: string | null;
 
   /** Linked discussion channel in Communication domain */
-  @Column({ name: 'discussion_channel_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'discussion_channel_id', nullable: true })
   discussionChannelId: string | null;
 
   // ─── Deadline ───────────────────────────────────────────────────────────────
@@ -212,13 +212,13 @@ export class Task {
   @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true })
   cancelledAt: Date | null;
 
-  @Column({ name: 'cancel_reason', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'cancel_reason', length: 500, nullable: true })
   cancelReason: string | null;
 
-  @Column({ name: 'hold_reason', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'hold_reason', length: 500, nullable: true })
   holdReason: string | null;
 
-  @Column({ name: 'cannot_execute_reason', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'cannot_execute_reason', length: 500, nullable: true })
   cannotExecuteReason: string | null;
 
   // ─── Relations ──────────────────────────────────────────────────────────────

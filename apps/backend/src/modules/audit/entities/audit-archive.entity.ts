@@ -22,28 +22,28 @@ export class AuditArchive {
   @Column({ name: 'original_id' })
   originalId: string;
 
-  @Column({ name: 'actor_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'actor_id', nullable: true })
   actorId: string | null;
 
-  @Column({ name: 'actor_username', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'actor_username', length: 100, nullable: true })
   actorUsername: string | null;
 
   @Column({ name: 'event_type', length: 100 })
   eventType: string;
 
-  @Column({ name: 'resource_type', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'resource_type', length: 100, nullable: true })
   resourceType: string | null;
 
-  @Column({ name: 'resource_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'resource_id', nullable: true })
   resourceId: string | null;
 
-  @Column({ name: 'ip_address', length: 45, nullable: true })
+  @Column({ type: 'varchar',  name: 'ip_address', length: 45, nullable: true })
   ipAddress: string | null;
 
   @Column({ default: true })
   success: boolean;
 
-  @Column({ name: 'failure_reason', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'failure_reason', length: 500, nullable: true })
   failureReason: string | null;
 
   @Column({
@@ -56,7 +56,7 @@ export class AuditArchive {
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, unknown> | null;
 
-  @Column({ name: 'integrity_hash', length: 64, nullable: true })
+  @Column({ type: 'varchar',  name: 'integrity_hash', length: 64, nullable: true })
   integrityHash: string | null;
 
   @Column({ name: 'occurred_at', type: 'timestamptz' })

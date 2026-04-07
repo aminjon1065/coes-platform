@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, IsNull } from 'typeorm';
+import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { Document, DocumentStatus, DOCUMENT_TRANSITIONS } from '../entities/document.entity';
@@ -193,6 +194,8 @@ export class EdmsService {
       details: { changes: Object.keys(dto).filter((k) => dto[k as keyof UpdateDocumentDto] !== undefined) },
     });
 
+    this.eventEmitter.emit('edms.document.updated', { documentId: id, actorId });
+
     return saved;
   }
 
@@ -278,7 +281,7 @@ export class EdmsService {
         `Cannot transition from ${doc.status} to ${dto.targetStatus}`,
       );
 
-    const updates: Partial<Document> = { status: dto.targetStatus };
+    const updates: QueryDeepPartialEntity<Document> = { status: dto.targetStatus };
 
     if (dto.targetStatus === DocumentStatus.CANCELLED) {
       updates.cancelledAt = new Date();

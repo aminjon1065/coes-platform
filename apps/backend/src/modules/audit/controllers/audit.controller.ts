@@ -8,9 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   ParseIntPipe,
-  ParseEnumPipe,
   DefaultValuePipe,
-  Optional,
 } from '@nestjs/common';
 import { FastifyReply } from 'fastify';
 import { AuditService } from '../services/audit.service';
@@ -76,6 +74,7 @@ export class AuditController {
    */
   @Get('export/cef')
   async exportCef(
+    @Res() res: FastifyReply,
     @Query('actorId') actorId?: string,
     @Query('eventType') eventType?: string,
     @Query('resourceType') resourceType?: string,
@@ -84,7 +83,6 @@ export class AuditController {
     @Query('from') fromRaw?: string,
     @Query('to') toRaw?: string,
     @Query('limit', new DefaultValuePipe(1000), ParseIntPipe) limit = 1000,
-    @Res() res: FastifyReply,
   ) {
     const filters: AuditQueryFilters = {
       actorId,

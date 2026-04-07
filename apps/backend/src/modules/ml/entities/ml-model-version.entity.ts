@@ -44,15 +44,15 @@ export class MlModelVersion {
   status: ModelVersionStatus;
 
   /** MLflow run ID — null until training completes */
-  @Column({ name: 'mlflow_run_id', length: 64, nullable: true })
+  @Column({ type: 'varchar',  name: 'mlflow_run_id', length: 64, nullable: true })
   mlflowRunId: string | null;
 
   /** MLflow registered model version number */
-  @Column({ name: 'mlflow_version', nullable: true })
+  @Column({ type: 'int',  name: 'mlflow_version', nullable: true })
   mlflowVersion: number | null;
 
   /** S3/MinIO URI of the serialised model artefact */
-  @Column({ name: 'artifact_uri', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'artifact_uri', length: 500, nullable: true })
   artifactUri: string | null;
 
   /** Training dataset summary (row count, date range, feature hash) */

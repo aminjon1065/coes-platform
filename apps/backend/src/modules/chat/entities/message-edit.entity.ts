@@ -29,7 +29,7 @@ export class MessageEdit {
   @Column({ name: 'edited_by_id' })
   editedById: string;
 
-  @Column({ name: 'edit_reason', length: 300, nullable: true })
+  @Column({ type: 'varchar',  name: 'edit_reason', length: 300, nullable: true })
   editReason: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

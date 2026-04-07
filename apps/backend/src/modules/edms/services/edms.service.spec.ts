@@ -323,6 +323,10 @@ describe('EdmsService', () => {
       expect(auditService.emit).toHaveBeenCalledWith(
         expect.objectContaining({ eventType: 'edms.document.updated' }),
       );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'edms.document.updated',
+        expect.objectContaining({ documentId: 'doc-1', actorId: 'user-1' }),
+      );
       expect(result.subject).toBe('Updated subject');
     });
 
@@ -380,6 +384,7 @@ describe('EdmsService', () => {
           getRepository: jest.fn().mockReturnValue({
             save: jest.fn().mockResolvedValue({}),
             create: jest.fn((e) => e),
+            update: jest.fn().mockResolvedValue({ affected: 1 }),
           }),
         };
         return cb(em);

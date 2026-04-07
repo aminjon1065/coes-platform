@@ -7,7 +7,8 @@ import { AuditEvent, AuditSeverity } from '../entities/audit-event.entity';
 export interface EmitAuditEventDto {
   actorId?: string;
   actorUsername?: string;
-  eventType: string;
+  eventType?: string;
+  action?: string;
   resourceType?: string;
   resourceId?: string;
   ipAddress?: string;
@@ -16,6 +17,8 @@ export interface EmitAuditEventDto {
   failureReason?: string;
   severity?: AuditSeverity;
   metadata?: Record<string, unknown>;
+  details?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -29,10 +32,16 @@ export class AuditService {
 
   async emit(dto: EmitAuditEventDto): Promise<void> {
     try {
+      const eventType = dto.eventType ?? dto.action;
+      if (!eventType) {
+        this.logger.warn('Skipping audit event with no eventType/action');
+        return;
+      }
+
       const event = this.auditRepo.create({
         actorId: dto.actorId ?? null,
         actorUsername: dto.actorUsername ?? null,
-        eventType: dto.eventType,
+        eventType,
         resourceType: dto.resourceType ?? null,
         resourceId: dto.resourceId ?? null,
         ipAddress: dto.ipAddress ?? null,
@@ -40,12 +49,12 @@ export class AuditService {
         success: dto.success ?? true,
         failureReason: dto.failureReason ?? null,
         severity: dto.severity ?? AuditSeverity.INFO,
-        metadata: dto.metadata ?? null,
+        metadata: dto.metadata ?? dto.details ?? dto.meta ?? null,
       });
 
       // Compute integrity hash before save (id not yet known; use a nonce)
       const nonce = crypto.randomBytes(16).toString('hex');
-      event.integrityHash = this.computeHash(nonce, dto.eventType, dto.actorId ?? '');
+      event.integrityHash = this.computeHash(nonce, eventType, dto.actorId ?? '');
 
       await this.auditRepo.save(event);
     } catch (err) {

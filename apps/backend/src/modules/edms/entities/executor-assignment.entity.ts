@@ -54,7 +54,7 @@ export class ExecutorAssignment {
   positionId: string;
 
   /** Snapshot of occupant at assignment time */
-  @Column({ name: 'assigned_user_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'assigned_user_id', nullable: true })
   assignedUserId: string | null;
 
   @Column({
@@ -80,7 +80,7 @@ export class ExecutorAssignment {
   deadline: string | null;
 
   /** ID of the Task created in TaskManagement domain for this assignment */
-  @Column({ name: 'linked_task_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'linked_task_id', nullable: true })
   linkedTaskId: string | null;
 
   /** Completion report filed by the executor */

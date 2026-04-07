@@ -35,7 +35,7 @@ export class TaskAttachment {
   @Column({ name: 'file_name', length: 500 })
   fileName: string;
 
-  @Column({ name: 'mime_type', length: 100, nullable: true })
+  @Column({ type: 'varchar',  name: 'mime_type', length: 100, nullable: true })
   mimeType: string | null;
 
   @Column({ name: 'file_size_bytes', type: 'bigint', nullable: true })
@@ -44,7 +44,7 @@ export class TaskAttachment {
   @Column({ name: 'uploader_id' })
   uploaderId: string;
 
-  @Column({ name: 'uploader_position_id', nullable: true })
+  @Column({ type: 'varchar',  name: 'uploader_position_id', nullable: true })
   uploaderPositionId: string | null;
 
   /** Classification of this attachment (may exceed task classification) */

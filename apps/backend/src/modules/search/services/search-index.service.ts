@@ -43,7 +43,7 @@ export interface MessageIndexDoc {
   channelId: string;
   body: string | null;
   senderId: string;
-  senderPositionId: string;
+  senderPositionId: string | null;
   classification: number;
   sequence: number;
   createdAt: string;
@@ -71,17 +71,15 @@ export class SearchIndexService implements OnModuleInit {
     }
 
     this.client = new OpenSearchClient(clientConfig);
-    await this.ensureIndices();
+    await this.ensureIndicesReady();
   }
 
   // ─── Index bootstrap ─────────────────────────────────────────────────────────
 
-  private async ensureIndices(): Promise<void> {
-    await Promise.all([
-      this.ensureIndex(SearchIndexName.DOCUMENTS, DOCUMENT_MAPPING),
-      this.ensureIndex(SearchIndexName.TASKS,     TASK_MAPPING),
-      this.ensureIndex(SearchIndexName.MESSAGES,  MESSAGE_MAPPING),
-    ]);
+  async ensureIndicesReady(indices: SearchIndexName[] = Object.values(SearchIndexName)): Promise<void> {
+    await Promise.all(
+      indices.map((name) => this.ensureIndex(name, INDEX_MAPPINGS[name])),
+    );
   }
 
   private async ensureIndex(name: SearchIndexName, mapping: object): Promise<void> {
@@ -151,7 +149,7 @@ export class SearchIndexService implements OnModuleInit {
         index: this.indexName(name),
         id,
         body,
-        refresh: 'false',  // async refresh — no need to block on every write
+        refresh: false,
       });
     } catch (err) {
       this.logger.error(`Failed to index ${name}/${id}: ${(err as Error).message}`);
@@ -163,7 +161,7 @@ export class SearchIndexService implements OnModuleInit {
       await this.client.delete({
         index: this.indexName(name),
         id,
-        refresh: 'false',
+        refresh: false,
       });
     } catch (err) {
       // 404 means it was never indexed — that's fine
@@ -175,6 +173,56 @@ export class SearchIndexService implements OnModuleInit {
 
   indexName(name: SearchIndexName): string {
     return `${this.prefix}-${name}`;
+  }
+
+  async refreshIndices(indices: SearchIndexName[] = Object.values(SearchIndexName)): Promise<void> {
+    try {
+      await this.client.indices.refresh({
+        index: indices.map((name) => this.indexName(name)).join(','),
+      });
+    } catch (err) {
+      this.logger.error(`Failed to refresh search indices: ${(err as Error).message}`);
+    }
+  }
+
+  async getHealth(indices: SearchIndexName[] = Object.values(SearchIndexName)): Promise<{
+    status: 'healthy' | 'degraded';
+    node: string;
+    available: boolean;
+    indices: Array<{ name: SearchIndexName; index: string; exists: boolean }>;
+  }> {
+    const node = this.config.get<string>('opensearch.node', 'http://localhost:9200');
+
+    try {
+      const ping = await this.client.ping();
+      const available = ping.statusCode ? ping.statusCode < 500 : true;
+      const resolved = await Promise.all(
+        indices.map(async (name) => {
+          const index = this.indexName(name);
+          const exists = await this.client.indices.exists({ index });
+          return { name, index, exists: Boolean(exists.body) };
+        }),
+      );
+
+      return {
+        status: available && resolved.every((entry) => entry.exists) ? 'healthy' : 'degraded',
+        node,
+        available,
+        indices: resolved,
+      };
+    } catch (err) {
+      this.logger.error(`OpenSearch health check failed: ${(err as Error).message}`);
+      return {
+        status: 'degraded',
+        node,
+        available: false,
+        indices: indices.map((name) => ({
+          name,
+          index: this.indexName(name),
+          exists: false,
+        })),
+      };
+    }
   }
 
   /** Expose raw client for query service */
@@ -229,4 +277,10 @@ const MESSAGE_MAPPING = {
     sequence:         { type: 'integer' },
     createdAt:        { type: 'date' },
   },
+};
+
+const INDEX_MAPPINGS: Record<SearchIndexName, object> = {
+  [SearchIndexName.DOCUMENTS]: DOCUMENT_MAPPING,
+  [SearchIndexName.TASKS]: TASK_MAPPING,
+  [SearchIndexName.MESSAGES]: MESSAGE_MAPPING,
 };

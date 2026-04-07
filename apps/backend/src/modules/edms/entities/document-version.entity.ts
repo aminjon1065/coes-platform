@@ -44,7 +44,7 @@ export class DocumentVersion {
   @Column({ name: 'author_id' })
   authorId: string;
 
-  @Column({ name: 'change_reason', length: 500, nullable: true })
+  @Column({ type: 'varchar',  name: 'change_reason', length: 500, nullable: true })
   changeReason: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
