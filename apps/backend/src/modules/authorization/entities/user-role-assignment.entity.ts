@@ -19,10 +19,10 @@ export class UserRoleAssignment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'user_id' })
+  @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
-  @Column({ name: 'role_id' })
+  @Column({ name: 'role_id', type: 'uuid' })
   roleId: string;
 
   @ManyToOne(() => Role, { eager: true, onDelete: 'CASCADE' })
@@ -30,14 +30,14 @@ export class UserRoleAssignment {
   role: Role;
 
   // Optional: restrict this role assignment to a specific department scope
-  @Column({ type: 'varchar',  name: 'department_scope_id', nullable: true })
+  @Column({ name: 'department_scope_id', type: 'uuid', nullable: true })
   departmentScopeId: string | null;
 
   // Optional: restrict this role assignment to a specific position
-  @Column({ type: 'varchar',  name: 'position_id', nullable: true })
+  @Column({ name: 'position_id', type: 'uuid', nullable: true })
   positionId: string | null;
 
-  @Column({ type: 'varchar',  name: 'granted_by_id', nullable: true })
+  @Column({ name: 'granted_by_id', type: 'uuid', nullable: true })
   grantedById: string | null;
 
   @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })

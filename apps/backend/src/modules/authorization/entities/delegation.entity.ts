@@ -17,13 +17,13 @@ export class Delegation {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'delegator_id' })
+  @Column({ name: 'delegator_id', type: 'uuid' })
   delegatorId: string;
 
-  @Column({ name: 'delegate_id' })
+  @Column({ name: 'delegate_id', type: 'uuid' })
   delegateId: string;
 
-  @Column({ name: 'position_id' })
+  @Column({ name: 'position_id', type: 'uuid' })
   positionId: string;
 
   @Column({ name: 'start_at', type: 'timestamptz' })
@@ -35,7 +35,7 @@ export class Delegation {
   @Column({ type: 'varchar',  length: 500, nullable: true })
   reason: string | null;
 
-  @Column({ type: 'varchar',  name: 'created_by_id', nullable: true })
+  @Column({ name: 'created_by_id', type: 'uuid', nullable: true })
   createdById: string | null;
 
   @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })

@@ -4,7 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -34,6 +34,7 @@ export class ReportingService {
     private readonly defRepo: Repository<ReportDefinition>,
     @InjectRepository(ReportExecution)
     private readonly execRepo: Repository<ReportExecution>,
+    @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly events: EventEmitter2,
   ) {}

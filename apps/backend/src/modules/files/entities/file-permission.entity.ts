@@ -32,23 +32,23 @@ export class FilePermission {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'file_id' })
+  @Column({ name: 'file_id', type: 'uuid' })
   fileId: string;
 
   @ManyToOne('FileRecord', 'permissions', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'file_id' })
   file: Relation<FileRecord>;
 
-  @Column({ name: 'grantee_position_id' })
+  @Column({ name: 'grantee_position_id', type: 'uuid' })
   granteePositionId: string;
 
-  @Column({ type: 'enum', enum: PermissionAction })
+  @Column({ type: 'enum', enum: PermissionAction, enumName: 'permission_action' })
   action: PermissionAction;
 
-  @Column({ type: 'enum', enum: PermissionEffect, default: PermissionEffect.ALLOW })
+  @Column({ type: 'enum', enum: PermissionEffect, enumName: 'permission_effect', default: PermissionEffect.ALLOW })
   effect: PermissionEffect;
 
-  @Column({ name: 'granted_by_id' })
+  @Column({ name: 'granted_by_id', type: 'uuid' })
   grantedById: string;
 
   @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })

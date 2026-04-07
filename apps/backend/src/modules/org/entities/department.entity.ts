@@ -31,7 +31,7 @@ export class Department {
   @Column({ type: 'varchar',  name: 'short_code', length: 20, nullable: true })
   shortCode: string | null;
 
-  @Column({ type: 'varchar',  name: 'parent_id', nullable: true })
+  @Column({ name: 'parent_id', type: 'uuid', nullable: true })
   parentId: string | null;
 
   @TreeParent()

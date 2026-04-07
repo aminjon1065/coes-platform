@@ -12,9 +12,12 @@ FROM base AS deps
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
+RUN npm config set fetch-retries 5 \
+  && npm config set fetch-retry-mintimeout 20000 \
+  && npm config set fetch-retry-maxtimeout 120000
 COPY package*.json ./
-RUN npm install --omit=dev && cp -R node_modules /prod_node_modules
-RUN npm install
+RUN npm install --omit=dev --no-audit --no-fund && cp -R node_modules /prod_node_modules
+RUN npm install --no-audit --no-fund
 
 FROM deps AS build
 COPY . .

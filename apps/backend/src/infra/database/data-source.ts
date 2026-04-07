@@ -8,8 +8,16 @@ import { join } from 'path';
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const dotenv = require('dotenv');
-  dotenv.config({ path: join(process.cwd(), '.env.local') });
-  dotenv.config({ path: join(process.cwd(), '.env') });
+  const envPaths = [
+    join(process.cwd(), '.env.local'),
+    join(process.cwd(), '.env'),
+    join(process.cwd(), '..', '..', '.env.local'),
+    join(process.cwd(), '..', '..', '.env'),
+  ].filter((path) => existsSync(path));
+
+  for (const path of envPaths) {
+    dotenv.config({ path });
+  }
 } catch {
   // dotenv not available — env vars must be set externally (Docker / CI)
 }

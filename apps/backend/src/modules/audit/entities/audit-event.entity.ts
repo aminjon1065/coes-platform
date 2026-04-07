@@ -25,7 +25,7 @@ export class AuditEvent {
   id: string;
 
   // Who did it (null for system events)
-  @Column({ type: 'varchar',  name: 'actor_id', nullable: true })
+  @Column({ name: 'actor_id', type: 'uuid', nullable: true })
   actorId: string | null;
 
   @Column({ type: 'varchar',  name: 'actor_username', length: 100, nullable: true })
@@ -39,7 +39,7 @@ export class AuditEvent {
   @Column({ type: 'varchar',  name: 'resource_type', length: 100, nullable: true })
   resourceType: string | null;
 
-  @Column({ type: 'varchar',  name: 'resource_id', nullable: true })
+  @Column({ name: 'resource_id', type: 'uuid', nullable: true })
   resourceId: string | null;
 
   // Context
@@ -59,6 +59,7 @@ export class AuditEvent {
   @Column({
     type: 'enum',
     enum: AuditSeverity,
+    enumName: 'audit_severity',
     default: AuditSeverity.INFO,
   })
   severity: AuditSeverity;

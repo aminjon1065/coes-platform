@@ -68,6 +68,7 @@ export class NotificationPreference {
     name: 'sms_min_priority',
     type: 'enum',
     enum: NotificationPriority,
+    enumName: 'notification_priority',
     default: NotificationPriority.HIGH,
   })
   smsMinPriority: NotificationPriority;
@@ -80,6 +81,7 @@ export class NotificationPreference {
     name: 'telegram_min_priority',
     type: 'enum',
     enum: NotificationPriority,
+    enumName: 'notification_priority',
     default: NotificationPriority.HIGH,
   })
   telegramMinPriority: NotificationPriority;

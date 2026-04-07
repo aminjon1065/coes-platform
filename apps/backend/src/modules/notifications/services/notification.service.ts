@@ -4,7 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, IsNull } from 'typeorm';
 
 import {
@@ -146,6 +146,7 @@ export class NotificationService {
     private readonly smsProvider: SmsNotificationProvider,
     private readonly pushProvider: PushNotificationProvider,
     private readonly telegramProvider: TelegramNotificationProvider,
+    @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
 

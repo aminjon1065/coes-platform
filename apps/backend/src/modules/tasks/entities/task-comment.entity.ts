@@ -20,7 +20,7 @@ export class TaskComment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'task_id' })
+  @Column({ name: 'task_id', type: 'uuid' })
   taskId: string;
 
   @ManyToOne('Task', 'comments', { onDelete: 'CASCADE' })

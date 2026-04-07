@@ -110,6 +110,31 @@ export class Incident {
    * response_time_minutes and resolution_time_hours are GENERATED columns.
    * TypeORM marks them as read-only by selecting them in raw queries.
    */
+  @Column({
+    name: 'response_time_minutes',
+    type: 'int',
+    nullable: true,
+    asExpression:
+      "CASE WHEN first_response_at IS NOT NULL THEN EXTRACT(EPOCH FROM (first_response_at - reported_at)) / 60 END::int",
+    generatedType: 'STORED',
+    insert: false,
+    update: false,
+  })
+  responseTimeMinutes: number | null;
+
+  @Column({
+    name: 'resolution_time_hours',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    asExpression:
+      'CASE WHEN resolved_at IS NOT NULL THEN EXTRACT(EPOCH FROM (resolved_at - reported_at)) / 3600 END',
+    generatedType: 'STORED',
+    insert: false,
+    update: false,
+  })
+  resolutionTimeHours: number | null;
 
   /** 0=unrestricted 1=internal 2=confidential 3=secret */
   @Column({ type: 'smallint', default: 0 })

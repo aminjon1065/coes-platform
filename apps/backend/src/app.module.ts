@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import type { CacheStore } from '@nestjs/common/cache/interfaces/cache-manager.interface';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -35,6 +36,15 @@ import smsConfig from './infra/config/sms.config';
 import telegramConfig from './infra/config/telegram.config';
 import webpushConfig from './infra/config/webpush.config';
 import { HealthController } from './health.controller';
+import { existsSync } from 'fs';
+import { join } from 'path';
+
+const envFilePath = [
+  join(process.cwd(), '.env.local'),
+  join(process.cwd(), '.env'),
+  join(process.cwd(), '..', '..', '.env.local'),
+  join(process.cwd(), '..', '..', '.env'),
+].filter((path) => existsSync(path));
 
 @Module({
   controllers: [HealthController],
@@ -55,7 +65,7 @@ import { HealthController } from './health.controller';
         telegramConfig,
         webpushConfig,
       ],
-      envFilePath: ['.env.local', '.env'],
+      envFilePath,
     }),
 
     // Database
@@ -82,13 +92,19 @@ import { HealthController } from './health.controller';
     CacheModule.registerAsync({
       isGlobal: true,
       inject: [ConfigService],
-      useFactory: async (config: ConfigService) => ({
-        store: redisStore,
-        host: config.get<string>('redis.host'),
-        port: config.get<number>('redis.port'),
-        password: config.get<string>('redis.password'),
-        ttl: 300,
-      }),
+      useFactory: async (config: ConfigService) => {
+        const store = await redisStore({
+          host: config.get<string>('redis.host'),
+          port: config.get<number>('redis.port'),
+          password: config.get<string>('redis.password'),
+          ttl: 300,
+        });
+
+        return {
+          store: store as unknown as CacheStore,
+          ttl: 300,
+        };
+      },
     }),
 
     // Domain event bus (in-process; promotable to RabbitMQ)

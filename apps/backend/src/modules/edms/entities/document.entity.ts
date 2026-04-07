@@ -47,7 +47,7 @@ export class Document {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'type_id' })
+  @Column({ name: 'type_id', type: 'uuid' })
   typeId: string;
 
   @ManyToOne(() => DocumentType, { eager: true, onDelete: 'RESTRICT' })
@@ -57,6 +57,7 @@ export class Document {
   @Column({
     type: 'enum',
     enum: DocumentStatus,
+    enumName: 'document_status',
     default: DocumentStatus.DRAFT,
   })
   status: DocumentStatus;
@@ -65,6 +66,7 @@ export class Document {
     name: 'direction',
     type: 'enum',
     enum: DocumentDirection,
+    enumName: 'document_direction',
     default: DocumentDirection.INTERNAL,
   })
   direction: DocumentDirection;
@@ -88,11 +90,11 @@ export class Document {
   documentDate: string | null;
 
   /** 0=public 1=internal 2=confidential 3=secret */
-  @Column({ name: 'classification', default: 1 })
+  @Column({ name: 'classification', type: 'smallint', default: 1 })
   classification: number;
 
   // ─── Sender (position-based for internal; free text for external) ───────
-  @Column({ type: 'varchar',  name: 'sender_position_id', nullable: true })
+  @Column({ name: 'sender_position_id', type: 'uuid', nullable: true })
   senderPositionId: string | null;
 
   @Column({ type: 'varchar',  name: 'sender_name', length: 300, nullable: true })
@@ -119,15 +121,15 @@ export class Document {
   deadline: string | null;
 
   /** Links: response_to, based_on, supersedes */
-  @Column({ type: 'varchar',  name: 'related_document_id', nullable: true })
+  @Column({ name: 'related_document_id', type: 'uuid', nullable: true })
   relatedDocumentId: string | null;
 
   /** The user (credentialId) who created this draft */
-  @Column({ name: 'created_by_id' })
+  @Column({ name: 'created_by_id', type: 'uuid' })
   createdById: string;
 
   /** The position from which the document was created */
-  @Column({ type: 'varchar',  name: 'created_by_position_id', nullable: true })
+  @Column({ name: 'created_by_position_id', type: 'uuid', nullable: true })
   createdByPositionId: string | null;
 
   @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true })
@@ -141,7 +143,7 @@ export class Document {
   archivedAt: Date | null;
 
   /** Credential ID of the user (or 'system' for auto-archive) who archived the document */
-  @Column({ type: 'varchar',  name: 'archived_by_id', nullable: true })
+  @Column({ name: 'archived_by_id', type: 'uuid', nullable: true })
   archivedById: string | null;
 
   /** Date at which the archive copy must be reviewed per retention policy (archivedAt + retentionYears) */

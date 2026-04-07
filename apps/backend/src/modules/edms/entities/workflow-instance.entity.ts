@@ -31,10 +31,10 @@ export class WorkflowInstance {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'document_id' })
+  @Column({ name: 'document_id', type: 'uuid' })
   documentId: string;
 
-  @Column({ name: 'template_id' })
+  @Column({ name: 'template_id', type: 'uuid' })
   templateId: string;
 
   @ManyToOne(() => WorkflowTemplate, { onDelete: 'RESTRICT' })
@@ -48,6 +48,7 @@ export class WorkflowInstance {
   @Column({
     type: 'enum',
     enum: WorkflowInstanceStatus,
+    enumName: 'workflow_instance_status',
     default: WorkflowInstanceStatus.ACTIVE,
   })
   status: WorkflowInstanceStatus;
@@ -57,10 +58,10 @@ export class WorkflowInstance {
   currentStepOrder: number | null;
 
   /** Who initiated this workflow instance */
-  @Column({ name: 'initiated_by_id' })
+  @Column({ name: 'initiated_by_id', type: 'uuid' })
   initiatedById: string;
 
-  @Column({ type: 'varchar',  name: 'initiated_by_position_id', nullable: true })
+  @Column({ type: 'varchar', name: 'initiated_by_position_id', length: 255, nullable: true })
   initiatedByPositionId: string | null;
 
   /** Deadline for the entire workflow (may differ from individual step deadlines) */

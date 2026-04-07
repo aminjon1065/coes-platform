@@ -42,18 +42,20 @@ export class Channel {
   @Column({
     type: 'enum',
     enum: ChannelType,
+    enumName: 'channel_type',
   })
   type: ChannelType;
 
   @Column({
     type: 'enum',
     enum: ChannelStatus,
+    enumName: 'channel_status',
     default: ChannelStatus.ACTIVE,
   })
   status: ChannelStatus;
 
   /** 0=public 1=internal 2=confidential 3=secret */
-  @Column({ name: 'classification', default: 1 })
+  @Column({ name: 'classification', type: 'smallint', default: 1 })
   classification: number;
 
   /** Creator position (null for system-created channels) */

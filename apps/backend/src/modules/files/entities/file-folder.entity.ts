@@ -20,7 +20,7 @@ export class FileFolder {
   @Column({ length: 255 })
   name: string;
 
-  @Column({ type: 'varchar',  name: 'parent_id', nullable: true })
+  @Column({ name: 'parent_id', type: 'uuid', nullable: true })
   parentId: string | null;
 
   @ManyToOne(() => FileFolder, (f) => f.children, { nullable: true, onDelete: 'RESTRICT' })
@@ -30,16 +30,16 @@ export class FileFolder {
   @OneToMany(() => FileFolder, (f) => f.parent)
   children: FileFolder[];
 
-  @Column({ name: 'owner_position_id' })
+  @Column({ name: 'owner_position_id', type: 'uuid' })
   ownerPositionId: string;
 
-  @Column({ default: 1 })
+  @Column({ type: 'smallint', default: 1 })
   classification: number;
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ name: 'created_by_id' })
+  @Column({ name: 'created_by_id', type: 'uuid' })
   createdById: string;
 
   @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })

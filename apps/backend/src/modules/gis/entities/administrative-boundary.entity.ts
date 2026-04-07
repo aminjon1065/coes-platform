@@ -59,16 +59,43 @@ export class AdministrativeBoundary {
   /**
    * MultiPolygon geometry (WGS84).
    * Stored as PostGIS geometry(MultiPolygon, 4326).
-   * geometry_utm and centroid are GENERATED columns in the DB — not mapped here.
    */
   @Column({ type: 'geometry', spatialFeatureType: 'MultiPolygon', srid: 4326 })
   geometry: string;
+
+  @Column({
+    name: 'geometry_utm',
+    type: 'geometry',
+    spatialFeatureType: 'MultiPolygon',
+    srid: 32639,
+    asExpression: 'st_transform(geometry, 32639)',
+    generatedType: 'STORED',
+    nullable: true,
+    insert: false,
+    update: false,
+    select: false,
+  })
+  geometryUtm: string;
 
   @Column({ name: 'area_km2', type: 'decimal', precision: 10, scale: 2, nullable: true })
   areaKm2: number | null;
 
   @Column({ type: 'int', nullable: true })
   population: number | null;
+
+  @Column({
+    name: 'centroid',
+    type: 'geometry',
+    spatialFeatureType: 'Point',
+    srid: 4326,
+    asExpression: 'st_centroid(geometry)',
+    generatedType: 'STORED',
+    nullable: true,
+    insert: false,
+    update: false,
+    select: false,
+  })
+  centroid: string;
 
   @Column({ type: 'jsonb', default: '{}' })
   metadata: object;

@@ -4,6 +4,33 @@ export class InitialSchema1712300000000 implements MigrationInterface {
   name = 'InitialSchema1712300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE SCHEMA IF NOT EXISTS iam;
+      CREATE SCHEMA IF NOT EXISTS org;
+      CREATE SCHEMA IF NOT EXISTS users;
+      CREATE SCHEMA IF NOT EXISTS authz;
+      CREATE SCHEMA IF NOT EXISTS audit;
+      CREATE SCHEMA IF NOT EXISTS edms;
+      CREATE SCHEMA IF NOT EXISTS files;
+      CREATE SCHEMA IF NOT EXISTS calls;
+      CREATE SCHEMA IF NOT EXISTS gis;
+      CREATE SCHEMA IF NOT EXISTS analytics;
+      CREATE SCHEMA IF NOT EXISTS ml;
+      CREATE SCHEMA IF NOT EXISTS reporting;
+      CREATE SCHEMA IF NOT EXISTS notifications;
+      CREATE SCHEMA IF NOT EXISTS chat;
+      CREATE SCHEMA IF NOT EXISTS tasks;
+      CREATE SCHEMA IF NOT EXISTS search;
+    `);
+
+    await queryRunner.query(`
+      CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+      CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+      CREATE EXTENSION IF NOT EXISTS "btree_gin";
+      CREATE EXTENSION IF NOT EXISTS "postgis";
+      CREATE EXTENSION IF NOT EXISTS "postgis_topology";
+    `);
+
     // ─────────────────────────────────────────────────────────────────────
     // IAM Schema
     // ─────────────────────────────────────────────────────────────────────

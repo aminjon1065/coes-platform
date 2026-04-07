@@ -20,7 +20,7 @@ export class UserPreferences {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'user_id' })
+  @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
   @OneToOne('UserProfile', 'preferences', { onDelete: 'CASCADE' })
@@ -30,6 +30,7 @@ export class UserPreferences {
   @Column({
     type: 'enum',
     enum: AppLanguage,
+    enumName: 'app_language',
     default: AppLanguage.RU,
   })
   language: AppLanguage;

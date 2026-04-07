@@ -16,7 +16,7 @@ export class FileVersion {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'file_id' })
+  @Column({ name: 'file_id', type: 'uuid' })
   fileId: string;
 
   @ManyToOne('FileRecord', 'versions', { onDelete: 'CASCADE' })
@@ -36,7 +36,7 @@ export class FileVersion {
   @Column({ name: 'sha256_hash', length: 64 })
   sha256Hash: string;
 
-  @Column({ name: 'uploaded_by_id' })
+  @Column({ name: 'uploaded_by_id', type: 'uuid' })
   uploadedById: string;
 
   @Column({ type: 'varchar',  name: 'upload_note', length: 500, nullable: true })

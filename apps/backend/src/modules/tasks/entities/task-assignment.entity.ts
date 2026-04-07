@@ -34,7 +34,7 @@ export class TaskAssignment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'task_id' })
+  @Column({ name: 'task_id', type: 'uuid' })
   taskId: string;
 
   @ManyToOne('Task', 'assignments', { onDelete: 'CASCADE' })
@@ -53,6 +53,7 @@ export class TaskAssignment {
     name: 'assignment_type',
     type: 'enum',
     enum: AssignmentType,
+    enumName: 'assignment_type',
     default: AssignmentType.PRIMARY,
   })
   assignmentType: AssignmentType;
@@ -60,6 +61,7 @@ export class TaskAssignment {
   @Column({
     type: 'enum',
     enum: AssignmentStatus,
+    enumName: 'assignment_status',
     default: AssignmentStatus.ACTIVE,
   })
   status: AssignmentStatus;

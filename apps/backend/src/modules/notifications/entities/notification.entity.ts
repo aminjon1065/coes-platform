@@ -43,7 +43,7 @@ export class Notification {
   @Index()
   recipientUserId: string | null;
 
-  @Column({ type: 'enum', enum: NotificationPriority, default: NotificationPriority.NORMAL })
+  @Column({ type: 'enum', enum: NotificationPriority, enumName: 'notification_priority', default: NotificationPriority.NORMAL })
   priority: NotificationPriority;
 
   @Column({ length: 255 })

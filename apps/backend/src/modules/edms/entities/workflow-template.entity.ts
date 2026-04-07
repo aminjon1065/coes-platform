@@ -28,8 +28,11 @@ export class WorkflowTemplate {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ name: 'document_type_id' })
+  @Column({ name: 'document_type_id', type: 'uuid' })
   documentTypeId: string;
+
+  @Column({ name: 'owner_department_id', type: 'uuid', nullable: true })
+  ownerDepartmentId: string | null;
 
   @ManyToOne(() => DocumentType, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'document_type_id' })

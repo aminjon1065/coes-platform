@@ -30,7 +30,7 @@ export class UserPositionAssignment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'user_id' })
+  @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
   @ManyToOne('UserProfile', 'positionAssignments', { onDelete: 'CASCADE' })
@@ -38,26 +38,27 @@ export class UserPositionAssignment {
   user: Relation<UserProfile>;
 
   /** Position UUID — not a FK (cross-schema); validated at service layer */
-  @Column({ name: 'position_id' })
+  @Column({ name: 'position_id', type: 'uuid' })
   positionId: string;
 
   @Column({
     type: 'enum',
     enum: AssignmentType,
+    enumName: 'assignment_type',
     default: AssignmentType.PRIMARY,
   })
   type: AssignmentType;
 
-  @Column({ name: 'assigned_at', type: 'timestamptz' })
+  @Column({ name: 'assigned_at', type: 'timestamptz', default: () => 'NOW()' })
   assignedAt: Date;
 
   @Column({ name: 'vacated_at', type: 'timestamptz', nullable: true })
   vacatedAt: Date | null;
 
-  @Column({ type: 'varchar',  name: 'assigned_by_id', nullable: true })
+  @Column({ name: 'assigned_by_id', type: 'uuid', nullable: true })
   assignedById: string | null;
 
-  @Column({ type: 'varchar',  name: 'vacated_by_id', nullable: true })
+  @Column({ name: 'vacated_by_id', type: 'uuid', nullable: true })
   vacatedById: string | null;
 
   @Column({ type: 'varchar',  length: 500, nullable: true })

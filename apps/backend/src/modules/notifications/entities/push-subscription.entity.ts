@@ -41,6 +41,7 @@ export class PushSubscription {
   @Column({
     type: 'enum',
     enum: PushSubscriptionStatus,
+    enumName: 'push_subscription_status',
     default: PushSubscriptionStatus.ACTIVE,
   })
   status: PushSubscriptionStatus;

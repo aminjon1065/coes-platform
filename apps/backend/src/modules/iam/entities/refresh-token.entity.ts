@@ -15,7 +15,7 @@ export class RefreshToken {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'user_id' })
+  @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
   @ManyToOne(() => UserCredential, { onDelete: 'CASCADE' })
@@ -28,7 +28,7 @@ export class RefreshToken {
 
   // Family groups tokens issued from the same original login.
   // If a revoked family token is reused, all tokens in the family are revoked.
-  @Column({ length: 36 })
+  @Column({ type: 'uuid' })
   family: string;
 
   @Column({ name: 'expires_at', type: 'timestamptz' })

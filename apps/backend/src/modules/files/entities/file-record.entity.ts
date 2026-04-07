@@ -40,7 +40,7 @@ export class FileRecord {
   @Column({ type: 'varchar',  name: 'mime_type', length: 100, nullable: true })
   mimeType: string | null;
 
-  @Column({ type: 'varchar',  name: 'folder_id', nullable: true })
+  @Column({ name: 'folder_id', type: 'uuid', nullable: true })
   folderId: string | null;
 
   @ManyToOne(() => FileFolder, { nullable: true, onDelete: 'SET NULL' })
@@ -48,17 +48,17 @@ export class FileRecord {
   folder: FileFolder | null;
 
   /** 0=unrestricted 1=internal 2=confidential 3=secret */
-  @Column({ default: 1 })
+  @Column({ type: 'smallint', default: 1 })
   classification: number;
 
-  @Column({ name: 'owner_position_id' })
+  @Column({ name: 'owner_position_id', type: 'uuid' })
   ownerPositionId: string;
 
-  @Column({ name: 'uploaded_by_id' })
+  @Column({ name: 'uploaded_by_id', type: 'uuid' })
   uploadedById: string;
 
   /** FK to current (latest) version — DEFERRABLE in DB, nullable until first version is saved */
-  @Column({ type: 'varchar',  name: 'current_version_id', nullable: true })
+  @Column({ name: 'current_version_id', type: 'uuid', nullable: true })
   currentVersionId: string | null;
 
   @ManyToOne('FileVersion', { nullable: true, eager: true })
@@ -75,6 +75,7 @@ export class FileRecord {
     name: 'scan_status',
     type: 'enum',
     enum: ScanStatus,
+    enumName: 'scan_status',
     default: ScanStatus.PENDING,
   })
   scanStatus: ScanStatus;

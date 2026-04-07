@@ -33,6 +33,7 @@ export class UserCredential {
   @Column({
     type: 'enum',
     enum: CredentialStatus,
+    enumName: 'credential_status',
     default: CredentialStatus.ACTIVE,
   })
   status: CredentialStatus;

@@ -54,6 +54,7 @@ export class ChannelMember {
   @Column({
     type: 'enum',
     enum: MemberRole,
+    enumName: 'member_role',
     default: MemberRole.MEMBER,
   })
   role: MemberRole;
@@ -61,6 +62,7 @@ export class ChannelMember {
   @Column({
     type: 'enum',
     enum: MemberStatus,
+    enumName: 'member_status',
     default: MemberStatus.ACTIVE,
   })
   status: MemberStatus;

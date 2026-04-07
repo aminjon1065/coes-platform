@@ -21,7 +21,7 @@ export class DocumentVersion {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'document_id' })
+  @Column({ name: 'document_id', type: 'uuid' })
   documentId: string;
 
   @ManyToOne('Document', 'versions', { onDelete: 'CASCADE' })
@@ -41,7 +41,7 @@ export class DocumentVersion {
   @Column({ name: 'recipients', type: 'jsonb', default: '[]' })
   recipients: unknown[];
 
-  @Column({ name: 'author_id' })
+  @Column({ name: 'author_id', type: 'uuid' })
   authorId: string;
 
   @Column({ type: 'varchar',  name: 'change_reason', length: 500, nullable: true })

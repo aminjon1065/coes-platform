@@ -27,19 +27,19 @@ export class Resolution {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'document_id' })
+  @Column({ name: 'document_id', type: 'uuid' })
   documentId: string;
 
   /** The step in the workflow instance where the resolution was issued */
-  @Column({ type: 'varchar',  name: 'workflow_step_id', nullable: true })
+  @Column({ name: 'workflow_step_id', type: 'uuid', nullable: true })
   workflowStepId: string | null;
 
   /** Position issuing the resolution */
-  @Column({ name: 'issuing_position_id' })
+  @Column({ name: 'issuing_position_id', type: 'uuid' })
   issuingPositionId: string;
 
   /** User who issued the resolution */
-  @Column({ name: 'issuing_user_id' })
+  @Column({ name: 'issuing_user_id', type: 'uuid' })
   issuingUserId: string;
 
   /** The instruction text */
@@ -49,6 +49,7 @@ export class Resolution {
   @Column({
     type: 'enum',
     enum: ResolutionPriority,
+    enumName: 'resolution_priority',
     default: ResolutionPriority.ROUTINE,
   })
   priority: ResolutionPriority;

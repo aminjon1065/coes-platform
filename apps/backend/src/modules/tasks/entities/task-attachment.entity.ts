@@ -20,7 +20,7 @@ export class TaskAttachment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'task_id' })
+  @Column({ name: 'task_id', type: 'uuid' })
   taskId: string;
 
   @ManyToOne('Task', 'attachments', { onDelete: 'CASCADE' })
@@ -48,7 +48,7 @@ export class TaskAttachment {
   uploaderPositionId: string | null;
 
   /** Classification of this attachment (may exceed task classification) */
-  @Column({ name: 'classification', default: 1 })
+  @Column({ name: 'classification', type: 'smallint', default: 1 })
   classification: number;
 
   /** Soft-delete: set when attachment is removed */

@@ -80,7 +80,7 @@ x-airflow-common: &airflow-common
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
-      postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME:-airflow}
+      postgresql+psycopg2://${COESCD_AIRFLOW_DB_USER:-airflow}:${COESCD_AIRFLOW_DB_PASSWORD}@airflow-db:5432/${COESCD_AIRFLOW_DB_NAME:-airflow}
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?Set AIRFLOW_FERNET_KEY in .env}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
@@ -89,18 +89,18 @@ x-airflow-common: &airflow-common
     AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
     AIRFLOW__METRICS__STATSD_ON: "false"
     AIRFLOW_CONN_COESCD_POSTGRES: >-
-      postgresql+psycopg2://${POSTGRES_USER:-coescd}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coescd}
+      postgresql+psycopg2://${COESCD_POSTGRES_USER:-coescd}:${COESCD_POSTGRES_PASSWORD}@postgres:5432/${COESCD_POSTGRES_DB:-coescd}
     AIRFLOW_CONN_COESCD_TIMESCALE: >-
-      postgresql+psycopg2://${TIMESCALE_USER:-coescd_analytics}:${TIMESCALE_PASSWORD}@timescaledb:5432/${TIMESCALE_DB:-coescd_analytics}
+      postgresql+psycopg2://${COESCD_TIMESCALE_USER:-coescd_analytics}:${COESCD_TIMESCALE_PASSWORD}@timescaledb:5432/${COESCD_TIMESCALE_DB:-coescd_analytics}
     AIRFLOW_CONN_COESCD_BACKEND: >-
       http://:@backend:4000/api
     AIRFLOW_CONN_COESCD_CLICKHOUSE: >-
-      http://${CLICKHOUSE_USER:-coescd_ml}:${CLICKHOUSE_PASSWORD}@clickhouse:8123/${CLICKHOUSE_DB:-coescd_ml}
+      http://${COESCD_CLICKHOUSE_USER:-coescd_ml}:${COESCD_CLICKHOUSE_PASSWORD}@clickhouse:8123/${COESCD_CLICKHOUSE_DB:-coescd_ml}
     COESCD_BACKEND_URL:  http://backend:4000
     MLFLOW_TRACKING_URI: http://mlflow:5000
     MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-    AWS_ACCESS_KEY_ID:   ${MINIO_ACCESS_KEY}
-    AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
+    AWS_ACCESS_KEY_ID:   ${COESCD_MINIO_ACCESS_KEY}
+    AWS_SECRET_ACCESS_KEY: ${COESCD_MINIO_SECRET_KEY}
   volumes:
     - ../../apps/pipelines/dags:/opt/airflow/dags:ro
     - ../../apps/pipelines/plugins:/opt/airflow/plugins:ro
@@ -126,9 +126,9 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      POSTGRES_USER:     ${POSTGRES_USER:-coescd}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB:       ${POSTGRES_DB:-coescd}
+      POSTGRES_USER:     ${COESCD_POSTGRES_USER:-coescd}
+      POSTGRES_PASSWORD: ${COESCD_POSTGRES_PASSWORD:?Set COESCD_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB:       ${COESCD_POSTGRES_DB:-coescd}
       PGDATA:            /var/lib/postgresql/data/pgdata
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -138,7 +138,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coescd} -d ${POSTGRES_DB:-coescd}"]
+      test: ["CMD-SHELL", "pg_isready -U ${COESCD_POSTGRES_USER:-coescd} -d ${COESCD_POSTGRES_DB:-coescd}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -169,7 +169,7 @@ services:
     logging: *default-logging
     command: >
       redis-server
-        --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+        --requirepass ${COESCD_REDIS_PASSWORD:?Set COESCD_REDIS_PASSWORD in .env}
         --maxmemory 512mb
         --maxmemory-policy allkeys-lru
         --appendonly yes
@@ -182,7 +182,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${COESCD_REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -199,8 +199,8 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      RABBITMQ_DEFAULT_USER:  ${RABBITMQ_USER:-coescd}
-      RABBITMQ_DEFAULT_PASS:  ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+      RABBITMQ_DEFAULT_USER:  ${COESCD_RABBITMQ_USER:-coescd}
+      RABBITMQ_DEFAULT_PASS:  ${COESCD_RABBITMQ_PASSWORD:?Set COESCD_RABBITMQ_PASSWORD in .env}
       RABBITMQ_DEFAULT_VHOST: coescd
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
@@ -230,8 +230,8 @@ services:
     logging: *default-logging
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER:     ${MINIO_ROOT_USER:-coescd_admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+      MINIO_ROOT_USER:     ${COESCD_MINIO_ROOT_USER:-coescd_admin}
+      MINIO_ROOT_PASSWORD: ${COESCD_MINIO_ROOT_PASSWORD:?Set COESCD_MINIO_ROOT_PASSWORD in .env}
     volumes:
       - minio-data:/data
     ports:
@@ -293,7 +293,7 @@ services:
       DB_PORT:       5432
       REDIS_HOST:    redis
       REDIS_PORT:    6379
-      RABBITMQ_URL:  amqp://${RABBITMQ_USER:-coescd}:${RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
+      RABBITMQ_URL:  amqp://${COESCD_RABBITMQ_USER:-coescd}:${COESCD_RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
       MINIO_ENDPOINT: minio
       MINIO_PORT:    9000
       MINIO_USE_SSL: "false"
@@ -374,7 +374,7 @@ services:
       BACKEND_URL:  http://backend:4000
       REDIS_HOST:   redis
       REDIS_PORT:   6379
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-coescd}:${RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
+      RABBITMQ_URL: amqp://${COESCD_RABBITMQ_USER:-coescd}:${COESCD_RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
     depends_on:
       backend:
         condition: service_healthy
@@ -504,8 +504,8 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      GF_SECURITY_ADMIN_USER:     ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_SECURITY_ADMIN_USER:     ${COESCD_GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${COESCD_GRAFANA_ADMIN_PASSWORD:?Set COESCD_GRAFANA_ADMIN_PASSWORD in .env}
       GF_USERS_ALLOW_SIGN_UP:     "false"
       GF_AUTH_ANONYMOUS_ENABLED:  "false"
       GF_SERVER_ROOT_URL:         http://localhost:3001
@@ -646,7 +646,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-coescd}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coescd}?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${COESCD_POSTGRES_USER:-coescd}:${COESCD_POSTGRES_PASSWORD}@postgres:5432/${COESCD_POSTGRES_DB:-coescd}?sslmode=disable"
     depends_on:
       postgres:
         condition: service_healthy
@@ -680,7 +680,7 @@ services:
       HOST:                    0.0.0.0
       REDIS_HOST:              redis
       REDIS_PORT:              6379
-      RABBITMQ_URL:            amqp://${RABBITMQ_USER:-coescd}:${RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
+      RABBITMQ_URL:            amqp://${COESCD_RABBITMQ_USER:-coescd}:${COESCD_RABBITMQ_PASSWORD}@rabbitmq:5672/coescd
       # Public IP that remote peers use to reach this host (set to your server IP)
       MEDIASOUP_ANNOUNCED_IP:  ${MEDIASOUP_ANNOUNCED_IP:-127.0.0.1}
       MEDIASOUP_WORKERS:       ${MEDIASOUP_WORKERS:-2}
@@ -724,8 +724,8 @@ services:
       --tls-listening-port=5349
       --fingerprint
       --lt-cred-mech
-      --realm=${TURN_REALM:-coescd.local}
-      --user=${TURN_USER:-coescd}:${TURN_PASSWORD:?Set TURN_PASSWORD in .env}
+      --realm=${COESCD_TURN_REALM:-coescd.local}
+      --user=${COESCD_TURN_USER:-coescd}:${COESCD_TURN_PASSWORD:?Set COESCD_TURN_PASSWORD in .env}
       --min-port=49152
       --max-port=65535
       --denied-peer-ip=10.0.0.0-10.255.255.255
@@ -819,9 +819,9 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      POSTGRES_USER:     ${TIMESCALE_USER:-coescd_analytics}
-      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?Set TIMESCALE_PASSWORD in .env}
-      POSTGRES_DB:       ${TIMESCALE_DB:-coescd_analytics}
+      POSTGRES_USER:     ${COESCD_TIMESCALE_USER:-coescd_analytics}
+      POSTGRES_PASSWORD: ${COESCD_TIMESCALE_PASSWORD:?Set COESCD_TIMESCALE_PASSWORD in .env}
+      POSTGRES_DB:       ${COESCD_TIMESCALE_DB:-coescd_analytics}
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
     ports:
@@ -829,7 +829,7 @@ services:
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER:-coescd_analytics} -d ${TIMESCALE_DB:-coescd_analytics}"]
+      test: ["CMD-SHELL", "pg_isready -U ${COESCD_TIMESCALE_USER:-coescd_analytics} -d ${COESCD_TIMESCALE_DB:-coescd_analytics}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -898,14 +898,14 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      GEOSERVER_ADMIN_USER:     ${GEOSERVER_ADMIN_USER:-geoserver_admin}
-      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD:?Set GEOSERVER_ADMIN_PASSWORD in .env}
+      GEOSERVER_ADMIN_USER:     ${COESCD_GEOSERVER_ADMIN_USER:-geoserver_admin}
+      GEOSERVER_ADMIN_PASSWORD: ${COESCD_GEOSERVER_ADMIN_PASSWORD:?Set COESCD_GEOSERVER_ADMIN_PASSWORD in .env}
       # Connect GeoServer to the main PostGIS instance for PostGIS stores
       POSTGRES_HOST:     postgres
       POSTGRES_PORT:     5432
-      POSTGRES_DB:       ${POSTGRES_DB:-coescd}
-      POSTGRES_USER:     ${POSTGRES_USER:-coescd}
-      POSTGRES_PASS:     ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${COESCD_POSTGRES_DB:-coescd}
+      POSTGRES_USER:     ${COESCD_POSTGRES_USER:-coescd}
+      POSTGRES_PASS:     ${COESCD_POSTGRES_PASSWORD}
       # JVM tuning for raster rendering
       INITIAL_MEMORY:    512m
       MAXIMUM_MEMORY:    1536m
@@ -947,7 +947,7 @@ services:
     command: >
       --listen-addresses 0.0.0.0:3002
       --default-srid 4326
-      postgres://${POSTGRES_USER:-coescd}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-coescd}
+      postgres://${COESCD_POSTGRES_USER:-coescd}:${COESCD_POSTGRES_PASSWORD}@postgres:5432/${COESCD_POSTGRES_DB:-coescd}
     environment:
       RUST_LOG: info
     volumes:
@@ -985,15 +985,15 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      POSTGRES_USER:     ${AIRFLOW_DB_USER:-airflow}
-      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:?Set AIRFLOW_DB_PASSWORD in .env}
-      POSTGRES_DB:       ${AIRFLOW_DB_NAME:-airflow}
+      POSTGRES_USER:     ${COESCD_AIRFLOW_DB_USER:-airflow}
+      POSTGRES_PASSWORD: ${COESCD_AIRFLOW_DB_PASSWORD:?Set COESCD_AIRFLOW_DB_PASSWORD in .env}
+      POSTGRES_DB:       ${COESCD_AIRFLOW_DB_NAME:-airflow}
     volumes:
       - airflow-db-data:/var/lib/postgresql/data
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_DB_USER:-airflow} -d ${AIRFLOW_DB_NAME:-airflow}"]
+      test: ["CMD-SHELL", "pg_isready -U ${COESCD_AIRFLOW_DB_USER:-airflow} -d ${COESCD_AIRFLOW_DB_NAME:-airflow}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -1016,12 +1016,12 @@ services:
       - |
         airflow db migrate
         airflow users create \
-          --username ${AIRFLOW_ADMIN_USER:-airflow_admin} \
-          --password ${AIRFLOW_ADMIN_PASSWORD:?Set AIRFLOW_ADMIN_PASSWORD in .env} \
+          --username ${COESCD_AIRFLOW_ADMIN_USER:-airflow_admin} \
+          --password ${COESCD_AIRFLOW_ADMIN_PASSWORD:?Set COESCD_AIRFLOW_ADMIN_PASSWORD in .env} \
           --firstname CoESCD \
           --lastname Admin \
           --role Admin \
-          --email ${AIRFLOW_ADMIN_EMAIL:-admin@coescd.local} || true
+          --email ${COESCD_AIRFLOW_ADMIN_EMAIL:-admin@coescd.local} || true
     labels:
       coescd.service: airflow-init
       coescd.tier: pipelines
@@ -1092,9 +1092,9 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      CLICKHOUSE_DB:       ${CLICKHOUSE_DB:-coescd_ml}
-      CLICKHOUSE_USER:     ${CLICKHOUSE_USER:-coescd_ml}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DB:       ${COESCD_CLICKHOUSE_DB:-coescd_ml}
+      CLICKHOUSE_USER:     ${COESCD_CLICKHOUSE_USER:-coescd_ml}
+      CLICKHOUSE_PASSWORD: ${COESCD_CLICKHOUSE_PASSWORD:?Set COESCD_CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     volumes:
       - clickhouse-data:/var/lib/clickhouse
@@ -1129,15 +1129,15 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      POSTGRES_USER:     ${MLFLOW_DB_USER:-mlflow}
-      POSTGRES_PASSWORD: ${MLFLOW_DB_PASSWORD:?Set MLFLOW_DB_PASSWORD in .env}
-      POSTGRES_DB:       ${MLFLOW_DB_NAME:-mlflow}
+      POSTGRES_USER:     ${COESCD_MLFLOW_DB_USER:-mlflow}
+      POSTGRES_PASSWORD: ${COESCD_MLFLOW_DB_PASSWORD:?Set COESCD_MLFLOW_DB_PASSWORD in .env}
+      POSTGRES_DB:       ${COESCD_MLFLOW_DB_NAME:-mlflow}
     volumes:
       - mlflow-db-data:/var/lib/postgresql/data
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${MLFLOW_DB_USER:-mlflow}"]
+      test: ["CMD-SHELL", "pg_isready -U ${COESCD_MLFLOW_DB_USER:-mlflow}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -1157,15 +1157,15 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      MLFLOW_TRACKING_URI:              postgresql+psycopg2://${MLFLOW_DB_USER:-mlflow}:${MLFLOW_DB_PASSWORD}@mlflow-db:5432/${MLFLOW_DB_NAME:-mlflow}
+      MLFLOW_TRACKING_URI:              postgresql+psycopg2://${COESCD_MLFLOW_DB_USER:-mlflow}:${COESCD_MLFLOW_DB_PASSWORD}@mlflow-db:5432/${COESCD_MLFLOW_DB_NAME:-mlflow}
       MLFLOW_S3_ENDPOINT_URL:           http://minio:9000
-      AWS_ACCESS_KEY_ID:                ${MINIO_ACCESS_KEY:?Set MINIO_ACCESS_KEY in .env}
-      AWS_SECRET_ACCESS_KEY:            ${MINIO_SECRET_KEY:?Set MINIO_SECRET_KEY in .env}
+      AWS_ACCESS_KEY_ID:                ${COESCD_MINIO_ACCESS_KEY:?Set COESCD_MINIO_ACCESS_KEY in .env}
+      AWS_SECRET_ACCESS_KEY:            ${COESCD_MINIO_SECRET_KEY:?Set COESCD_MINIO_SECRET_KEY in .env}
       MLFLOW_ARTIFACT_ROOT:             s3://coescd-mlflow/artifacts
       GUNICORN_CMD_ARGS:                "--workers=2 --timeout=120"
     command: >
       mlflow server
-        --backend-store-uri postgresql+psycopg2://${MLFLOW_DB_USER:-mlflow}:${MLFLOW_DB_PASSWORD}@mlflow-db:5432/${MLFLOW_DB_NAME:-mlflow}
+        --backend-store-uri postgresql+psycopg2://${COESCD_MLFLOW_DB_USER:-mlflow}:${COESCD_MLFLOW_DB_PASSWORD}@mlflow-db:5432/${COESCD_MLFLOW_DB_NAME:-mlflow}
         --artifacts-destination s3://coescd-mlflow/artifacts
         --host 0.0.0.0
         --port 5000
@@ -1198,7 +1198,7 @@ services:
     logging: *default-logging
     environment:
       REDIS_ADDR:     redis://redis:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_PASSWORD: ${COESCD_REDIS_PASSWORD}
     depends_on:
       redis:
         condition: service_healthy

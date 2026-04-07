@@ -96,7 +96,7 @@ export class Task {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'type_id' })
+  @Column({ name: 'type_id', type: 'uuid' })
   typeId: string;
 
   @ManyToOne(() => TaskType, { eager: true, onDelete: 'RESTRICT' })
@@ -112,6 +112,7 @@ export class Task {
   @Column({
     type: 'enum',
     enum: TaskStatus,
+    enumName: 'task_status',
     default: TaskStatus.ASSIGNED,
   })
   status: TaskStatus;
@@ -119,6 +120,7 @@ export class Task {
   @Column({
     type: 'enum',
     enum: TaskPriority,
+    enumName: 'task_priority',
     default: TaskPriority.NORMAL,
   })
   priority: TaskPriority;
@@ -126,12 +128,13 @@ export class Task {
   @Column({
     type: 'enum',
     enum: TaskSource,
+    enumName: 'task_source',
     default: TaskSource.MANUAL,
   })
   source: TaskSource;
 
   /** 0=public 1=internal 2=confidential 3=secret */
-  @Column({ name: 'classification', default: 1 })
+  @Column({ name: 'classification', type: 'smallint', default: 1 })
   classification: number;
 
   // ─── Assigning authority ────────────────────────────────────────────────────
@@ -152,7 +155,7 @@ export class Task {
 
   // ─── Hierarchy (subtasks) ───────────────────────────────────────────────────
 
-  @Column({ type: 'varchar',  name: 'parent_task_id', nullable: true })
+  @Column({ name: 'parent_task_id', type: 'uuid', nullable: true })
   parentTaskId: string | null;
 
   @ManyToOne(() => Task, (t) => t.subtasks, { nullable: true, onDelete: 'SET NULL' })

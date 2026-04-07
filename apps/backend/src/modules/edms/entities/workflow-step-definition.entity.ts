@@ -59,6 +59,7 @@ export class WorkflowStepDefinition {
     name: 'step_type',
     type: 'enum',
     enum: StepType,
+    enumName: 'workflow_step_type',
   })
   stepType: StepType;
 

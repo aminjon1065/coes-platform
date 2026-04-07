@@ -37,7 +37,7 @@ export class DocumentType {
   seriesCode: string;
 
   /** 0=public 1=internal 2=confidential 3=secret */
-  @Column({ name: 'default_classification', default: 1 })
+  @Column({ name: 'default_classification', type: 'smallint', default: 1 })
   defaultClassification: number;
 
   /** Whether a leadership resolution is required before execution */

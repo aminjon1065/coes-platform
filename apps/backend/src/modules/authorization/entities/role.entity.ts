@@ -21,7 +21,7 @@ export class Role {
   description: string | null;
 
   // A role can inherit all permissions of a parent role
-  @Column({ type: 'varchar',  name: 'parent_role_id', nullable: true })
+  @Column({ name: 'parent_role_id', type: 'uuid', nullable: true })
   parentRoleId: string | null;
 
   @Column({ name: 'is_system_role', default: false })

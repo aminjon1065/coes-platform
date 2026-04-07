@@ -35,6 +35,7 @@ export class TelegramSubscription {
   @Column({
     type: 'enum',
     enum: TelegramSubscriptionStatus,
+    enumName: 'telegram_subscription_status',
     default: TelegramSubscriptionStatus.ACTIVE,
   })
   status: TelegramSubscriptionStatus;

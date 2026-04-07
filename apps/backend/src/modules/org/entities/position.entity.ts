@@ -46,11 +46,12 @@ export class Position {
   @Column({
     type: 'enum',
     enum: PositionLevel,
+    enumName: 'position_level',
     default: PositionLevel.SPECIALIST,
   })
   level: PositionLevel;
 
-  @Column({ name: 'department_id' })
+  @Column({ name: 'department_id', type: 'uuid' })
   departmentId: string;
 
   @ManyToOne(() => Department, { onDelete: 'RESTRICT' })
@@ -58,7 +59,7 @@ export class Position {
   department: Department;
 
   // The position this one reports to (command chain)
-  @Column({ type: 'varchar',  name: 'reports_to_id', nullable: true })
+  @Column({ name: 'reports_to_id', type: 'uuid', nullable: true })
   reportsToId: string | null;
 
   @ManyToOne(() => Position, { nullable: true, onDelete: 'SET NULL' })

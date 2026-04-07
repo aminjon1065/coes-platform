@@ -27,7 +27,7 @@ export class DocumentAttachment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'document_id' })
+  @Column({ name: 'document_id', type: 'uuid' })
   documentId: string;
 
   @ManyToOne('Document', 'attachments', { onDelete: 'CASCADE' })
@@ -35,7 +35,7 @@ export class DocumentAttachment {
   document: Relation<Document>;
 
   /** File ID in FileManagement domain */
-  @Column({ name: 'file_id' })
+  @Column({ name: 'file_id', type: 'uuid' })
   fileId: string;
 
   @Column({ length: 255 })
@@ -50,15 +50,16 @@ export class DocumentAttachment {
   @Column({
     type: 'enum',
     enum: AttachmentRole,
+    enumName: 'attachment_role',
     default: AttachmentRole.SUPPORTING,
   })
   role: AttachmentRole;
 
   /** Attachment-level classification (can be higher than document classification) */
-  @Column({ default: 1 })
+  @Column({ type: 'smallint', default: 1 })
   classification: number;
 
-  @Column({ name: 'uploaded_by_id' })
+  @Column({ name: 'uploaded_by_id', type: 'uuid' })
   uploadedById: string;
 
   @Column({ name: 'removed_at', type: 'timestamptz', nullable: true })

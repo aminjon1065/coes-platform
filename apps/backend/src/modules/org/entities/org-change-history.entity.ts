@@ -24,16 +24,16 @@ export class OrgChangeHistory {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'enum', enum: OrgChangeType })
+  @Column({ name: 'change_type', type: 'enum', enum: OrgChangeType, enumName: 'org_change_type' })
   changeType: OrgChangeType;
 
   @Column({ name: 'entity_type', length: 50 })
   entityType: string;
 
-  @Column({ name: 'entity_id' })
+  @Column({ name: 'entity_id', type: 'uuid' })
   entityId: string;
 
-  @Column({ type: 'varchar',  name: 'changed_by_id', nullable: true })
+  @Column({ name: 'changed_by_id', type: 'uuid', nullable: true })
   changedById: string | null;
 
   @Column({ type: 'jsonb', nullable: true })

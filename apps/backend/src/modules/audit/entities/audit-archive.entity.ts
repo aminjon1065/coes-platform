@@ -19,10 +19,10 @@ export class AuditArchive {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'original_id' })
+  @Column({ name: 'original_id', type: 'uuid' })
   originalId: string;
 
-  @Column({ type: 'varchar',  name: 'actor_id', nullable: true })
+  @Column({ name: 'actor_id', type: 'uuid', nullable: true })
   actorId: string | null;
 
   @Column({ type: 'varchar',  name: 'actor_username', length: 100, nullable: true })
@@ -34,7 +34,7 @@ export class AuditArchive {
   @Column({ type: 'varchar',  name: 'resource_type', length: 100, nullable: true })
   resourceType: string | null;
 
-  @Column({ type: 'varchar',  name: 'resource_id', nullable: true })
+  @Column({ name: 'resource_id', type: 'uuid', nullable: true })
   resourceId: string | null;
 
   @Column({ type: 'varchar',  name: 'ip_address', length: 45, nullable: true })
@@ -47,8 +47,8 @@ export class AuditArchive {
   failureReason: string | null;
 
   @Column({
-    type: 'enum',
-    enum: AuditSeverity,
+    type: 'varchar',
+    length: 20,
     default: AuditSeverity.INFO,
   })
   severity: AuditSeverity;

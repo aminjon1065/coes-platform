@@ -46,6 +46,19 @@ export class SpatialFeature {
    * geometry_utm is a GENERATED column in the DB (ST_Transform to EPSG:32639).
    * Not writable from the ORM — read-only for spatial metric queries.
    */
+  @Column({
+    name: 'geometry_utm',
+    type: 'geometry',
+    spatialFeatureType: 'Geometry',
+    srid: 32639,
+    asExpression: 'st_transform(geometry, 32639)',
+    generatedType: 'STORED',
+    nullable: true,
+    insert: false,
+    update: false,
+    select: false,
+  })
+  geometryUtm: string;
 
   @Column({ name: 'valid_from', type: 'timestamptz', nullable: true })
   validFrom: Date | null;

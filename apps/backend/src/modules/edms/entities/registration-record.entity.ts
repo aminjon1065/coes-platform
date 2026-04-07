@@ -18,7 +18,7 @@ export class RegistrationRecord {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'document_id' })
+  @Column({ name: 'document_id', type: 'uuid' })
   documentId: string;
 
   @Column({ name: 'registration_number', length: 50 })
@@ -30,15 +30,15 @@ export class RegistrationRecord {
   @Column({ name: 'sequence_number' })
   sequenceNumber: number;
 
-  @Column()
+  @Column({ type: 'smallint' })
   year: number;
 
   /** The user (credentialId) who performed the registration */
-  @Column({ name: 'registrar_id' })
+  @Column({ name: 'registrar_id', type: 'uuid' })
   registrarId: string;
 
   /** The position from which registration was performed */
-  @Column({ type: 'varchar',  name: 'registrar_position_id', nullable: true })
+  @Column({ name: 'registrar_position_id', type: 'uuid', nullable: true })
   registrarPositionId: string | null;
 
   @CreateDateColumn({ name: 'registered_at', type: 'timestamptz' })

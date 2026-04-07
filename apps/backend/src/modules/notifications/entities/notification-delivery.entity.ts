@@ -44,10 +44,10 @@ export class NotificationDelivery {
   @JoinColumn({ name: 'notification_id' })
   notification: Notification;
 
-  @Column({ type: 'enum', enum: DeliveryChannel })
+  @Column({ type: 'enum', enum: DeliveryChannel, enumName: 'delivery_channel' })
   channel: DeliveryChannel;
 
-  @Column({ type: 'enum', enum: DeliveryStatus, default: DeliveryStatus.PENDING })
+  @Column({ type: 'enum', enum: DeliveryStatus, enumName: 'delivery_status', default: DeliveryStatus.PENDING })
   status: DeliveryStatus;
 
   /** Number of dispatch attempts (including the current one) */

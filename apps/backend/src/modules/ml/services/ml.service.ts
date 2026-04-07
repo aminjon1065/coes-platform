@@ -5,7 +5,7 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, MoreThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -45,6 +45,7 @@ export class MlService {
     private readonly featureDefRepo: Repository<FeatureDefinition>,
     @InjectRepository(ModelPerformanceSnapshot)
     private readonly snapshotRepo: Repository<ModelPerformanceSnapshot>,
+    @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly events: EventEmitter2,
   ) {}

@@ -42,6 +42,7 @@ export class Message {
   @Column({
     type: 'enum',
     enum: MessageType,
+    enumName: 'message_type',
     default: MessageType.TEXT,
   })
   type: MessageType;
@@ -90,7 +91,7 @@ export class Message {
   // ─── Classification ──────────────────────────────────────────────────────────
 
   /** Inherits channel classification by default; sender may elevate */
-  @Column({ name: 'classification', default: 1 })
+  @Column({ name: 'classification', type: 'smallint', default: 1 })
   classification: number;
 
   // ─── Edit / deletion ─────────────────────────────────────────────────────────

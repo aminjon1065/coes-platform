@@ -10,10 +10,13 @@
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
+RUN npm config set fetch-retries 5 \
+  && npm config set fetch-retry-mintimeout 20000 \
+  && npm config set fetch-retry-maxtimeout 120000
 
 # Install dependencies first (layer cache)
 COPY package*.json ./
-RUN npm install
+RUN npm install --no-audit --no-fund
 
 # Copy source and build
 COPY . .

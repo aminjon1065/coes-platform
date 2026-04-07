@@ -38,7 +38,7 @@ export class ExecutorAssignment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'resolution_id' })
+  @Column({ name: 'resolution_id', type: 'uuid' })
   resolutionId: string;
 
   @ManyToOne('Resolution', 'executorAssignments', { onDelete: 'CASCADE' })
@@ -46,21 +46,22 @@ export class ExecutorAssignment {
   resolution: Relation<Resolution>;
 
   /** Denormalized for quick filtering without joining resolution */
-  @Column({ name: 'document_id' })
+  @Column({ name: 'document_id', type: 'uuid' })
   documentId: string;
 
   /** Target position (obligation belongs to position, not person) */
-  @Column({ name: 'position_id' })
+  @Column({ name: 'position_id', type: 'uuid' })
   positionId: string;
 
   /** Snapshot of occupant at assignment time */
-  @Column({ type: 'varchar',  name: 'assigned_user_id', nullable: true })
+  @Column({ type: 'varchar', name: 'assigned_user_id', length: 255, nullable: true })
   assignedUserId: string | null;
 
   @Column({
     name: 'executor_role',
     type: 'enum',
     enum: ExecutorRole,
+    enumName: 'executor_role',
     default: ExecutorRole.PRIMARY,
   })
   executorRole: ExecutorRole;
@@ -72,6 +73,7 @@ export class ExecutorAssignment {
   @Column({
     type: 'enum',
     enum: ExecutorAssignmentStatus,
+    enumName: 'executor_assignment_status',
     default: ExecutorAssignmentStatus.ASSIGNED,
   })
   status: ExecutorAssignmentStatus;
@@ -80,7 +82,7 @@ export class ExecutorAssignment {
   deadline: string | null;
 
   /** ID of the Task created in TaskManagement domain for this assignment */
-  @Column({ type: 'varchar',  name: 'linked_task_id', nullable: true })
+  @Column({ type: 'varchar', name: 'linked_task_id', length: 255, nullable: true })
   linkedTaskId: string | null;
 
   /** Completion report filed by the executor */

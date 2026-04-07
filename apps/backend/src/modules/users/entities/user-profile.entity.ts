@@ -27,7 +27,7 @@ export class UserProfile {
   /** Links to iam.user_credentials — one-to-one, not a FK constraint
    *  (schemas are separate; integrity enforced at service layer) */
   @Index({ unique: true })
-  @Column({ name: 'credential_id' })
+  @Column({ name: 'credential_id', type: 'uuid' })
   credentialId: string;
 
   @Column({ name: 'first_name', length: 100 })
@@ -56,12 +56,13 @@ export class UserProfile {
   @Column({
     type: 'enum',
     enum: UserStatus,
+    enumName: 'user_status',
     default: UserStatus.ACTIVE,
   })
   status: UserStatus;
 
   /** Clearance level: 0=public, 1=internal, 2=confidential, 3=secret */
-  @Column({ name: 'clearance_level', default: 0 })
+  @Column({ name: 'clearance_level', type: 'int', default: 0 })
   clearanceLevel: number;
 
   @OneToMany('UserPositionAssignment', 'user', { cascade: true })

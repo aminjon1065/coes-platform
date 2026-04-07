@@ -46,7 +46,7 @@ export class WorkflowStep {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'instance_id' })
+  @Column({ name: 'instance_id', type: 'uuid' })
   instanceId: string;
 
   @ManyToOne('WorkflowInstance', 'steps', { onDelete: 'CASCADE' })
@@ -64,22 +64,24 @@ export class WorkflowStep {
     name: 'step_type',
     type: 'enum',
     enum: StepType,
+    enumName: 'workflow_step_type',
   })
   stepType: StepType;
 
   @Column({
     type: 'enum',
     enum: WorkflowStepStatus,
+    enumName: 'workflow_step_status',
     default: WorkflowStepStatus.PENDING,
   })
   status: WorkflowStepStatus;
 
   /** Target position resolved at activation time */
-  @Column({ name: 'position_id' })
+  @Column({ name: 'position_id', type: 'uuid' })
   positionId: string;
 
   /** Snapshot of occupant at activation time (for display) */
-  @Column({ type: 'varchar',  name: 'assigned_user_id', nullable: true })
+  @Column({ type: 'varchar', name: 'assigned_user_id', length: 255, nullable: true })
   assignedUserId: string | null;
 
   /** Whether this step operates in parallel with sibling steps */
@@ -107,23 +109,24 @@ export class WorkflowStep {
     name: 'action_taken',
     type: 'enum',
     enum: WorkflowStepAction,
+    enumName: 'workflow_step_action',
     nullable: true,
   })
   actionTaken: WorkflowStepAction | null;
 
   /** User who acted on this step */
-  @Column({ type: 'varchar',  name: 'actor_id', nullable: true })
+  @Column({ type: 'varchar', name: 'actor_id', length: 255, nullable: true })
   actorId: string | null;
 
   /** Position from which the actor acted */
-  @Column({ type: 'varchar',  name: 'actor_position_id', nullable: true })
+  @Column({ type: 'varchar', name: 'actor_position_id', length: 255, nullable: true })
   actorPositionId: string | null;
 
   /**
    * Delegation ID if the actor was acting under delegation.
    * Links to Authorization.Delegation entity.
    */
-  @Column({ type: 'varchar',  name: 'delegation_id', nullable: true })
+  @Column({ type: 'varchar', name: 'delegation_id', length: 255, nullable: true })
   delegationId: string | null;
 
   /** Formal remarks attached to the action */
