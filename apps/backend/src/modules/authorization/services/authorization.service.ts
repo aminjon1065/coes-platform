@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, MoreThanOrEqual, IsNull } from 'typeorm';
+import { Repository, IsNull, In } from 'typeorm';
 import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
@@ -10,6 +10,7 @@ import { Permission } from '../entities/permission.entity';
 import { Role } from '../entities/role.entity';
 import { Delegation } from '../entities/delegation.entity';
 import { OrgService } from '../../org/services/org.service';
+import { CreateRoleDto } from '../dto/create-role.dto';
 
 const AUTHZ_CACHE_TTL = 60; // seconds
 const CACHE_KEY_PREFIX = 'authz:';
@@ -27,6 +28,27 @@ export interface AuthzContext {
 export interface AuthzDecision {
   allowed: boolean;
   reason: string;
+}
+
+export interface PortalWorkspaceSummary {
+  key: 'core' | 'analytics' | 'admin';
+  label: string;
+  description: string;
+}
+
+export interface PortalRoleAssignmentSummary {
+  id: string;
+  roleId: string;
+  roleName: string;
+  departmentScopeId: string | null;
+  positionId: string | null;
+  expiresAt: Date | null;
+}
+
+export interface PortalContextSummary {
+  roles: PortalRoleAssignmentSummary[];
+  capabilities: string[];
+  workspaces: PortalWorkspaceSummary[];
 }
 
 @Injectable()
@@ -202,5 +224,183 @@ export class AuthorizationService {
   async invalidateUserCache(userId: string): Promise<void> {
     // In production, use cache tag invalidation. For now, we rely on TTL expiry.
     this.logger.debug(`Cache invalidation requested for user ${userId}`);
+  }
+
+  async listRoles(): Promise<Role[]> {
+    return this.roleRepo.find({
+      relations: ['permissions'],
+      order: { name: 'ASC' },
+    });
+  }
+
+  async listCapabilities(): Promise<string[]> {
+    const permissions = await this.permRepo.find({
+      order: { domain: 'ASC', resource: 'ASC', action: 'ASC', name: 'ASC' },
+    });
+    return permissions.map((permission) => permission.name);
+  }
+
+  async createRole(dto: CreateRoleDto): Promise<Role> {
+    const existing = await this.roleRepo.findOne({ where: { name: dto.name } });
+    if (existing) {
+      throw new ConflictException(`Role '${dto.name}' already exists`);
+    }
+
+    let parentRole: Role | null = null;
+    if (dto.parentRoleId) {
+      parentRole = await this.roleRepo.findOne({ where: { id: dto.parentRoleId } });
+      if (!parentRole) {
+        throw new NotFoundException(`Parent role ${dto.parentRoleId} not found`);
+      }
+    }
+
+    const permissionNames = [...new Set(dto.permissionNames ?? [])];
+    const permissions = permissionNames.length
+      ? await this.permRepo.find({ where: { name: In(permissionNames) } })
+      : [];
+
+    if (permissions.length !== permissionNames.length) {
+      const found = new Set(permissions.map((permission) => permission.name));
+      const missing = permissionNames.filter((permission) => !found.has(permission));
+      throw new BadRequestException(`Unknown permissions: ${missing.join(', ')}`);
+    }
+
+    const role = this.roleRepo.create({
+      name: dto.name,
+      description: dto.description ?? null,
+      parentRoleId: parentRole?.id ?? null,
+      isSystemRole: false,
+      permissions,
+    });
+
+    return this.roleRepo.save(role);
+  }
+
+  async deleteRole(id: string): Promise<boolean> {
+    const role = await this.roleRepo.findOne({ where: { id } });
+    if (!role) {
+      throw new NotFoundException(`Role ${id} not found`);
+    }
+
+    if (role.isSystemRole) {
+      throw new BadRequestException('System roles cannot be deleted');
+    }
+
+    const activeAssignments = await this.assignmentRepo.count({
+      where: { roleId: id, revokedAt: IsNull() },
+    });
+    if (activeAssignments > 0) {
+      throw new BadRequestException('Role has active assignments and cannot be deleted');
+    }
+
+    await this.roleRepo.delete(id);
+    return true;
+  }
+
+  async getPortalContextForUser(userId: string): Promise<PortalContextSummary> {
+    const now = new Date();
+    const assignments = await this.assignmentRepo.find({
+      where: { userId, revokedAt: IsNull() },
+      relations: ['role', 'role.permissions'],
+      order: { createdAt: 'ASC' },
+    });
+
+    const activeAssignments = assignments.filter((assignment) => !assignment.expiresAt || assignment.expiresAt > now);
+    const capabilitySet = new Set<string>();
+
+    for (const assignment of activeAssignments) {
+      const permissions = await this.collectRolePermissions(assignment.role, new Set());
+      for (const permission of permissions) {
+        capabilitySet.add(permission);
+      }
+    }
+
+    const capabilities = [...capabilitySet].sort((left, right) => left.localeCompare(right));
+    const roles = activeAssignments.map((assignment) => ({
+      id: assignment.id,
+      roleId: assignment.roleId,
+      roleName: assignment.role.name,
+      departmentScopeId: assignment.departmentScopeId,
+      positionId: assignment.positionId,
+      expiresAt: assignment.expiresAt,
+    })) satisfies PortalRoleAssignmentSummary[];
+
+    return {
+      roles,
+      capabilities,
+      workspaces: this.derivePortalWorkspaces(capabilities),
+    };
+  }
+
+  private async collectRolePermissions(role: Role, visited: Set<string>): Promise<Set<string>> {
+    const collected = new Set<string>();
+    await this.collectRolePermissionsInto(role, visited, collected);
+    return collected;
+  }
+
+  private async collectRolePermissionsInto(
+    role: Role,
+    visited: Set<string>,
+    collected: Set<string>,
+  ): Promise<void> {
+    if (visited.has(role.id)) {
+      return;
+    }
+
+    visited.add(role.id);
+    for (const permission of role.permissions) {
+      collected.add(permission.name);
+    }
+
+    if (!role.parentRoleId) {
+      return;
+    }
+
+    const parent = await this.roleRepo.findOne({
+      where: { id: role.parentRoleId },
+      relations: ['permissions'],
+    });
+    if (parent) {
+      await this.collectRolePermissionsInto(parent, visited, collected);
+    }
+  }
+
+  private derivePortalWorkspaces(capabilities: string[]): PortalWorkspaceSummary[] {
+    const workspaces: PortalWorkspaceSummary[] = [
+      {
+        key: 'core',
+        label: 'Core Workspace',
+        description: 'Tasks, EDMS, files, notifications, chat, and shared operational tools.',
+      },
+    ];
+
+    const hasAdminWorkspace = capabilities.some((capability) =>
+      capability.startsWith('iam.') ||
+      capability.startsWith('org.') ||
+      capability.startsWith('authz.') ||
+      capability.startsWith('search.admin.'),
+    );
+    if (hasAdminWorkspace) {
+      workspaces.push({
+        key: 'admin',
+        label: 'Admin Workspace',
+        description: 'Control plane for users, roles, departments, monitoring, and platform operations.',
+      });
+    }
+
+    const hasAnalyticsWorkspace = capabilities.some((capability) =>
+      capability.startsWith('analytics.') ||
+      capability.startsWith('gis.') ||
+      (capability.startsWith('search.') && !capability.startsWith('search.admin.')),
+    );
+    if (hasAnalyticsWorkspace) {
+      workspaces.push({
+        key: 'analytics',
+        label: 'Analytics Workspace',
+        description: 'Geo-intelligence, cross-domain search, and analytical investigation flows.',
+      });
+    }
+
+    return workspaces;
   }
 }

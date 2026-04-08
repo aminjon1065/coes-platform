@@ -18,6 +18,17 @@ import { CurrentUser, AuthenticatedUser } from '../../iam/decorators/current-use
 export class PositionsController {
   constructor(private readonly orgService: OrgService) {}
 
+  @Get()
+  @ApiOperation({ summary: 'List positions, optionally filtered by department' })
+  @ApiQuery({ name: 'departmentId', required: false, type: String })
+  list(@Query('departmentId') departmentId?: string) {
+    if (departmentId) {
+      return this.orgService.getPositionsByDepartment(departmentId);
+    }
+
+    return this.orgService.getAllActivePositions();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get position by ID' })
   getById(@Param('id', ParseUUIDPipe) id: string) {

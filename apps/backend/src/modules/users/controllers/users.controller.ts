@@ -22,6 +22,7 @@ import { CreateUserProfileDto } from '../dto/create-user-profile.dto';
 import { UpdateUserProfileDto } from '../dto/update-user-profile.dto';
 import { AssignPositionDto } from '../dto/assign-position.dto';
 import { UpdatePreferencesDto } from '../dto/update-preferences.dto';
+import { ResolveUserProfilesDto } from '../dto/resolve-user-profiles.dto';
 import { CurrentUser, AuthenticatedUser } from '../../iam/decorators/current-user.decorator';
 import { RequirePermission } from '../../authorization/decorators/require-permission.decorator';
 import { UserStatus } from '../entities/user-profile.entity';
@@ -48,14 +49,21 @@ export class UsersController {
   @RequirePermission('iam.user.read')
   @ApiOperation({ summary: 'List user profiles' })
   @ApiQuery({ name: 'status', enum: UserStatus, required: false })
+  @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
   async list(
     @Query('status') status?: UserStatus,
+    @Query('search') search?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
   ) {
-    const [items, total] = await this.usersService.listProfiles({ status, limit, offset });
+    const [items, total] = await this.usersService.listProfiles({
+      status,
+      search,
+      limit,
+      offset,
+    });
     return { items, total };
   }
 
@@ -63,6 +71,22 @@ export class UsersController {
   @ApiOperation({ summary: 'Get own profile' })
   getMe(@CurrentUser() actor: AuthenticatedUser) {
     return this.usersService.getProfileByCredentialId(actor.id);
+  }
+
+  @Post('resolve-by-credential')
+  @ApiOperation({ summary: 'Resolve lightweight user profiles by credential IDs' })
+  async resolveByCredential(@Body() dto: ResolveUserProfilesDto) {
+    const profiles = await this.usersService.getProfilesByCredentialIds(dto.credentialIds);
+    return {
+      items: profiles.map((profile) => ({
+        id: profile.id,
+        credentialId: profile.credentialId,
+        displayName: profile.displayName ?? profile.fullName,
+        email: profile.email,
+        clearanceLevel: profile.clearanceLevel,
+        status: profile.status,
+      })),
+    };
   }
 
   @Get(':id')

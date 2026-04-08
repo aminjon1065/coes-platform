@@ -8,6 +8,8 @@ import { AuthorizationService } from './services/authorization.service';
 import { DelegatedAdminService } from './services/delegated-admin.service';
 import { PermissionGuard } from './guards/permission.guard';
 import { DelegatedAdminController } from './controllers/delegated-admin.controller';
+import { RolesController } from './controllers/roles.controller';
+import { PortalContextController } from './controllers/portal-context.controller';
 import { OrgModule } from '../org/org.module';
 
 @Global()
@@ -16,7 +18,7 @@ import { OrgModule } from '../org/org.module';
     TypeOrmModule.forFeature([Role, Permission, UserRoleAssignment, Delegation]),
     OrgModule,
   ],
-  controllers: [DelegatedAdminController],
+  controllers: [DelegatedAdminController, RolesController, PortalContextController],
   providers: [AuthorizationService, DelegatedAdminService, PermissionGuard],
   exports: [AuthorizationService, DelegatedAdminService, PermissionGuard],
 })

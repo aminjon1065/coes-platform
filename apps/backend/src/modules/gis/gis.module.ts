@@ -11,6 +11,7 @@ import { GisService } from './services/gis.service';
 import { GisController } from './controllers/gis.controller';
 
 import { AuditModule } from '../audit/audit.module';
+import { GatewayEventsService } from '../../infra/events/gateway-events.service';
 
 @Module({
   imports: [
@@ -24,7 +25,7 @@ import { AuditModule } from '../audit/audit.module';
     AuditModule,
   ],
   controllers: [GisController],
-  providers: [GisService],
+  providers: [GisService, GatewayEventsService],
   exports: [GisService],
 })
 export class GisModule {}

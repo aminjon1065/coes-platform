@@ -130,6 +130,13 @@ export class EdmsService {
     return { items, total };
   }
 
+  async listActiveDocumentTypes(): Promise<DocumentType[]> {
+    return this.typeRepo.find({
+      where: { active: true },
+      order: { name: 'ASC' },
+    });
+  }
+
   async getDocument(id: string, userClearance: number): Promise<Document> {
     const doc = await this.documentRepo.findOne({
       where: { id },

@@ -12,6 +12,7 @@ import { ChatController } from './controllers/chat.controller';
 import { ChatDomainListener } from './listeners/chat-domain.listener';
 
 import { AuditModule } from '../audit/audit.module';
+import { GatewayEventsService } from '../../infra/events/gateway-events.service';
 
 @Module({
   imports: [
@@ -24,7 +25,7 @@ import { AuditModule } from '../audit/audit.module';
     AuditModule,
   ],
   controllers: [ChatController],
-  providers: [ChatService, PresenceService, ChatDomainListener],
+  providers: [ChatService, PresenceService, ChatDomainListener, GatewayEventsService],
   exports: [ChatService, PresenceService],
 })
 export class ChatModule {}

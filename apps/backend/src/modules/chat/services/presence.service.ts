@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { GatewayEventsService } from '../../../infra/events/gateway-events.service';
 
 export enum PresenceStatus {
   ONLINE = 'online',
@@ -37,6 +38,7 @@ export class PresenceService {
     @Inject(CACHE_MANAGER)
     private readonly cache: Cache,
     private readonly eventEmitter: EventEmitter2,
+    private readonly gatewayEvents: GatewayEventsService,
   ) {}
 
   // ─── Set / update ────────────────────────────────────────────────────────────
@@ -77,6 +79,17 @@ export class PresenceService {
         userId,
         from: prev?.status ?? PresenceStatus.OFFLINE,
         to: status,
+      });
+
+      await this.gatewayEvents.publishToRoom('chat.presence', {
+        event: 'chat.presence.changed',
+        data: {
+          userId,
+          from: prev?.status ?? PresenceStatus.OFFLINE,
+          to: status,
+          lastSeen: state.lastSeen,
+          currentDevice: state.currentDevice ?? null,
+        },
       });
     }
   }
@@ -139,9 +152,23 @@ export class PresenceService {
     if (isTyping) {
       await this.cache.set(key, '1', 5); // 5 second TTL
       this.eventEmitter.emit('chat.typing_started', { channelId, userId });
+      await this.gatewayEvents.publishToRoom(`chat.channel.${channelId}`, {
+        event: 'chat.typing.started',
+        data: {
+          channelId,
+          userId,
+        },
+      });
     } else {
       await this.cache.del(key);
       this.eventEmitter.emit('chat.typing_stopped', { channelId, userId });
+      await this.gatewayEvents.publishToRoom(`chat.channel.${channelId}`, {
+        event: 'chat.typing.stopped',
+        data: {
+          channelId,
+          userId,
+        },
+      });
     }
   }
 

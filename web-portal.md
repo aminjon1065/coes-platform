@@ -19,9 +19,9 @@ This architecture is the correct fit for the current platform because the domina
 - reduced surface area for security review
 - maintainable rollout with a small-to-medium engineering team
 
-The current frontend baseline in the repository confirms that the existing web surface is fragmented:
+The current frontend baseline in the repository originally confirmed that the existing web surface was fragmented:
 
-- `apps/web` is a Vite SPA for dashboard, EDMS, tasks, notifications, and admin.
+- The legacy office SPA was a Vite app for dashboard, EDMS, tasks, notifications, and admin.
 - `apps/map-client` is a separate Vite GIS surface.
 - `apps/field-pwa` already contains offline queue and service worker logic tailored for field usage.
 
@@ -125,7 +125,7 @@ Those remain backend responsibilities.
 
 ### 2.1 Migration Principle
 
-Migration from `apps/web` and `apps/map-client` to `apps/portal-web` must be done using a strangler pattern, not a big-bang rewrite.
+Migration from the legacy office SPA and `apps/map-client` to `apps/portal-web` was executed using a strangler pattern, not a big-bang rewrite.
 
 Core rules:
 
@@ -279,6 +279,40 @@ This package exists only for migration and must be deleted after Vite retirement
 | Realtime duplication | New realtime client introduced once, consumed by both portal and migrated modules |
 | GIS performance regression | GIS cutover delayed until portal shell and dynamic loading patterns are proven |
 | Team splitting effort across old/new code | Freeze feature work in migrated domains on legacy apps |
+
+### 2.8 Migration Status As Of April 8, 2026
+
+The migration plan above is no longer hypothetical. The repository status on **April 8, 2026** is:
+
+| Domain / Surface | Legacy Owner Before | Current Owner | Status |
+|---|---|---|---|
+| Auth and session bootstrap | Legacy SPA token flow | `apps/portal-web` BFF + `httpOnly` session | Complete |
+| Dashboard | Legacy SPA | `apps/portal-web` | Complete |
+| Notifications | Legacy SPA | `apps/portal-web` | Complete |
+| Tasks | Legacy SPA | `apps/portal-web` | Complete |
+| EDMS | Legacy SPA | `apps/portal-web` | Complete |
+| GIS office client | `apps/map-client` | `apps/portal-web` `/gis` | Complete |
+| Admin | Legacy SPA | `apps/portal-web` | Complete |
+| Cross-domain search | none as portal route | `apps/portal-web` | Complete |
+| Chat / comms | backend-only + legacy gaps | `apps/portal-web` | Complete |
+| Files | backend-only + legacy gaps | `apps/portal-web` | Complete |
+| Field operations | `apps/field-pwa` | `apps/field-pwa` | Intentionally separate |
+
+Practical consequence:
+
+- The retired office SPA has been removed from the active workspace set and should not be reintroduced.
+- New office-facing frontend work must land only in `apps/portal-web`.
+- `apps/map-client` should be retired for office users once ingress and deployment references are removed.
+
+### 2.9 Legacy Retirement Rules
+
+From **April 8, 2026** onward:
+
+1. The retired office SPA is removed from active workspaces and must stay retired.
+2. Any office-facing bug fix or new capability must be implemented in `apps/portal-web`.
+3. Ingress and environment configuration should send office traffic to `apps/portal-web` first.
+4. The next cleanup target after the retired office SPA is full removal of `apps/map-client` for office users.
+5. Temporary legacy compatibility glue introduced only for migration should be removed after ingress cutover.
 
 ---
 

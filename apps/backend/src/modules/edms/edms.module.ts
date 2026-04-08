@@ -19,6 +19,7 @@ import { WorkflowService } from './services/workflow.service';
 import { ResolutionService } from './services/resolution.service';
 
 import { EdmsController } from './controllers/edms.controller';
+import { DocumentTypesController } from './controllers/document-types.controller';
 import { WorkflowController } from './controllers/workflow.controller';
 import { ResolutionController } from './controllers/resolution.controller';
 import { EdmsWorkflowListener } from './listeners/edms-workflow.listener';
@@ -48,7 +49,7 @@ import { OrgModule } from '../org/org.module';
     UsersModule,
     OrgModule,
   ],
-  controllers: [EdmsController, WorkflowController, ResolutionController],
+  controllers: [EdmsController, DocumentTypesController, WorkflowController, ResolutionController],
   providers: [EdmsService, WorkflowService, ResolutionService, EdmsWorkflowListener, EdmsTaskSyncListener],
   exports: [EdmsService, WorkflowService, ResolutionService],
 })

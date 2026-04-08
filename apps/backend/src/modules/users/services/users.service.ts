@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, In } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { UserProfile, UserStatus } from '../entities/user-profile.entity';
@@ -92,6 +92,16 @@ export class UsersService {
     return profile;
   }
 
+  async getProfilesByCredentialIds(credentialIds: string[]): Promise<UserProfile[]> {
+    if (!credentialIds.length) {
+      return [];
+    }
+
+    return this.profileRepo.find({
+      where: { credentialId: In(credentialIds) },
+    });
+  }
+
   async updateProfile(
     id: string,
     dto: UpdateUserProfileDto,
@@ -114,9 +124,27 @@ export class UsersService {
     status?: UserStatus;
     limit?: number;
     offset?: number;
+    search?: string;
   }): Promise<[UserProfile[], number]> {
     const qb = this.profileRepo.createQueryBuilder('p');
-    if (opts.status) qb.where('p.status = :status', { status: opts.status });
+    if (opts.status) {
+      qb.where('p.status = :status', { status: opts.status });
+    }
+
+    if (opts.search?.trim()) {
+      const search = `%${opts.search.trim().toLowerCase()}%`;
+      qb.andWhere(
+        `(
+          LOWER(COALESCE(p.displayName, '')) LIKE :search
+          OR LOWER(COALESCE(p.firstName, '')) LIKE :search
+          OR LOWER(COALESCE(p.lastName, '')) LIKE :search
+          OR LOWER(COALESCE(p.middleName, '')) LIKE :search
+          OR LOWER(COALESCE(p.email, '')) LIKE :search
+        )`,
+        { search },
+      );
+    }
+
     return qb
       .orderBy('p.last_name', 'ASC')
       .addOrderBy('p.first_name', 'ASC')

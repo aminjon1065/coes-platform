@@ -144,10 +144,18 @@ export class OrgService {
     return pos;
   }
 
+  async getAllActivePositions(): Promise<Position[]> {
+    return this.positionRepo.find({
+      where: { active: true },
+      relations: ['department', 'reportsTo'],
+      order: { level: 'ASC', title: 'ASC' },
+    });
+  }
+
   async getPositionsByDepartment(departmentId: string): Promise<Position[]> {
     return this.positionRepo.find({
       where: { departmentId, active: true },
-      relations: ['reportsTo'],
+      relations: ['department', 'reportsTo'],
       order: { level: 'ASC' },
     });
   }

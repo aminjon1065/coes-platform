@@ -16,6 +16,7 @@ import { Message, MessageType } from '../entities/message.entity';
 import { MessageEdit } from '../entities/message-edit.entity';
 
 import { AuditService } from '../../audit/services/audit.service';
+import { GatewayEventsService } from '../../../infra/events/gateway-events.service';
 
 import { CreateChannelDto } from '../dto/create-channel.dto';
 import { SendMessageDto } from '../dto/send-message.dto';
@@ -44,6 +45,7 @@ export class ChatService {
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly gatewayEvents: GatewayEventsService,
   ) {}
 
   // ─── Channel Management ──────────────────────────────────────────────────────
@@ -378,6 +380,26 @@ export class ChatService {
       createdAt: message.createdAt,
     });
 
+    await this.gatewayEvents.publishToRoom(`chat.channel.${channelId}`, {
+      event: 'chat.message.created',
+      data: {
+        id: message.id,
+        channelId,
+        sequence: message.sequence,
+        senderId: actorId,
+        senderPositionId: actorPositionId,
+        type: message.type,
+        body: message.body,
+        attachments: message.attachments,
+        parentMessageId: message.parentMessageId,
+        classification: message.classification,
+        isEdited: message.isEdited,
+        isDeleted: message.isDeleted,
+        createdAt: message.createdAt,
+        updatedAt: message.updatedAt,
+      },
+    });
+
     return message;
   }
 
@@ -446,6 +468,19 @@ export class ChatService {
 
     this.eventEmitter.emit('chat.message_edited', { messageId, channelId: message.channelId, actorId });
 
+    await this.gatewayEvents.publishToRoom(`chat.channel.${message.channelId}`, {
+      event: 'chat.message.edited',
+      data: {
+        id: message.id,
+        channelId: message.channelId,
+        sequence: message.sequence,
+        body: message.body,
+        isEdited: message.isEdited,
+        editedAt: message.editedAt,
+        updatedAt: message.updatedAt,
+      },
+    });
+
     return message;
   }
 
@@ -479,6 +514,18 @@ export class ChatService {
     });
 
     this.eventEmitter.emit('chat.message_deleted', { messageId, channelId: message.channelId, actorId });
+
+    await this.gatewayEvents.publishToRoom(`chat.channel.${message.channelId}`, {
+      event: 'chat.message.deleted',
+      data: {
+        id: message.id,
+        channelId: message.channelId,
+        sequence: message.sequence,
+        isDeleted: true,
+        deletedAt: message.deletedAt,
+        updatedAt: message.updatedAt,
+      },
+    });
   }
 
   // ─── Read receipts ───────────────────────────────────────────────────────────
@@ -505,6 +552,15 @@ export class ChatService {
         channelId,
         positionId: actorPositionId,
         upToSequence,
+      });
+
+      await this.gatewayEvents.publishToRoom(`chat.channel.${channelId}`, {
+        event: 'chat.messages.read',
+        data: {
+          channelId,
+          positionId: actorPositionId,
+          upToSequence,
+        },
       });
     }
   }

@@ -54,7 +54,7 @@ This plan does **not** add major new business scope. Its purpose is to make the 
 
 The 12-week plan is considered complete only if all of the following are true:
 
-- `apps/backend`, `apps/gateway`, `apps/media`, `apps/web`, `apps/map-client`, and `apps/field-pwa` all build successfully in CI.
+- `apps/backend`, `apps/gateway`, `apps/media`, `apps/portal-web`, `apps/map-client`, and `apps/field-pwa` are the active frontend/backend build targets in CI.
 - Backend unit/integration test suites are green with enforced coverage thresholds for critical modules.
 - Event-driven smoke flows are automated:
   - EDMS Resolution -> Task -> Notification -> Realtime

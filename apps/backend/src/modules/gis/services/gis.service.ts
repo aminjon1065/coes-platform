@@ -17,6 +17,7 @@ import { IncidentLocation } from '../entities/incident-location.entity';
 import { AdministrativeBoundary } from '../entities/administrative-boundary.entity';
 
 import { AuditService } from '../../audit/services/audit.service';
+import { GatewayEventsService } from '../../../infra/events/gateway-events.service';
 
 import {
   CreateSpatialLayerDto,
@@ -62,6 +63,7 @@ export class GisService {
 
     private readonly auditService: AuditService,
     private readonly events: EventEmitter2,
+    private readonly gatewayEvents: GatewayEventsService,
   ) {}
 
   // ── Layer Management ──────────────────────────────────────────────────────
@@ -457,7 +459,13 @@ export class GisService {
       administrativeCode: adminCode,
     });
 
-    return this.getIncidentAsGeoJson(incidentId, ctx);
+    const incident = await this.getIncidentAsGeoJson(incidentId, ctx);
+    await this.gatewayEvents.publishToRoom('gis.incidents', {
+      event: 'gis.incident.reported',
+      data: incident,
+    });
+
+    return incident;
   }
 
   async queryIncidents(dto: IncidentQueryDto, ctx: RequestContext): Promise<{ items: object[]; total: number }> {
@@ -565,7 +573,14 @@ export class GisService {
       resourceId: id,
     });
     this.events.emit('gis.incident.resolved', { incidentId: id, incidentRef: incident.incidentRef });
-    return this.getIncidentAsGeoJson(id, ctx);
+
+    const incidentView = await this.getIncidentAsGeoJson(id, ctx);
+    await this.gatewayEvents.publishToRoom('gis.incidents', {
+      event: 'gis.incident.resolved',
+      data: incidentView,
+    });
+
+    return incidentView;
   }
 
   // ── Administrative Boundaries ─────────────────────────────────────────────

@@ -504,7 +504,7 @@ Task created
 ### 7.1 App Foundation
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 7.1.1 | Scaffold Vite + React 18 + TypeScript + Tailwind project (`apps/web`) | ✅ | React Router v6, Zustand, Axios, React Query |
+| 7.1.1 | Scaffold office frontend foundation (`apps/portal-web`) | Completed | Historical Vite SPA retired; active office frontend is Next.js portal |
 | 7.1.2 | Implement typed API client with JWT auth + refresh token interceptor | ✅ | `src/lib/api.ts` — axios instance, 401→refresh→retry logic |
 | 7.1.3 | Implement auth store (Zustand + persist) with user profile | ✅ | `src/store/auth.store.ts` — accessToken, refreshToken, user profile |
 | 7.1.4 | Implement Login page (username/password + SSO redirect link) | ✅ | `src/pages/LoginPage.tsx` |
@@ -557,3 +557,4 @@ Status counts below reflect documented roadmap task states after the current rec
 ---
 
 *Update this file as tasks are started, completed, or blocked. Change status symbols accordingly.*
+
