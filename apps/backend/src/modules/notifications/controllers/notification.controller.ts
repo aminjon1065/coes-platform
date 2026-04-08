@@ -11,15 +11,19 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  Headers,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
-import { NotificationService } from '../services/notification.service';
+import { ConfigService } from '@nestjs/config';
+import { NotificationService, TelegramWebhookUpdate } from '../services/notification.service';
 import { ListNotificationsDto } from '../dto/list-notifications.dto';
 import { UpdatePreferenceDto } from '../dto/update-preference.dto';
 import { RegisterPushSubscriptionDto } from '../dto/register-push-subscription.dto';
 import { DeletePushSubscriptionDto } from '../dto/delete-push-subscription.dto';
 import { RegisterTelegramSubscriptionDto } from '../dto/register-telegram-subscription.dto';
+import { Public } from '../../iam/decorators/public.decorator';
 
 interface AuthenticatedRequest extends FastifyRequest {
   user: {
@@ -43,7 +47,10 @@ interface AuthenticatedRequest extends FastifyRequest {
  */
 @Controller('notifications')
 export class NotificationController {
-  constructor(private readonly notificationService: NotificationService) {}
+  constructor(
+    private readonly notificationService: NotificationService,
+    private readonly config: ConfigService,
+  ) {}
 
   private getCredentialId(req: AuthenticatedRequest): string {
     const userId = req.user?.sub ?? req.user?.id;
@@ -158,5 +165,35 @@ export class NotificationController {
   @HttpCode(HttpStatus.NO_CONTENT)
   removeTelegramSubscription(@Req() req: AuthenticatedRequest) {
     return this.notificationService.removeTelegramSubscription(this.getCredentialId(req));
+  }
+
+  // ─── VAPID public key (public) ────────────────────────────────────────────
+
+  @Public()
+  @Get('push-public-key')
+  getPushPublicKey() {
+    return { publicKey: this.notificationService.getVapidPublicKey() };
+  }
+
+  // ─── Telegram deep-link flow ──────────────────────────────────────────────
+
+  @Get('telegram/link')
+  async generateTelegramLink(@Req() req: AuthenticatedRequest) {
+    return this.notificationService.generateTelegramLinkToken(this.getCredentialId(req));
+  }
+
+  @Public()
+  @Post('telegram/webhook')
+  @HttpCode(HttpStatus.OK)
+  async telegramWebhook(
+    @Body() update: TelegramWebhookUpdate,
+    @Headers('x-telegram-bot-api-secret-token') secretHeader: string,
+  ) {
+    const expected = this.config.get<string>('telegram.webhookSecret', '');
+    if (expected && secretHeader !== expected) {
+      throw new ForbiddenException('Invalid webhook secret');
+    }
+    await this.notificationService.handleTelegramWebhookUpdate(update);
+    return { ok: true };
   }
 }

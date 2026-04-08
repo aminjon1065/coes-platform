@@ -14,6 +14,7 @@ const securePrefixes = [
   "/files",
   "/search",
   "/admin",
+  "/settings",
   "/api/notifications",
   "/api/tasks",
   "/api/edms",
@@ -28,11 +29,24 @@ const securePrefixes = [
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const needsSession = securePrefixes.some((prefix) => pathname.startsWith(prefix));
+
   const hasSession = Boolean(
     request.cookies.get("portal_access_token")?.value ||
       request.cookies.get("portal_refresh_token")?.value,
   );
+  const hasMfaPending = Boolean(request.cookies.get("portal_mfa_token")?.value);
+
+  // If user has a full session and tries to access /verify-mfa → dashboard
+  if (pathname === "/verify-mfa" && hasSession) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  // /verify-mfa requires a pending MFA token — redirect to login if missing
+  if (pathname === "/verify-mfa" && !hasMfaPending) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  const needsSession = securePrefixes.some((prefix) => pathname.startsWith(prefix));
 
   if (needsSession && !hasSession) {
     const loginUrl = new URL("/login", request.url);
@@ -40,8 +54,7 @@ export function middleware(request: NextRequest) {
   }
 
   if (pathname === "/login" && hasSession) {
-    const dashboardUrl = new URL("/dashboard", request.url);
-    return NextResponse.redirect(dashboardUrl);
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return NextResponse.next();
@@ -51,6 +64,7 @@ export const config = {
   matcher: [
     "/",
     "/login",
+    "/verify-mfa",
     "/dashboard/:path*",
     "/notifications/:path*",
     "/tasks/:path*",
@@ -63,6 +77,7 @@ export const config = {
     "/files/:path*",
     "/search/:path*",
     "/admin/:path*",
+    "/settings/:path*",
     "/api/auth/:path*",
     "/api/notifications/:path*",
     "/api/tasks/:path*",

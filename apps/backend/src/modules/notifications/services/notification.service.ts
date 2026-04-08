@@ -3,9 +3,14 @@ import {
   Logger,
   NotFoundException,
   ForbiddenException,
+  Inject,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, IsNull } from 'typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 
 import {
   Notification,
@@ -148,6 +153,9 @@ export class NotificationService {
     private readonly telegramProvider: TelegramNotificationProvider,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
+    private readonly config: ConfigService,
   ) {}
 
   // ─── Core dispatch ────────────────────────────────────────────────────────────
@@ -820,4 +828,72 @@ export class NotificationService {
 
     return parts.join('\n\n').substring(0, 4096);
   }
+
+  // ─── Web Push public key ──────────────────────────────────────────────────
+
+  getVapidPublicKey(): string {
+    return this.pushProvider.getPublicKey();
+  }
+
+  // ─── Telegram linking flow ────────────────────────────────────────────────
+
+  async generateTelegramLinkToken(userId: string): Promise<{ token: string; deepLink: string }> {
+    const token = crypto.randomBytes(16).toString('hex');
+    await this.cacheManager.set(`telegram_link:${token}`, userId, 300_000); // 5 min TTL (ms)
+    const botName = this.config.get<string>('telegram.botName', 'coescd_bot');
+    const deepLink = `https://t.me/${botName}?start=${token}`;
+    return { token, deepLink };
+  }
+
+  async handleTelegramWebhookUpdate(update: TelegramWebhookUpdate): Promise<void> {
+    const message = update.message;
+    if (!message?.text) return;
+
+    const text = message.text.trim();
+    const chatId = String(message.chat.id);
+
+    if (text.startsWith('/start ')) {
+      const token = text.split(' ')[1]?.trim();
+      if (!token) return;
+
+      const userId = await this.cacheManager.get<string>(`telegram_link:${token}`);
+      if (!userId) {
+        await this.telegramProvider.send({
+          chatId,
+          text: 'Link expired or invalid. Please generate a new link from the portal.',
+        });
+        return;
+      }
+
+      await this.registerTelegramSubscription(userId, {
+        chatId,
+        username: message.from?.username ?? undefined,
+        displayName:
+          [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ') ||
+          undefined,
+      });
+
+      await this.cacheManager.del(`telegram_link:${token}`);
+
+      await this.telegramProvider.send({
+        chatId,
+        text: 'CoESCD alerts connected. You will now receive notifications here.',
+      });
+    }
+  }
+}
+
+export interface TelegramWebhookUpdate {
+  update_id: number;
+  message?: {
+    message_id: number;
+    from?: {
+      id: number;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+    };
+    chat: { id: number; type: string };
+    text?: string;
+  };
 }

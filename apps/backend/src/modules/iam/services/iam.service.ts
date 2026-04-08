@@ -16,6 +16,7 @@ import * as crypto from 'crypto';
 
 import { UserCredential, CredentialStatus } from '../entities/user-credential.entity';
 import { RefreshToken } from '../entities/refresh-token.entity';
+import { MfaCredential } from '../entities/mfa-credential.entity';
 import { RegisterDto } from '../dto/register.dto';
 
 const BCRYPT_ROUNDS = 12;
@@ -35,6 +36,10 @@ export interface TokenPair {
   expiresIn: number;
 }
 
+export type LoginResult =
+  | (TokenPair & { mfaRequired: false })
+  | { mfaRequired: true; mfaToken: string };
+
 @Injectable()
 export class IamService {
   constructor(
@@ -42,6 +47,8 @@ export class IamService {
     private readonly credentialRepo: Repository<UserCredential>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
+    @InjectRepository(MfaCredential)
+    private readonly mfaRepo: Repository<MfaCredential>,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly events: EventEmitter2,
@@ -82,7 +89,8 @@ export class IamService {
     password: string,
     ipAddress?: string,
     userAgent?: string,
-  ): Promise<TokenPair> {
+    issueMfaPendingToken?: (credentialId: string, username: string) => string,
+  ): Promise<LoginResult> {
     const credential = await this.credentialRepo.findOne({
       where: { username },
     });
@@ -124,8 +132,6 @@ export class IamService {
       lastLoginAt: new Date(),
     });
 
-    const tokens = await this.issueTokenPair(credential, uuidv4(), ipAddress, userAgent);
-
     this.events.emit('iam.user.login', {
       userId: credential.id,
       username: credential.username,
@@ -133,7 +139,32 @@ export class IamService {
       timestamp: new Date(),
     });
 
-    return tokens;
+    // Check if MFA is enabled — require second factor if so
+    if (issueMfaPendingToken) {
+      const mfa = await this.mfaRepo.findOne({ where: { userId: credential.id } });
+      if (mfa?.enabled) {
+        const mfaToken = issueMfaPendingToken(credential.id, credential.username);
+        return { mfaRequired: true, mfaToken };
+      }
+    }
+
+    const tokens = await this.issueTokenPair(credential, uuidv4(), ipAddress, userAgent);
+    return { ...tokens, mfaRequired: false };
+  }
+
+  /**
+   * Issue a full token pair for a credential that has already been authenticated
+   * (used by MfaService after TOTP/backup code verification).
+   */
+  async issueTokensForCredential(
+    credentialId: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<TokenPair> {
+    const credential = await this.credentialRepo.findOneOrFail({
+      where: { id: credentialId, status: CredentialStatus.ACTIVE },
+    });
+    return this.issueTokenPair(credential, uuidv4(), ipAddress, userAgent);
   }
 
   async refreshTokens(rawRefreshToken: string, ipAddress?: string): Promise<TokenPair> {

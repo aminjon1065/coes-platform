@@ -15,6 +15,14 @@ type BackendTokenPair = {
   expiresIn: number;
 };
 
+type BackendLoginResult =
+  | (BackendTokenPair & { mfaRequired: false })
+  | { mfaRequired: true; mfaToken: string };
+
+export type LoginOutcome =
+  | { status: "ok"; user: PortalSessionUser }
+  | { status: "mfa_required" };
+
 type CookieWriter = {
   set: Awaited<ReturnType<typeof cookies>>["set"];
   delete: Awaited<ReturnType<typeof cookies>>["delete"];
@@ -24,6 +32,7 @@ const SESSION_COOKIE = "portal_access_token";
 const REFRESH_COOKIE = "portal_refresh_token";
 const EXPIRES_COOKIE = "portal_access_expires_at";
 const USER_COOKIE = "portal_user";
+const MFA_PENDING_COOKIE = "portal_mfa_token";
 
 const defaultCookieOptions = {
   httpOnly: true,
@@ -157,19 +166,89 @@ export async function clearSessionCookies(cookieStore?: CookieWriter) {
   target.delete(REFRESH_COOKIE);
   target.delete(EXPIRES_COOKIE);
   target.delete(USER_COOKIE);
+  target.delete(MFA_PENDING_COOKIE);
 }
 
-export async function loginAndCreateSession(username: string, password: string) {
-  const tokens = await backendJson<BackendTokenPair>("/auth/login", {
+export async function storeMfaPendingToken(mfaToken: string) {
+  const cookieStore = await cookies();
+  cookieStore.set(MFA_PENDING_COOKIE, mfaToken, {
+    ...defaultCookieOptions,
+    maxAge: 5 * 60, // 5 minutes — matches backend MFA_PENDING_EXPIRES
+  });
+}
+
+export async function getMfaPendingToken(): Promise<string | null> {
+  const cookieStore = await cookies();
+  return cookieStore.get(MFA_PENDING_COOKIE)?.value ?? null;
+}
+
+export async function clearMfaPendingToken() {
+  const cookieStore = await cookies();
+  cookieStore.delete(MFA_PENDING_COOKIE);
+}
+
+export async function verifyMfaAndCreateSession(
+  totpCode: string,
+  ipAddress?: string,
+): Promise<PortalSessionUser> {
+  const mfaToken = await getMfaPendingToken();
+  if (!mfaToken) {
+    throw new Error("MFA session expired. Please log in again.");
+  }
+
+  const tokens = await backendJson<BackendTokenPair>("/iam/mfa/verify", {
     method: "POST",
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ mfaToken, totpCode }),
   });
 
   const user = await fetchOwnProfile(tokens.accessToken);
   const cookieStore = await cookies();
   await persistSession(cookieStore, tokens, user);
+  cookieStore.delete(MFA_PENDING_COOKIE);
 
   return user;
+}
+
+export async function verifyMfaBackupAndCreateSession(
+  backupCode: string,
+): Promise<PortalSessionUser> {
+  const mfaToken = await getMfaPendingToken();
+  if (!mfaToken) {
+    throw new Error("MFA session expired. Please log in again.");
+  }
+
+  const tokens = await backendJson<BackendTokenPair>("/iam/mfa/verify-backup", {
+    method: "POST",
+    body: JSON.stringify({ mfaToken, backupCode }),
+  });
+
+  const user = await fetchOwnProfile(tokens.accessToken);
+  const cookieStore = await cookies();
+  await persistSession(cookieStore, tokens, user);
+  cookieStore.delete(MFA_PENDING_COOKIE);
+
+  return user;
+}
+
+export async function loginAndCreateSession(
+  username: string,
+  password: string,
+): Promise<LoginOutcome> {
+  const result = await backendJson<BackendLoginResult>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (result.mfaRequired) {
+    await storeMfaPendingToken(result.mfaToken);
+    return { status: "mfa_required" };
+  }
+
+  const user = await fetchOwnProfile(result.accessToken);
+  const cookieStore = await cookies();
+  await persistSession(cookieStore, result, user);
+
+  return { status: "ok", user };
 }
 
 export async function refreshSessionIfNeeded() {

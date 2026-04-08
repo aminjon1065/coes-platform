@@ -11,10 +11,16 @@ export async function loginAction(formData: FormData) {
     redirect("/login?error=missing-credentials");
   }
 
+  let outcome: Awaited<ReturnType<typeof loginAndCreateSession>>;
+
   try {
-    await loginAndCreateSession(username, password);
+    outcome = await loginAndCreateSession(username, password);
   } catch {
     redirect("/login?error=invalid-credentials");
+  }
+
+  if (outcome.status === "mfa_required") {
+    redirect("/verify-mfa");
   }
 
   redirect("/dashboard");

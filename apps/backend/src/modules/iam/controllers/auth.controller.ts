@@ -11,6 +11,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { FastifyRequest } from 'fastify';
 import { IamService } from '../services/iam.service';
+import { MfaService } from '../services/mfa.service';
 import { RegisterDto } from '../dto/register.dto';
 import { LoginDto } from '../dto/login.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
@@ -21,7 +22,10 @@ import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 @ApiTags('Auth')
 @Controller({ path: 'auth', version: '1' })
 export class AuthController {
-  constructor(private readonly iamService: IamService) {}
+  constructor(
+    private readonly iamService: IamService,
+    private readonly mfaService: MfaService,
+  ) {}
 
   @Public()
   @Post('register')
@@ -41,7 +45,13 @@ export class AuthController {
     @Headers('user-agent') userAgent: string,
   ) {
     const ip = req.ip;
-    return this.iamService.login(dto.username, dto.password, ip, userAgent);
+    return this.iamService.login(
+      dto.username,
+      dto.password,
+      ip,
+      userAgent,
+      (credentialId, username) => this.mfaService.issueMfaPendingToken(credentialId, username),
+    );
   }
 
   @Public()
