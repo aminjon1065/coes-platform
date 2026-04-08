@@ -33,7 +33,7 @@ This plan does **not** add major new business scope. Its purpose is to make the 
 
 ---
 
-## Execution Update — 2026-04-07
+## Execution Update — 2026-04-08
 
 - ✅ Root workspace/tooling baseline normalized around root-level `npm` workspaces and `package-lock.json`
 - ✅ `apps/backend` build restored and backend Jest suite is green (`26/26` suites, `525/525` tests)
@@ -46,7 +46,9 @@ This plan does **not** add major new business scope. Its purpose is to make the 
 - ✅ SMTP-backed email delivery, optional SMS gateway delivery, and position-to-credential recipient resolution are now wired and covered by backend + smoke tests
 - ✅ Mobile push is now wired end-to-end in repo: subscription persistence/API, VAPID-backed web-push delivery, and Field PWA `push`/`notificationclick` handling
 - ✅ Search recovery/backfill tooling and OpenSearch health visibility are now wired and smoke-covered
-- 🔄 Next focus: expand smoke coverage beyond the baseline layer, then add file governance and a Telegram adapter if external escalation is still needed
+- ✅ `apps/portal-web` production build is green again; the workspace build path now forces `NODE_ENV=production`, and the secure route group is explicitly dynamic for session-backed rendering
+- 🔄 Event reliability foundation is now in repo and verified: outbox persistence/retry/dead-letter, inbox idempotency, and admin replay/reset operations are wired with targeted backend tests green
+- 🔄 Next focus: extend outbox/inbox coverage across the remaining critical publishers and transactional boundaries, then automate the next smoke layer; file governance and GIS/reporting gaps remain open
 
 ---
 
@@ -208,10 +210,10 @@ The 12-week plan is considered complete only if all of the following are true:
 ### 4.1 Backend Consistency & Resilience
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.1.1 | Introduce outbox pattern for critical cross-domain events | ⏳ | EDMS, tasks, notifications, chat, analytics |
-| 4.1.2 | Add inbox/idempotency handling for event consumers | ⏳ | Prevent duplicate side effects on retries |
+| 4.1.1 | Introduce outbox pattern for critical cross-domain events | 🔄 | Outbox now backs EDMS resolution issuance and task status events with retry/backoff/dead-letter + admin replay, but remaining critical publishers still need conversion |
+| 4.1.2 | Add inbox/idempotency handling for event consumers | 🔄 | Inbox dedupe now guards task/chat/search/notification consumers with retry/reset controls and targeted listener tests, but broader consumer adoption is still pending |
 | 4.1.3 | Review transactional boundaries in EDMS/tasks/files | ⏳ | Ensure DB commit and event emission remain consistent |
-| 4.1.4 | Add dead-letter and retry policy per message class | ⏳ | Business vs infrastructure failures handled differently |
+| 4.1.4 | Add dead-letter and retry policy per message class | 🔄 | Retry/backoff + dead-letter now exist in the outbox foundation, but policies are not yet differentiated by message class |
 
 ### 4.2 End-to-End Smoke Flows
 | # | Task | Status | Notes |
@@ -342,7 +344,7 @@ The 12-week plan is considered complete only if all of the following are true:
 | Mixed package manager / lockfile strategy remains unresolved | CI instability, non-reproducible builds | Fix in Week 1 before any feature work resumes |
 | Stub integrations stay marked as complete | False readiness signal | Downgrade status until productionized |
 | Media / GIS / PWA remain unbuilt | Pilot blocked | Treat as critical-path work, not side work |
-| Event flows remain best-effort only | Data inconsistency across domains | Outbox/inbox + replay strategy in Week 7-8 |
+| Event flows remain best-effort only | Data inconsistency across domains | Outbox/inbox + replay strategy is now in progress in Week 7-8; remaining publishers and transaction boundaries still need migration |
 | DR remains untested | High operational risk | Mandatory restore drill in Week 9-10 |
 | `plan.md` diverges again from reality | Planning debt returns | Weekly truth review with evidence links |
 

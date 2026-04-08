@@ -3,7 +3,7 @@
 > **Platform:** CoESCD Unified Digital Platform (Tajikistan Emergency Management)
 > **Type:** Government-grade, sovereign on-premises enterprise system
 > **Total Timeline:** 24–30 months across 6 phases
-> **Last Updated:** 2026-04-07 (repository stabilization baseline restored; roadmap statuses reconciled against current build/test evidence)
+> **Last Updated:** 2026-04-08 (portal build path re-verified, reliability controls promoted where current code + tests now exist, and roadmap notes reconciled against current evidence)
 
 ---
 
@@ -32,7 +32,7 @@ If implementation exists but delivery is incomplete because of stubs, TODOs, or 
 
 ---
 
-## Current Verification Snapshot — 2026-04-07
+## Current Verification Snapshot — 2026-04-08
 
 This snapshot reflects the current engineering baseline after repository stabilization:
 
@@ -45,7 +45,7 @@ This snapshot reflects the current engineering baseline after repository stabili
 | Phase 4 | Partial | GIS/analytics code is strong, but incident enrichment and async file-report pipeline remain partial |
 | Phase 5 | Code-present, not fully re-verified end-to-end | ML/reporting artefacts exist; current stabilization cycle did not re-verify the full operational path |
 | Phase 6 | Roadmap-complete, repo-verified | SSO/SIEM/delegated admin remain verified, and the Field PWA mobile push path is now wired end-to-end in repo (subscription API, web-push delivery, custom service worker); live browser push-service handshake remains outside repo-only verification |
-| Phase 7 | Roadmap-complete, repo-verified | `apps/portal-web` is now the active office frontend, legacy `apps/web` is retired, and the portal build is green; pilot/UAT and operational rollout remain separate from code completion |
+| Phase 7 | Roadmap-complete, repo-verified | `apps/portal-web` is now the active office frontend, legacy `apps/web` is retired, and the portal build is green under an explicit production build path; pilot/UAT and operational rollout remain separate from code completion |
 
 ---
 
@@ -275,7 +275,7 @@ This snapshot reflects the current engineering baseline after repository stabili
 | 3.1.3 | Implement call session management (initiate, join, end) | ✅ | CallsService: initiateCall, joinCall, leaveCall, endCall; calls.call_sessions migration |
 | 3.1.4 | Implement participant management | ✅ | CallParticipant entity; join/leave/count guards; moderator flag |
 | 3.1.5 | Implement scheduled meetings | ✅ | CallSchedule entity + scheduleMeeting + listUpcoming; clearance-filtered |
-| 3.1.6 | Implement call recording with retention policies | ✅ | CallRecording entity; RETENTION_DAYS map; startRecording/stopRecording; expiresAt set on creation |
+| 3.1.6 | Implement call recording with retention policies | ✅ | CallRecording entity; RETENTION_DAYS map; startRecording/stopRecording; expiresAt set on creation; retention cleanup now purges expired objects and records audit evidence |
 | 3.1.7 | Implement recording access control | ✅ | clearance gate on startRecording; classification inherited from session; audit log every action |
 | 3.1.8 | Write conferencing integration tests | ✅ | `calls.service.spec.ts` — 25 tests: initiateCall (clearance guard, initiator auto-joins as moderator, event emitted), joinCall (clearance, capacity limit, existing participant), leaveCall, endCall (status + actualEnd), startRecording (clearance, retention by classification), stopRecording (status change), scheduleMeeting, listUpcoming, getSession |
 
@@ -515,7 +515,7 @@ Task created
 |---|------|--------|-------|
 | 7.2.1 | Implement admin user lifecycle in the portal | ✅ | Admin can list/create/offboard users, assign/revoke roles, assign/vacate positions, and inspect effective org placement from `apps/portal-web` |
 | 7.2.2 | Implement admin organization registry and operational views | ✅ | Departments and positions now expose occupancy, subtree metrics, command chain visibility, and aggregate operational summaries in `portal-web` |
-| 7.2.3 | Implement admin control plane for monitoring, logs, and maintenance | ✅ | `/admin`, `/admin/system`, and `/admin/logs` expose audit, health, gateway/search/media status, scheduler summaries, alerts, and search reindex |
+| 7.2.3 | Implement admin control plane for monitoring, logs, and maintenance | ✅ | `/admin`, `/admin/system`, and `/admin/logs` expose audit, health, gateway/search/media status, scheduler summaries, outbox/inbox reliability backlog + replay/reset ops, recording retention status, alerts, and search reindex |
 
 ### 7.3 EDMS Module
 | # | Task | Status | Notes |
@@ -557,4 +557,3 @@ Status counts below reflect documented roadmap task states after the current rec
 ---
 
 *Update this file as tasks are started, completed, or blocked. Change status symbols accordingly.*
-

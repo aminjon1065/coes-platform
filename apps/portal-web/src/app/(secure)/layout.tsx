@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getPortalContext, getPortalNavItems } from "@/lib/portal-context";
 
+export const dynamic = "force-dynamic";
+
 export default async function SecureLayout({
   children,
 }: Readonly<{
