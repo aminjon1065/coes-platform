@@ -20,6 +20,9 @@ import {
   SearchMaintenanceService,
   type SearchReindexResult,
 } from '../services/search-maintenance.service';
+import { CurrentUser, AuthenticatedUser } from '../../iam/decorators/current-user.decorator';
+import { AuditService } from '../../audit/services/audit.service';
+import { AuditSeverity } from '../../audit/entities/audit-event.entity';
 
 interface AuthenticatedRequest extends FastifyRequest {
   user: {
@@ -36,6 +39,7 @@ export class SearchController {
   constructor(
     private readonly searchQueryService: SearchQueryService,
     private readonly searchMaintenanceService: SearchMaintenanceService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -85,7 +89,22 @@ export class SearchController {
   @Post('admin/reindex')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Run a repository-backed search reindex/backfill' })
-  reindex(@Body() dto: ReindexSearchDto): Promise<SearchReindexResult> {
-    return this.searchMaintenanceService.reindex(dto);
+  async reindex(
+    @Body() dto: ReindexSearchDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<SearchReindexResult> {
+    const result = await this.searchMaintenanceService.reindex(dto);
+    await this.auditService.emit({
+      actorId: actor.id,
+      eventType: 'admin.search.reindex',
+      resourceType: 'search-index',
+      success: true,
+      severity: AuditSeverity.INFO,
+      metadata: {
+        indices: result.indices,
+        batchSize: result.batchSize,
+      },
+    });
+    return result;
   }
 }

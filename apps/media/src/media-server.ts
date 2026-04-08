@@ -5,6 +5,7 @@ import { Redis } from 'ioredis';
 import { connect as amqpConnect, ChannelModel, Channel } from 'amqplib';
 
 import { WorkerPool } from './workers/worker-pool';
+import { RecordingManager } from './recording/recording-manager';
 import { SessionManager } from './sessions/session-manager';
 import { SignalingHandler } from './signaling/signaling-handler';
 import { validateAccessToken, extractBearerToken } from './auth/token-validator';
@@ -16,6 +17,7 @@ export class MediaServer {
   private workerPool: WorkerPool;
   private sessionManager: SessionManager;
   private signalingHandler: SignalingHandler;
+  private recordingManager: RecordingManager;
   private redis: Redis;
   private amqpConnection: ChannelModel | null = null;
   private amqpChannel: Channel | null = null;
@@ -30,7 +32,13 @@ export class MediaServer {
 
     this.workerPool = new WorkerPool();
     this.sessionManager = new SessionManager(this.workerPool, this.redis);
-    this.signalingHandler = new SignalingHandler(this.sessionManager);
+    this.recordingManager = new RecordingManager(this.sessionManager, (event) =>
+      this.publishRecordingEvent(event),
+    );
+    this.signalingHandler = new SignalingHandler(this.sessionManager, {
+      onProducerAdded: (sessionId, participantId, producer) =>
+        this.recordingManager.handleProducerAdded(sessionId, participantId, producer),
+    });
   }
 
   async start(): Promise<void> {
@@ -49,6 +57,8 @@ export class MediaServer {
   }
 
   async stop(): Promise<void> {
+    await this.recordingManager.stopAll();
+
     // End all active sessions
     const sessionIds = this.sessionManager.getActiveSessions();
     await Promise.allSettled(sessionIds.map((id) => this.sessionManager.endSession(id)));
@@ -170,18 +180,154 @@ export class MediaServer {
     }
   }
 
-  private handleBackendCommand(event: { type: string; sessionId?: string }): void {
+  private handleBackendCommand(event: {
+    type: string;
+    sessionId?: string;
+    participantId?: string;
+    recordingId?: string;
+    audioMuted?: boolean;
+    videoMuted?: boolean;
+  }): void {
     switch (event.type) {
       case 'media.session.end':
         if (event.sessionId) {
-          this.sessionManager
-            .endSession(event.sessionId)
-            .catch((err) => logger.error(err, 'Failed to end session via AMQP command'));
+          void (async () => {
+            try {
+              await this.recordingManager.stopRecordingBySession(event.sessionId!);
+              await this.sessionManager.endSession(event.sessionId!);
+            } catch (err) {
+              logger.error(err, 'Failed to end session via AMQP command');
+            }
+          })();
+        }
+        break;
+
+      case 'media.participant.kick':
+        if (event.sessionId && event.participantId) {
+          void this.kickParticipant(event.sessionId, event.participantId);
+        }
+        break;
+
+      case 'media.participant.mute':
+        if (event.sessionId && event.participantId) {
+          this.muteParticipant(
+            event.sessionId,
+            event.participantId,
+            event.audioMuted,
+            event.videoMuted,
+          );
+        }
+        break;
+
+      case 'media.recording.start':
+        if (event.sessionId && event.recordingId) {
+          void this.recordingManager
+            .startRecording(event.sessionId, event.recordingId)
+            .catch((err) => logger.error(err, 'Failed to start recording via AMQP command'));
+        }
+        break;
+
+      case 'media.recording.stop':
+        if (event.recordingId) {
+          void this.recordingManager
+            .stopRecording(event.recordingId)
+            .catch((err) => logger.error(err, 'Failed to stop recording via AMQP command'));
         }
         break;
 
       default:
         logger.debug({ type: event.type }, 'Unknown backend command');
+    }
+  }
+
+  private async publishRecordingEvent(event: Record<string, unknown>): Promise<void> {
+    if (!this.amqpChannel) {
+      return;
+    }
+
+    try {
+      this.amqpChannel.publish(
+        RABBITMQ_EXCHANGE,
+        String(event.type ?? 'media.recording.unknown'),
+        Buffer.from(JSON.stringify(event)),
+        { contentType: 'application/json' },
+      );
+    } catch (err) {
+      logger.error(err, 'Failed to publish recording event to RabbitMQ');
+    }
+  }
+
+  private async kickParticipant(sessionId: string, participantId: string): Promise<void> {
+    const session = this.sessionManager.getSession(sessionId);
+    const participant = this.sessionManager.getParticipant(sessionId, participantId);
+    if (!session || !participant) {
+      return;
+    }
+
+    if (participant.socket?.readyState === WebSocket.OPEN) {
+      participant.socket.send(
+        JSON.stringify({
+          type: 'moderator_kicked',
+          payload: { participantId },
+        }),
+      );
+      participant.socket.close(4009, 'Removed by moderator');
+    }
+
+    await this.sessionManager.removeParticipant(sessionId, participantId);
+    for (const otherParticipant of session.participants.values()) {
+      if (otherParticipant.socket?.readyState === WebSocket.OPEN) {
+        otherParticipant.socket.send(
+          JSON.stringify({
+            type: 'participant_left',
+            payload: { participantId },
+          }),
+        );
+      }
+    }
+  }
+
+  private muteParticipant(
+    sessionId: string,
+    participantId: string,
+    audioMuted?: boolean,
+    videoMuted?: boolean,
+  ): void {
+    const result = this.sessionManager.setParticipantMute(
+      sessionId,
+      participantId,
+      audioMuted,
+      videoMuted,
+    );
+    if (!result) {
+      return;
+    }
+
+    if (result.participant.socket?.readyState === WebSocket.OPEN) {
+      result.participant.socket.send(
+        JSON.stringify({
+          type: 'moderator_mute',
+          payload: {
+            audioMuted: result.participant.audioMuted,
+            videoMuted: result.participant.videoMuted,
+          },
+        }),
+      );
+    }
+
+    for (const otherParticipant of result.session.participants.values()) {
+      if (otherParticipant.socket?.readyState === WebSocket.OPEN) {
+        otherParticipant.socket.send(
+          JSON.stringify({
+            type: 'mute_changed',
+            payload: {
+              participantId,
+              audioMuted: result.participant.audioMuted,
+              videoMuted: result.participant.videoMuted,
+            },
+          }),
+        );
+      }
     }
   }
 }

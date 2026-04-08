@@ -214,6 +214,12 @@ export class AnalyticsController {
     return this.analyticsService.publishForm(id, toCtx(user));
   }
 
+  @ApiOperation({ summary: 'Get form registry including drafts for analytics workspace' })
+  @Get('forms/admin/registry')
+  listFormRegistry(@CurrentUser() user: JwtPayload) {
+    return this.analyticsService.getFormRegistry(toCtx(user));
+  }
+
   @ApiOperation({ summary: 'List published forms, optionally filtered by incident type' })
   @Get('forms')
   listForms(
@@ -221,6 +227,24 @@ export class AnalyticsController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.analyticsService.listForms(incidentType, toCtx(user));
+  }
+
+  @ApiOperation({ summary: 'Get a single form by ID' })
+  @Get('forms/:id')
+  getForm(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.analyticsService.getForm(id, toCtx(user));
+  }
+
+  @ApiOperation({ summary: 'List submissions for a form' })
+  @Get('forms/:id/submissions')
+  listFormSubmissions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.analyticsService.listFormSubmissions(id, toCtx(user));
   }
 
   @ApiOperation({ summary: 'Submit a completed form (field analyst data entry)' })

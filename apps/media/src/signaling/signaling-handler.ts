@@ -4,7 +4,7 @@ import { SessionManager, Participant } from '../sessions/session-manager';
 import { logger } from '../logger';
 
 interface SignalingMessage {
-  id: string;          // request id for correlation
+  id: string;
   type: string;
   payload: Record<string, unknown>;
 }
@@ -16,7 +16,6 @@ interface SignalingResponse {
   error?: string;
 }
 
-// WebRTC transport options — annotated IPs must match docker/host config
 function transportOptions(): msTypes.WebRtcTransportOptions {
   const announcedIp = process.env.MEDIASOUP_ANNOUNCED_IP ?? '127.0.0.1';
   return {
@@ -33,16 +32,27 @@ function transportOptions(): msTypes.WebRtcTransportOptions {
   };
 }
 
-/**
- * Handles per-WebSocket-connection WebRTC signaling.
- * Each authenticated connection is tied to one participant in one session.
- */
 export class SignalingHandler {
   constructor(
     private readonly sessionManager: SessionManager,
+    private readonly hooks?: {
+      onProducerAdded?: (
+        sessionId: string,
+        participantId: string,
+        producer: msTypes.Producer,
+      ) => Promise<void> | void;
+    },
   ) {}
 
   handle(socket: WebSocket, participantId: string, userId: string, displayName: string): void {
+    let activeSessionId: string | null = null;
+
+    socket.on('close', () => {
+      if (activeSessionId) {
+        void this.handleDisconnect(activeSessionId, participantId);
+      }
+    });
+
     socket.on('message', async (raw) => {
       let msg: SignalingMessage;
       try {
@@ -53,7 +63,19 @@ export class SignalingHandler {
       }
 
       try {
-        const result = await this.dispatch(msg, socket, participantId, userId, displayName);
+        const result = await this.dispatch(
+          msg,
+          socket,
+          participantId,
+          userId,
+          displayName,
+          (sessionId) => {
+            activeSessionId = sessionId;
+          },
+          () => {
+            activeSessionId = null;
+          },
+        );
         this.send(socket, { id: msg.id, type: `${msg.type}_ok`, payload: result });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Internal error';
@@ -69,16 +91,18 @@ export class SignalingHandler {
     participantId: string,
     userId: string,
     displayName: string,
+    setActiveSessionId: (sessionId: string) => void,
+    clearActiveSessionId: () => void,
   ): Promise<unknown> {
     const { type, payload } = msg;
 
     switch (type) {
-      // ── Join a call session ───────────────────────────────────────────────
       case 'join': {
         const sessionId = payload.sessionId as string;
         const channelId = payload.channelId as string;
-
-        const session = await this.sessionManager.createSession(sessionId, channelId);
+        const classification = Number(payload.classification ?? 0);
+        const session = await this.sessionManager.createSession(sessionId, channelId, classification);
+        setActiveSessionId(sessionId);
 
         const participant: Participant = {
           participantId,
@@ -89,16 +113,52 @@ export class SignalingHandler {
           joinedAt: new Date(),
           audioMuted: false,
           videoMuted: false,
+          socket,
         };
         this.sessionManager.addParticipant(sessionId, participant);
+
+        const participants = Array.from(session.participants.values())
+          .filter((item) => item.participantId !== participantId)
+          .map((item) => ({
+            participantId: item.participantId,
+            userId: item.userId,
+            displayName: item.displayName,
+            audioMuted: item.audioMuted,
+            videoMuted: item.videoMuted,
+          }));
+
+        const producers = Array.from(session.participants.values())
+          .filter((item) => item.participantId !== participantId)
+          .flatMap((item) =>
+            Array.from(item.producers.values()).map((producer) => ({
+              producerId: producer.id,
+              participantId: item.participantId,
+              displayName: item.displayName,
+              kind: producer.kind,
+              source:
+                producer.appData && producer.appData.source === 'screen' ? 'screen' : 'camera',
+            })),
+          );
+
+        this.notifyOthers(session, participantId, {
+          type: 'participant_joined',
+          payload: {
+            participantId,
+            userId,
+            displayName,
+            audioMuted: false,
+            videoMuted: false,
+          },
+        });
 
         return {
           rtpCapabilities: session.router.rtpCapabilities,
           participantId,
+          participants,
+          producers,
         };
       }
 
-      // ── Create send (uplink) transport ───────────────────────────────────
       case 'create_send_transport': {
         const sessionId = payload.sessionId as string;
         const session = this.sessionManager.getSession(sessionId);
@@ -117,7 +177,6 @@ export class SignalingHandler {
         };
       }
 
-      // ── Create recv (downlink) transport ─────────────────────────────────
       case 'create_recv_transport': {
         const sessionId = payload.sessionId as string;
         const session = this.sessionManager.getSession(sessionId);
@@ -136,7 +195,6 @@ export class SignalingHandler {
         };
       }
 
-      // ── Connect transport (exchange DTLS) ────────────────────────────────
       case 'connect_transport': {
         const sessionId = payload.sessionId as string;
         const transportId = payload.transportId as string;
@@ -152,19 +210,19 @@ export class SignalingHandler {
           participant.sendTransport?.id === transportId
             ? participant.sendTransport
             : participant.recvTransport?.id === transportId
-            ? participant.recvTransport
-            : undefined;
+              ? participant.recvTransport
+              : undefined;
 
         if (!transport) throw new Error('Transport not found');
         await transport.connect({ dtlsParameters });
         return {};
       }
 
-      // ── Produce (start sending media) ────────────────────────────────────
       case 'produce': {
         const sessionId = payload.sessionId as string;
         const kind = payload.kind as msTypes.MediaKind;
         const rtpParameters = payload.rtpParameters as msTypes.RtpParameters;
+        const source = payload.source === 'screen' ? 'screen' : 'camera';
 
         const session = this.sessionManager.getSession(sessionId);
         if (!session) throw new Error('Session not found');
@@ -172,10 +230,16 @@ export class SignalingHandler {
         const participant = session.participants.get(participantId);
         if (!participant?.sendTransport) throw new Error('Send transport not ready');
 
-        const producer = await participant.sendTransport.produce({ kind, rtpParameters });
+        const producer = await participant.sendTransport.produce({
+          kind,
+          rtpParameters,
+          appData: { source },
+        });
         participant.producers.set(producer.id, producer);
+        producer.on('transportclose', () => {
+          participant.producers.delete(producer.id);
+        });
 
-        // Notify other participants that a new producer is available
         this.notifyOthers(session, participantId, {
           type: 'new_producer',
           payload: {
@@ -183,13 +247,15 @@ export class SignalingHandler {
             participantId,
             displayName,
             kind,
+            source,
           },
         });
+
+        await this.hooks?.onProducerAdded?.(sessionId, participantId, producer);
 
         return { producerId: producer.id };
       }
 
-      // ── Consume (start receiving a producer) ─────────────────────────────
       case 'consume': {
         const sessionId = payload.sessionId as string;
         const producerId = payload.producerId as string;
@@ -197,7 +263,6 @@ export class SignalingHandler {
 
         const session = this.sessionManager.getSession(sessionId);
         if (!session) throw new Error('Session not found');
-
         if (!session.router.canConsume({ producerId, rtpCapabilities })) {
           throw new Error('Cannot consume this producer with given RTP capabilities');
         }
@@ -208,9 +273,15 @@ export class SignalingHandler {
         const consumer = await participant.recvTransport.consume({
           producerId,
           rtpCapabilities,
-          paused: true,   // client resumes after ICE
+          paused: true,
         });
         participant.consumers.set(consumer.id, consumer);
+        consumer.on('transportclose', () => {
+          participant.consumers.delete(consumer.id);
+        });
+        consumer.on('producerclose', () => {
+          participant.consumers.delete(consumer.id);
+        });
 
         return {
           consumerId: consumer.id,
@@ -220,7 +291,6 @@ export class SignalingHandler {
         };
       }
 
-      // ── Resume a consumer ────────────────────────────────────────────────
       case 'resume_consumer': {
         const sessionId = payload.sessionId as string;
         const consumerId = payload.consumerId as string;
@@ -236,12 +306,11 @@ export class SignalingHandler {
         return {};
       }
 
-      // ── Leave session ────────────────────────────────────────────────────
       case 'leave': {
         const sessionId = payload.sessionId as string;
+        clearActiveSessionId();
         await this.sessionManager.removeParticipant(sessionId, participantId);
 
-        // Notify remaining participants
         const session = this.sessionManager.getSession(sessionId);
         if (session) {
           this.notifyOthers(session, participantId, {
@@ -252,7 +321,6 @@ export class SignalingHandler {
         return {};
       }
 
-      // ── Mute/unmute ──────────────────────────────────────────────────────
       case 'set_mute': {
         const sessionId = payload.sessionId as string;
         const audioMuted = payload.audioMuted as boolean | undefined;
@@ -269,7 +337,11 @@ export class SignalingHandler {
 
         this.notifyOthers(session, participantId, {
           type: 'mute_changed',
-          payload: { participantId, audioMuted: participant.audioMuted, videoMuted: participant.videoMuted },
+          payload: {
+            participantId,
+            audioMuted: participant.audioMuted,
+            videoMuted: participant.videoMuted,
+          },
         });
         return {};
       }
@@ -286,14 +358,35 @@ export class SignalingHandler {
   }
 
   private notifyOthers(
-    session: { participants: Map<string, Participant & { _socket?: WebSocket }> },
+    session: { participants: Map<string, Participant> },
     excludeParticipantId: string,
-    event: unknown,
+    event: Record<string, unknown>,
   ): void {
-    // Sessions don't hold sockets directly — events are published via RabbitMQ
-    // so the gateway can fan them out to connected clients.
-    // The media-server.ts publishes 'media.*' events for this purpose.
-    void session; void excludeParticipantId; void event;
-    // Concrete fan-out is wired in MediaServer.publishSessionEvent()
+    const message = JSON.stringify(event);
+    for (const participant of session.participants.values()) {
+      if (participant.participantId === excludeParticipantId) {
+        continue;
+      }
+
+      if (participant.socket?.readyState === WebSocket.OPEN) {
+        participant.socket.send(message);
+      }
+    }
+  }
+
+  private async handleDisconnect(sessionId: string, participantId: string): Promise<void> {
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session?.participants.has(participantId)) {
+      return;
+    }
+
+    await this.sessionManager.removeParticipant(sessionId, participantId);
+    const nextSession = this.sessionManager.getSession(sessionId);
+    if (nextSession) {
+      this.notifyOthers(nextSession, participantId, {
+        type: 'participant_left',
+        payload: { participantId },
+      });
+    }
   }
 }

@@ -16,6 +16,7 @@ import { FastifyRequest } from 'fastify';
 
 import { CallsService } from '../services/calls.service';
 import { InitiateCallDto, ScheduleCallDto } from '../dto/initiate-call.dto';
+import { ModerateParticipantDto } from '../dto/moderate-participant.dto';
 
 interface AuthenticatedRequest extends FastifyRequest {
   user: {
@@ -78,6 +79,27 @@ export class CallsController {
     return this.callsService.endCall(id, req.user.sub);
   }
 
+  @Delete('sessions/:id/participants/:participantId')
+  @ApiOperation({ summary: 'Remove participant from a call session (moderator)' })
+  removeParticipant(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('participantId', ParseUUIDPipe) participantId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.callsService.removeParticipant(id, participantId, req.user.sub);
+  }
+
+  @Post('sessions/:id/participants/:participantId/mute')
+  @ApiOperation({ summary: 'Update participant mute state (moderator)' })
+  moderateParticipant(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('participantId', ParseUUIDPipe) participantId: string,
+    @Body() dto: ModerateParticipantDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.callsService.moderateParticipant(id, participantId, req.user.sub, dto);
+  }
+
   @Post('sessions/:id/recordings')
   @ApiOperation({ summary: 'Start recording a call session' })
   startRecording(
@@ -94,6 +116,21 @@ export class CallsController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.callsService.stopRecording(recordingId, req.user.sub);
+  }
+
+  @Get('recordings/:recordingId/download-url')
+  @ApiOperation({ summary: 'Get a pre-signed download URL for a finalized recording' })
+  getRecordingDownloadUrl(
+    @Param('recordingId', ParseUUIDPipe) recordingId: string,
+    @Query('expirySeconds') expirySeconds: number | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.callsService.getRecordingDownloadUrl(
+      recordingId,
+      req.user.sub,
+      req.user.clearance ?? 0,
+      expirySeconds ?? 3600,
+    );
   }
 
   @Post('schedules')

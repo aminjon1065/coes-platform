@@ -48,6 +48,11 @@ const SEVERITY_RANK: Record<IncidentSeverity, number> = {
 
 @Injectable()
 export class AnalyticsService {
+  private schedulerSummary = {
+    daily: { cron: '0 0 * * *', lastRunAt: null as string | null, error: null as string | null },
+    weekly: { cron: '0 0 * * 1', lastRunAt: null as string | null, error: null as string | null },
+    monthly: { cron: '0 0 1 * *', lastRunAt: null as string | null, error: null as string | null },
+  };
   private readonly logger = new Logger(AnalyticsService.name);
 
   constructor(
@@ -496,7 +501,15 @@ export class AnalyticsService {
     if (form.status === FormStatus.PUBLISHED) throw new ConflictException('Form already published');
     form.status = FormStatus.PUBLISHED;
     form.publishedAt = new Date();
-    return this.formRepo.save(form);
+    const saved = await this.formRepo.save(form);
+    this.auditService.emit({
+      action: 'analytics.form.published',
+      actorId: ctx.userId,
+      resourceType: 'DataCollectionForm',
+      resourceId: saved.id,
+      metadata: { incidentType: saved.incidentType, classification: saved.classification },
+    });
+    return saved;
   }
 
   async listForms(incidentType?: string, ctx?: RequestContext): Promise<DataCollectionForm[]> {
@@ -505,6 +518,51 @@ export class AnalyticsService {
     if (ctx) qb.andWhere('f.classification <= :clearance', { clearance: ctx.clearanceLevel });
     if (incidentType) qb.andWhere('(f.incidentType = :type OR f.incidentType IS NULL)', { type: incidentType });
     return qb.orderBy('f.name', 'ASC').getMany();
+  }
+
+  async getFormRegistry(ctx: RequestContext): Promise<Array<DataCollectionForm & { submissionCount: number }>> {
+    const forms = await this.formRepo.find({
+      where: ctx.clearanceLevel >= 0 ? {} : undefined,
+      order: { updatedAt: 'DESC', createdAt: 'DESC' },
+    });
+
+    const visibleForms = forms.filter((form) => form.classification <= ctx.clearanceLevel);
+    if (!visibleForms.length) {
+      return [];
+    }
+
+    const counts = await this.submissionRepo
+      .createQueryBuilder('submission')
+      .select('submission.formId', 'formId')
+      .addSelect('COUNT(*)', 'count')
+      .where('submission.formId IN (:...formIds)', { formIds: visibleForms.map((form) => form.id) })
+      .groupBy('submission.formId')
+      .getRawMany<{ formId: string; count: string }>();
+
+    const countMap = new Map(counts.map((item) => [item.formId, Number(item.count)]));
+
+    return visibleForms.map((form) => ({
+      ...form,
+      submissionCount: countMap.get(form.id) ?? 0,
+    }));
+  }
+
+  async getForm(id: string, ctx: RequestContext): Promise<DataCollectionForm> {
+    const form = await this.formRepo.findOne({ where: { id } });
+    if (!form) {
+      throw new NotFoundException(`Form ${id} not found`);
+    }
+
+    this.assertClassificationAccess(form.classification, ctx.clearanceLevel, 'form');
+    return form;
+  }
+
+  async listFormSubmissions(formId: string, ctx: RequestContext): Promise<FormSubmission[]> {
+    await this.getForm(formId, ctx);
+    return this.submissionRepo.find({
+      where: { formId },
+      order: { submittedAt: 'DESC', createdAt: 'DESC' },
+    });
   }
 
   async submitForm(formId: string, dto: SubmitFormDto, ctx: RequestContext): Promise<FormSubmission> {
@@ -537,6 +595,13 @@ export class AnalyticsService {
       incidentRef: saved.incidentRef,
       submittedById: ctx.userId,
     });
+    this.auditService.emit({
+      action: 'analytics.form.submitted',
+      actorId: ctx.userId,
+      resourceType: 'FormSubmission',
+      resourceId: saved.id,
+      metadata: { formId, incidentId: saved.incidentId, incidentRef: saved.incidentRef },
+    });
     return saved;
   }
 
@@ -552,7 +617,15 @@ export class AnalyticsService {
     sub.reviewNotes = reviewNotes;
     sub.reviewedById = ctx.userId;
     sub.reviewedAt = new Date();
-    return this.submissionRepo.save(sub);
+    const saved = await this.submissionRepo.save(sub);
+    this.auditService.emit({
+      action: 'analytics.form.reviewed',
+      actorId: ctx.userId,
+      resourceType: 'FormSubmission',
+      resourceId: saved.id,
+      metadata: { status: saved.status, formId: saved.formId },
+    });
+    return saved;
   }
 
   // ── Report Generation ──────────────────────────────────────────────────────
@@ -628,9 +701,23 @@ export class AnalyticsService {
       }
 
       this.logger.log(`Computed ${period} metrics snapshot for ${now.toISOString()}`);
+      this.schedulerSummary[period] = {
+        ...this.schedulerSummary[period],
+        lastRunAt: now.toISOString(),
+        error: null,
+      };
     } catch (err) {
       this.logger.error(`Failed to compute ${period} metrics snapshot: ${err.message}`);
+      this.schedulerSummary[period] = {
+        ...this.schedulerSummary[period],
+        lastRunAt: now.toISOString(),
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
     }
+  }
+
+  getSchedulerSummary() {
+    return this.schedulerSummary;
   }
 
   // ── Internal helpers ─────────────────────────────────────────────────────

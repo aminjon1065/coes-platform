@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, TreeRepository } from 'typeorm';
+import { Repository, TreeRepository, In, IsNull } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { Department } from '../entities/department.entity';
@@ -13,6 +13,9 @@ import { Position } from '../entities/position.entity';
 import { OrgChangeHistory, OrgChangeType } from '../entities/org-change-history.entity';
 import { CreateDepartmentDto } from '../dto/create-department.dto';
 import { CreatePositionDto } from '../dto/create-position.dto';
+import { UserPositionAssignment } from '../../users/entities/user-position-assignment.entity';
+import { AuditService } from '../../audit/services/audit.service';
+import { AuditSeverity } from '../../audit/entities/audit-event.entity';
 
 @Injectable()
 export class OrgService {
@@ -23,6 +26,9 @@ export class OrgService {
     private readonly positionRepo: Repository<Position>,
     @InjectRepository(OrgChangeHistory)
     private readonly historyRepo: Repository<OrgChangeHistory>,
+    @InjectRepository(UserPositionAssignment)
+    private readonly userPositionAssignmentRepo: Repository<UserPositionAssignment>,
+    private readonly auditService: AuditService,
     private readonly events: EventEmitter2,
   ) {}
 
@@ -59,6 +65,18 @@ export class OrgService {
     });
 
     this.events.emit('org.department.created', { departmentId: saved.id });
+    await this.auditService.emit({
+      actorId: requestedBy,
+      eventType: 'admin.department.created',
+      resourceType: 'department',
+      resourceId: saved.id,
+      success: true,
+      severity: AuditSeverity.INFO,
+      metadata: {
+        name: saved.name,
+        parentDepartmentId: saved.parentId,
+      },
+    });
 
     return saved;
   }
@@ -98,6 +116,14 @@ export class OrgService {
       departmentId: id,
       requestedBy: requestedBy ?? null,
     });
+    await this.auditService.emit({
+      actorId: requestedBy,
+      eventType: 'admin.department.deactivated',
+      resourceType: 'department',
+      resourceId: id,
+      success: true,
+      severity: AuditSeverity.WARNING,
+    });
   }
 
   // ─────────────────────────────── Positions ──────────────────────────────
@@ -134,6 +160,19 @@ export class OrgService {
     });
 
     this.events.emit('org.position.created', { positionId: saved.id, departmentId: saved.departmentId });
+    await this.auditService.emit({
+      actorId: requestedBy,
+      eventType: 'admin.position.created',
+      resourceType: 'position',
+      resourceId: saved.id,
+      success: true,
+      severity: AuditSeverity.INFO,
+      metadata: {
+        title: saved.title,
+        departmentId: saved.departmentId,
+        reportsToId: saved.reportsToId,
+      },
+    });
 
     return saved;
   }
@@ -212,5 +251,149 @@ export class OrgService {
       result.push(...this.flattenTree(child));
     }
     return result;
+  }
+
+  async getDepartmentAdminSummary() {
+    const tree = await this.getDepartmentTree();
+    const positions = await this.getAllActivePositions();
+    const assignments = await this.userPositionAssignmentRepo.find({
+      where: { vacatedAt: IsNull() },
+    });
+
+    const occupiedPositionIds = new Set(assignments.map((assignment) => assignment.positionId));
+    const usersByPositionId = new Map<string, Set<string>>();
+    for (const assignment of assignments) {
+      const current = usersByPositionId.get(assignment.positionId) ?? new Set<string>();
+      current.add(assignment.userId);
+      usersByPositionId.set(assignment.positionId, current);
+    }
+
+    const collectIds = (node: Department): string[] => [
+      node.id,
+      ...(node.children ?? []).flatMap((child) => collectIds(child)),
+    ];
+
+    const enrichTree = (nodes: Department[]): Array<Record<string, unknown>> =>
+      nodes.map((node) => {
+        const subtreeIds = new Set(collectIds(node));
+        const subtreePositions = positions.filter((position) => subtreeIds.has(position.departmentId));
+        const occupiedCount = subtreePositions.filter((position) => occupiedPositionIds.has(position.id)).length;
+        const userIds = new Set(
+          subtreePositions.flatMap((position) => [...(usersByPositionId.get(position.id) ?? new Set<string>())]),
+        );
+
+        return {
+          id: node.id,
+          name: node.name,
+          code: node.shortCode,
+          isActive: node.active,
+          parentDepartmentId: node.parentId,
+          metrics: {
+            positionCount: subtreePositions.length,
+            occupiedCount,
+            vacantCount: subtreePositions.length - occupiedCount,
+            userCount: userIds.size,
+          },
+          children: enrichTree(node.children ?? []),
+        };
+      });
+
+    return {
+      items: enrichTree(tree),
+    };
+  }
+
+  async getPositionAdminRegistry() {
+    const positions = await this.positionRepo.find({
+      where: { active: true },
+      relations: ['department', 'reportsTo'],
+      order: { level: 'ASC', title: 'ASC' },
+    });
+    const assignments = await this.userPositionAssignmentRepo.find({
+      where: positions.length ? { positionId: In(positions.map((position) => position.id)) } : undefined,
+      relations: ['user'],
+      order: { assignedAt: 'DESC' },
+    });
+
+    const assignmentsByPositionId = new Map<string, UserPositionAssignment[]>();
+    const occupantByPositionId = new Map<string, UserPositionAssignment>();
+
+    for (const assignment of assignments) {
+      const current = assignmentsByPositionId.get(assignment.positionId) ?? [];
+      current.push(assignment);
+      assignmentsByPositionId.set(assignment.positionId, current);
+
+      if (!assignment.vacatedAt && assignment.type === 'primary' && !occupantByPositionId.has(assignment.positionId)) {
+        occupantByPositionId.set(assignment.positionId, assignment);
+      }
+    }
+
+    const positionById = new Map(positions.map((position) => [position.id, position]));
+    const buildChain = (position: Position) => {
+      const chain: Position[] = [];
+      let current: Position | null = position;
+
+      while (current) {
+        chain.push(current);
+        current = current.reportsToId ? positionById.get(current.reportsToId) ?? null : null;
+      }
+
+      return chain;
+    };
+
+    return {
+      items: positions.map((position) => {
+        const occupantAssignment = occupantByPositionId.get(position.id);
+        const history = assignmentsByPositionId.get(position.id) ?? [];
+
+        return {
+          id: position.id,
+          title: position.title,
+          level: position.level,
+          departmentId: position.departmentId,
+          departmentName: position.department?.name ?? null,
+          reportsToId: position.reportsToId,
+          isActive: position.active,
+          canAssignTasks: position.canAssignTasks,
+          canApproveDocuments: position.canApproveDocuments,
+          canIssueResolutions: position.canIssueResolutions,
+          occupant: occupantAssignment?.user
+            ? {
+                id: occupantAssignment.user.id,
+                credentialId: occupantAssignment.user.credentialId,
+                displayName:
+                  occupantAssignment.user.displayName ||
+                  [occupantAssignment.user.firstName, occupantAssignment.user.lastName].filter(Boolean).join(' ') ||
+                  occupantAssignment.user.email,
+                email: occupantAssignment.user.email,
+                status: occupantAssignment.user.status,
+              }
+            : null,
+          commandChain: buildChain(position).map((item) => ({
+            id: item.id,
+            title: item.title,
+            level: item.level,
+            departmentId: item.departmentId,
+            departmentName: item.department?.name ?? null,
+            reportsToId: item.reportsToId,
+            isActive: item.active,
+            canAssignTasks: item.canAssignTasks,
+            canApproveDocuments: item.canApproveDocuments,
+            canIssueResolutions: item.canIssueResolutions,
+          })),
+          history: history.map((assignment) => ({
+            id: assignment.id,
+            userId: assignment.userId,
+            positionId: assignment.positionId,
+            type: assignment.type,
+            assignedAt: assignment.assignedAt,
+            vacatedAt: assignment.vacatedAt,
+            assignedById: assignment.assignedById,
+            vacatedById: assignment.vacatedById,
+            notes: assignment.notes,
+          })),
+        };
+      }),
+    };
   }
 }

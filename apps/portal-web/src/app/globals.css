@@ -141,6 +141,46 @@ textarea {
   border: 1px solid var(--border);
 }
 
+.portal-alert {
+  position: relative;
+  overflow: hidden;
+}
+
+.portal-alert::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 14px 0 0 14px;
+}
+
+.portal-alert-critical {
+  background: linear-gradient(180deg, #fff7f7 0%, #fff1f1 100%);
+  border-color: rgba(173, 33, 49, 0.24);
+}
+
+.portal-alert-critical::before {
+  background: var(--danger);
+}
+
+.portal-alert-warning {
+  background: linear-gradient(180deg, #fffaf2 0%, #fff4e4 100%);
+  border-color: rgba(179, 117, 0, 0.24);
+}
+
+.portal-alert-warning::before {
+  background: #b37500;
+}
+
+.portal-alert-info {
+  background: linear-gradient(180deg, #f5faff 0%, #edf5ff 100%);
+  border-color: rgba(15, 93, 156, 0.22);
+}
+
+.portal-alert-info::before {
+  background: var(--primary);
+}
+
 .portal-notification.unread {
   background: linear-gradient(180deg, #f8fbff 0%, #eef5fd 100%);
   border-color: #bcd2ea;
@@ -351,6 +391,14 @@ textarea {
 
 .chat-message-list .portal-actions {
   margin-top: 10px;
+}
+
+.portal-media-tile {
+  width: 100%;
+  min-height: 220px;
+  border-radius: 16px;
+  background: #081422;
+  object-fit: cover;
 }
 
 .gis-shell {

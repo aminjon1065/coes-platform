@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import { Document } from '../../edms/entities/document.entity';
 import { Task } from '../../tasks/entities/task.entity';
 import { SearchIndexService } from '../services/search-index.service';
+import { InboxService } from '../../inbox/services/inbox.service';
 
 // ─── Payload shapes (mirroring what each domain emits) ────────────────────────
 
@@ -52,6 +53,7 @@ export class SearchIndexingListener {
     @InjectRepository(Task)
     private readonly taskRepo: Repository<Task>,
     private readonly indexService: SearchIndexService,
+    private readonly inboxService: InboxService,
   ) {}
 
   // ─── EDMS ─────────────────────────────────────────────────────────────────────
@@ -62,32 +64,39 @@ export class SearchIndexingListener {
   @OnEvent('edms.document.status_changed', { async: true })
   async handleDocumentChange(payload: DocumentEvent): Promise<void> {
     try {
-      this.logger.debug(`Queuing document index refresh: ${payload.documentId}`);
+      await this.inboxService.executeOnce(
+        'search-documents',
+        'search.document.change',
+        payload as unknown as Record<string, unknown>,
+        async () => {
+          this.logger.debug(`Queuing document index refresh: ${payload.documentId}`);
 
-      const doc = await this.documentRepo.findOne({
-        where: { id: payload.documentId },
-      });
+          const doc = await this.documentRepo.findOne({
+            where: { id: payload.documentId },
+          });
 
-      if (!doc) {
-        this.logger.warn(`Document ${payload.documentId} not found during reindex; deleting stale index entry`);
-        await this.indexService.deleteDocument(payload.documentId);
-        return;
-      }
+          if (!doc) {
+            this.logger.warn(`Document ${payload.documentId} not found during reindex; deleting stale index entry`);
+            await this.indexService.deleteDocument(payload.documentId);
+            return;
+          }
 
-      await this.indexService.indexDocument({
-        id: doc.id,
-        subject: doc.subject,
-        body: doc.body,
-        status: doc.status,
-        direction: doc.direction,
-        typeId: doc.typeId,
-        typeName: doc.type?.name ?? null,
-        registrationNumber: doc.registrationNumber,
-        classification: doc.classification,
-        createdById: doc.createdById,
-        createdAt: doc.createdAt.toISOString(),
-        updatedAt: doc.updatedAt.toISOString(),
-      });
+          await this.indexService.indexDocument({
+            id: doc.id,
+            subject: doc.subject,
+            body: doc.body,
+            status: doc.status,
+            direction: doc.direction,
+            typeId: doc.typeId,
+            typeName: doc.type?.name ?? null,
+            registrationNumber: doc.registrationNumber,
+            classification: doc.classification,
+            createdById: doc.createdById,
+            createdAt: doc.createdAt.toISOString(),
+            updatedAt: doc.updatedAt.toISOString(),
+          });
+        },
+      );
     } catch (err) {
       this.logger.error(
         `Failed to refresh document index ${payload.documentId}: ${(err as Error).message}`,
@@ -111,31 +120,38 @@ export class SearchIndexingListener {
   @OnEvent('task.status_changed', { async: true })
   async handleTaskChange(payload: TaskEvent): Promise<void> {
     try {
-      this.logger.debug(`Queuing task index refresh: ${payload.taskId}`);
+      await this.inboxService.executeOnce(
+        'search-tasks',
+        'search.task.change',
+        payload as unknown as Record<string, unknown>,
+        async () => {
+          this.logger.debug(`Queuing task index refresh: ${payload.taskId}`);
 
-      const task = await this.taskRepo.findOne({
-        where: { id: payload.taskId },
-      });
+          const task = await this.taskRepo.findOne({
+            where: { id: payload.taskId },
+          });
 
-      if (!task) {
-        this.logger.warn(`Task ${payload.taskId} not found during reindex; deleting stale index entry`);
-        await this.indexService.deleteTask(payload.taskId);
-        return;
-      }
+          if (!task) {
+            this.logger.warn(`Task ${payload.taskId} not found during reindex; deleting stale index entry`);
+            await this.indexService.deleteTask(payload.taskId);
+            return;
+          }
 
-      await this.indexService.indexTask({
-        id: task.id,
-        title: task.title,
-        description: task.description,
-        status: task.status,
-        priority: task.priority,
-        classification: task.classification,
-        responsiblePositionId: task.responsiblePositionId,
-        createdById: task.createdById,
-        deadline: task.deadline,
-        createdAt: task.createdAt.toISOString(),
-        updatedAt: task.updatedAt.toISOString(),
-      });
+          await this.indexService.indexTask({
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            status: task.status,
+            priority: task.priority,
+            classification: task.classification,
+            responsiblePositionId: task.responsiblePositionId,
+            createdById: task.createdById,
+            deadline: task.deadline,
+            createdAt: task.createdAt.toISOString(),
+            updatedAt: task.updatedAt.toISOString(),
+          });
+        },
+      );
     } catch (err) {
       this.logger.error(`Failed to refresh task index ${payload.taskId}: ${(err as Error).message}`);
     }
@@ -145,21 +161,27 @@ export class SearchIndexingListener {
 
   @OnEvent('chat.message_created', { async: true })
   async handleMessageCreated(payload: MessageEvent): Promise<void> {
-    // Messages carry the full payload — no DB reload needed
     if (!payload.body) return;
 
-    await this.indexService.indexMessage({
-      id: payload.messageId,
-      channelId: payload.channelId,
-      body: payload.body,
-      senderId: payload.senderId,
-      senderPositionId: payload.senderPositionId,
-      classification: payload.classification,
-      sequence: payload.sequence,
-      createdAt: typeof payload.createdAt === 'string'
-        ? payload.createdAt
-        : payload.createdAt.toISOString(),
-    });
+    await this.inboxService.executeOnce(
+      'search-messages',
+      'chat.message_created',
+      payload as unknown as Record<string, unknown>,
+      async () => {
+        await this.indexService.indexMessage({
+          id: payload.messageId,
+          channelId: payload.channelId,
+          body: payload.body,
+          senderId: payload.senderId,
+          senderPositionId: payload.senderPositionId,
+          classification: payload.classification,
+          sequence: payload.sequence,
+          createdAt: typeof payload.createdAt === 'string'
+            ? payload.createdAt
+            : payload.createdAt.toISOString(),
+        });
+      },
+    );
   }
 
   @OnEvent('chat.message_edited', { async: true })

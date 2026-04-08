@@ -14,6 +14,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthorizationService } from '../services/authorization.service';
 import { CreateRoleDto } from '../dto/create-role.dto';
 import { RequirePermission } from '../decorators/require-permission.decorator';
+import { CurrentUser, AuthenticatedUser } from '../../iam/decorators/current-user.decorator';
 
 @ApiTags('Authorization / Roles')
 @ApiBearerAuth()
@@ -48,8 +49,8 @@ export class RolesController {
   @Post()
   @RequirePermission('authz.role.assign')
   @ApiOperation({ summary: 'Create a custom role' })
-  async createRole(@Body() dto: CreateRoleDto) {
-    const role = await this.authorizationService.createRole(dto);
+  async createRole(@Body() dto: CreateRoleDto, @CurrentUser() actor: AuthenticatedUser) {
+    const role = await this.authorizationService.createRole(dto, actor.id);
     return {
       id: role.id,
       name: role.name,
@@ -68,8 +69,8 @@ export class RolesController {
   @RequirePermission('authz.role.assign')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a custom role without active assignments' })
-  async deleteRole(@Param('id', ParseUUIDPipe) id: string) {
-    const deleted = await this.authorizationService.deleteRole(id);
+  async deleteRole(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthenticatedUser) {
+    const deleted = await this.authorizationService.deleteRole(id, actor.id);
     if (!deleted) {
       throw new BadRequestException('Role could not be deleted');
     }

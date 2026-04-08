@@ -11,11 +11,15 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserProfile, UserStatus } from '../entities/user-profile.entity';
 import { UserPositionAssignment, AssignmentType } from '../entities/user-position-assignment.entity';
 import { UserPreferences, AppLanguage } from '../entities/user-preferences.entity';
+import { UserRoleAssignment } from '../../authorization/entities/user-role-assignment.entity';
+import { Position } from '../../org/entities/position.entity';
 import { CreateUserProfileDto } from '../dto/create-user-profile.dto';
 import { UpdateUserProfileDto } from '../dto/update-user-profile.dto';
 import { AssignPositionDto } from '../dto/assign-position.dto';
 import { UpdatePreferencesDto } from '../dto/update-preferences.dto';
 import { OrgService } from '../../org/services/org.service';
+import { AuditService } from '../../audit/services/audit.service';
+import { AuditSeverity } from '../../audit/entities/audit-event.entity';
 
 @Injectable()
 export class UsersService {
@@ -26,7 +30,12 @@ export class UsersService {
     private readonly assignmentRepo: Repository<UserPositionAssignment>,
     @InjectRepository(UserPreferences)
     private readonly prefsRepo: Repository<UserPreferences>,
+    @InjectRepository(UserRoleAssignment)
+    private readonly roleAssignmentRepo: Repository<UserRoleAssignment>,
+    @InjectRepository(Position)
+    private readonly positionRepo: Repository<Position>,
     private readonly orgService: OrgService,
+    private readonly auditService: AuditService,
     private readonly events: EventEmitter2,
   ) {}
 
@@ -69,6 +78,18 @@ export class UsersService {
       userId: saved.id,
       credentialId: saved.credentialId,
       requestedBy,
+    });
+    await this.auditService.emit({
+      actorId: requestedBy,
+      eventType: 'admin.user.created',
+      resourceType: 'user-profile',
+      resourceId: saved.id,
+      success: true,
+      severity: AuditSeverity.INFO,
+      metadata: {
+        credentialId: saved.credentialId,
+        email: saved.email,
+      },
     });
 
     return saved;
@@ -216,6 +237,20 @@ export class UsersService {
       type: saved.type,
       departmentId: position.departmentId,
     });
+    await this.auditService.emit({
+      actorId: assignedById,
+      eventType: 'admin.user_position.assigned',
+      resourceType: 'user-position-assignment',
+      resourceId: saved.id,
+      success: true,
+      severity: AuditSeverity.INFO,
+      metadata: {
+        userId,
+        positionId: dto.positionId,
+        type: saved.type,
+        departmentId: position.departmentId,
+      },
+    });
 
     return saved;
   }
@@ -243,6 +278,18 @@ export class UsersService {
       userId,
       positionId,
       assignmentId: assignment.id,
+    });
+    await this.auditService.emit({
+      actorId: vacatedById,
+      eventType: 'admin.user_position.vacated',
+      resourceType: 'user-position-assignment',
+      resourceId: assignment.id,
+      success: true,
+      severity: AuditSeverity.WARNING,
+      metadata: {
+        userId,
+        positionId,
+      },
     });
   }
 
@@ -317,5 +364,130 @@ export class UsersService {
       userId,
       requestedBy,
     });
+    await this.auditService.emit({
+      actorId: requestedBy,
+      eventType: 'admin.user.offboarded',
+      resourceType: 'user-profile',
+      resourceId: userId,
+      success: true,
+      severity: AuditSeverity.WARNING,
+    });
+  }
+
+  async getAdminRegistry(opts: {
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    items: Array<{
+      id: string;
+      credentialId: string;
+      displayName: string;
+      email: string;
+      phone: string | null;
+      clearanceLevel: number;
+      status: string;
+      roleAssignments: Array<{
+        id: string;
+        roleId: string;
+        roleName: string;
+        departmentScopeId: string | null;
+        positionId: string | null;
+        expiresAt: Date | null;
+      }>;
+      positionAssignments: Array<{
+        id: string;
+        positionId: string;
+        positionTitle: string | null;
+        departmentId: string | null;
+        departmentName: string | null;
+        type: AssignmentType;
+        assignedAt: Date;
+        vacatedAt: Date | null;
+        notes: string | null;
+      }>;
+    }>;
+    total: number;
+  }> {
+    const [profiles, total] = await this.listProfiles({
+      search: opts.search,
+      limit: opts.limit,
+      offset: opts.offset,
+    });
+
+    if (!profiles.length) {
+      return { items: [], total };
+    }
+
+    const userIds = profiles.map((profile) => profile.id);
+    const [roleAssignments, positionAssignments] = await Promise.all([
+      this.roleAssignmentRepo.find({
+        where: userIds.map((userId) => ({ userId, revokedAt: IsNull() })),
+        relations: ['role'],
+        order: { createdAt: 'DESC' },
+      }),
+      this.assignmentRepo.find({
+        where: userIds.map((userId) => ({ userId, vacatedAt: IsNull() })),
+        order: { assignedAt: 'DESC' },
+      }),
+    ]);
+
+    const positionIds = [...new Set(positionAssignments.map((assignment) => assignment.positionId))];
+    const positions = positionIds.length
+      ? await this.positionRepo.find({
+          where: positionIds.map((id) => ({ id })),
+          relations: ['department'],
+        })
+      : [];
+    const positionsById = new Map(positions.map((position) => [position.id, position]));
+
+    const rolesByUserId = new Map<string, typeof roleAssignments>();
+    for (const assignment of roleAssignments) {
+      const current = rolesByUserId.get(assignment.userId) ?? [];
+      current.push(assignment);
+      rolesByUserId.set(assignment.userId, current);
+    }
+
+    const positionsByUserId = new Map<string, typeof positionAssignments>();
+    for (const assignment of positionAssignments) {
+      const current = positionsByUserId.get(assignment.userId) ?? [];
+      current.push(assignment);
+      positionsByUserId.set(assignment.userId, current);
+    }
+
+    return {
+      total,
+      items: profiles.map((profile) => ({
+        id: profile.id,
+        credentialId: profile.credentialId,
+        displayName: profile.displayName ?? profile.fullName,
+        email: profile.email,
+        phone: profile.phone,
+        clearanceLevel: profile.clearanceLevel,
+        status: profile.status,
+        roleAssignments: (rolesByUserId.get(profile.id) ?? []).map((assignment) => ({
+          id: assignment.id,
+          roleId: assignment.roleId,
+          roleName: assignment.role.name,
+          departmentScopeId: assignment.departmentScopeId,
+          positionId: assignment.positionId,
+          expiresAt: assignment.expiresAt,
+        })),
+        positionAssignments: (positionsByUserId.get(profile.id) ?? []).map((assignment) => {
+          const position = positionsById.get(assignment.positionId);
+          return {
+            id: assignment.id,
+            positionId: assignment.positionId,
+            positionTitle: position?.title ?? null,
+            departmentId: position?.departmentId ?? null,
+            departmentName: position?.department?.name ?? null,
+            type: assignment.type,
+            assignedAt: assignment.assignedAt,
+            vacatedAt: assignment.vacatedAt,
+            notes: assignment.notes,
+          };
+        }),
+      })),
+    };
   }
 }

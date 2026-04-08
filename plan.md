@@ -45,7 +45,7 @@ This snapshot reflects the current engineering baseline after repository stabili
 | Phase 4 | Partial | GIS/analytics code is strong, but incident enrichment and async file-report pipeline remain partial |
 | Phase 5 | Code-present, not fully re-verified end-to-end | ML/reporting artefacts exist; current stabilization cycle did not re-verify the full operational path |
 | Phase 6 | Roadmap-complete, repo-verified | SSO/SIEM/delegated admin remain verified, and the Field PWA mobile push path is now wired end-to-end in repo (subscription API, web-push delivery, custom service worker); live browser push-service handshake remains outside repo-only verification |
-| Phase 7 | Verified build baseline | Main web app exists and builds, but full UAT/operational readiness is still separate from code completion |
+| Phase 7 | Roadmap-complete, repo-verified | `apps/portal-web` is now the active office frontend, legacy `apps/web` is retired, and the portal build is green; pilot/UAT and operational rollout remain separate from code completion |
 
 ---
 
@@ -499,42 +499,42 @@ Task created
 
 ## Phase 7: Main Operations Web Application
 **Target:** Months 30–34
-**Status:** 🔄 In Progress
+**Status:** ✅ Completed (repo scope)
 
 ### 7.1 App Foundation
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 7.1.1 | Scaffold office frontend foundation (`apps/portal-web`) | Completed | Historical Vite SPA retired; active office frontend is Next.js portal |
-| 7.1.2 | Implement typed API client with JWT auth + refresh token interceptor | ✅ | `src/lib/api.ts` — axios instance, 401→refresh→retry logic |
-| 7.1.3 | Implement auth store (Zustand + persist) with user profile | ✅ | `src/store/auth.store.ts` — accessToken, refreshToken, user profile |
-| 7.1.4 | Implement Login page (username/password + SSO redirect link) | ✅ | `src/pages/LoginPage.tsx` |
-| 7.1.5 | Implement App shell (sidebar, top header, route guards) | ✅ | `src/components/Layout/` — AppShell, Sidebar, TopBar |
+| 7.1.1 | Establish `apps/portal-web` as the sole office frontend | ✅ | Next.js App Router portal is the active office web surface; legacy `apps/web` has been removed from workspaces and source control |
+| 7.1.2 | Implement BFF-backed office auth/session model | ✅ | `httpOnly` session cookies, portal auth routes, middleware guards, and session bootstrap now replace browser token persistence for office workflows |
+| 7.1.3 | Implement role-aware shell, workspace navigation, and route protection | ✅ | Secure shell now derives navigation from portal context, role/capability mappings, and workspace gating instead of a single static office menu |
+| 7.1.4 | Implement office login and session lifecycle pages in `portal-web` | ✅ | Login/logout/session endpoints and public/secure route groups exist in `apps/portal-web` and build successfully |
+| 7.1.5 | Retire legacy office SPA and cut over office routes to the portal | ✅ | `apps/web` is retired, `portal-web` owns office-facing routes, and GIS office access is delivered through `/gis` in the portal |
 
 ### 7.2 Admin Module
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 7.2.1 | Implement Users management page (list, create, roles assignment) | ✅ | `src/pages/admin/UsersPage.tsx` |
-| 7.2.2 | Implement Departments & Positions management page | ✅ | `src/pages/admin/DepartmentsPage.tsx` |
-| 7.2.3 | Implement Roles & Permissions management page | ✅ | `src/pages/admin/RolesPage.tsx` |
+| 7.2.1 | Implement admin user lifecycle in the portal | ✅ | Admin can list/create/offboard users, assign/revoke roles, assign/vacate positions, and inspect effective org placement from `apps/portal-web` |
+| 7.2.2 | Implement admin organization registry and operational views | ✅ | Departments and positions now expose occupancy, subtree metrics, command chain visibility, and aggregate operational summaries in `portal-web` |
+| 7.2.3 | Implement admin control plane for monitoring, logs, and maintenance | ✅ | `/admin`, `/admin/system`, and `/admin/logs` expose audit, health, gateway/search/media status, scheduler summaries, alerts, and search reindex |
 
 ### 7.3 EDMS Module
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 7.3.1 | Implement Documents list page (filter by type/status/classification) | ✅ | `src/pages/edms/DocumentsPage.tsx` |
-| 7.3.2 | Implement Document detail page (metadata, versions, workflow actions) | ✅ | `src/pages/edms/DocumentDetailPage.tsx` |
+| 7.3.1 | Implement EDMS list/create/archive surfaces in the portal | ✅ | `portal-web` now owns document list, create, archive, lookup helpers, and BFF contracts for office EDMS workflows |
+| 7.3.2 | Implement EDMS detail, workflow, attachments, and resolutions | ✅ | Document detail covers registration, workflow start/resume/actions, attachments, resolutions, and completion reporting through portal BFF routes |
 
 ### 7.4 Tasks Module
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 7.4.1 | Implement My Tasks page (assigned to me, filter by status/priority) | ✅ | `src/pages/tasks/MyTasksPage.tsx` |
-| 7.4.2 | Implement Task detail page (status transition, subtasks, comments) | ✅ | `src/pages/tasks/TaskDetailPage.tsx` |
-| 7.4.3 | Implement Supervision oversight page (subordinate tasks) | ✅ | `src/pages/tasks/OversightPage.tsx` |
+| 7.4.1 | Implement portal task list and detail routes | ✅ | `portal-web` serves task list/detail via BFF instead of the retired office SPA |
+| 7.4.2 | Implement task mutations, comments, and transitions through the portal | ✅ | Task comments and transitions run through portal actions/BFF with normalized contracts and comment author display-name resolution |
+| 7.4.3 | Implement cross-module office workflows beyond tasks | ✅ | Notifications, chat, files, reporting, calls, analytics, search, and GIS now live in `portal-web` as integrated office modules |
 
 ### 7.5 Notifications & Dashboard
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 7.5.1 | Implement Dashboard (pending tasks, recent docs, unread notifications) | ✅ | `src/pages/DashboardPage.tsx` |
-| 7.5.2 | Implement Notifications inbox (list, mark-read, preferences link) | ✅ | `src/pages/NotificationsPage.tsx` |
+| 7.5.1 | Implement role-aware portal dashboard and workspace entry points | ✅ | Dashboard now aggregates office summaries and adapts surface area for admin and analytics workspaces |
+| 7.5.2 | Implement notifications inbox and office summary modules | ✅ | Notifications, dashboard summaries, and portal-wide search are served from the Next.js portal with BFF-backed session enforcement |
 
 ---
 

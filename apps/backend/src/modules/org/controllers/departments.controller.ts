@@ -26,6 +26,12 @@ export class DepartmentsController {
     return this.orgService.getDepartmentTree();
   }
 
+  @Get('admin/summary')
+  @ApiOperation({ summary: 'Get department hierarchy with admin metrics' })
+  getAdminSummary() {
+    return this.orgService.getDepartmentAdminSummary();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get department by ID' })
   getById(@Param('id', ParseUUIDPipe) id: string) {

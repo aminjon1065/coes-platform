@@ -42,8 +42,16 @@
           "originalSource": "/analytics/:path*"
         },
         {
+          "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?\\/reporting(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json)?[\\/#\\?]?$",
+          "originalSource": "/reporting/:path*"
+        },
+        {
           "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?\\/chat(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json)?[\\/#\\?]?$",
           "originalSource": "/chat/:path*"
+        },
+        {
+          "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?\\/calls(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json)?[\\/#\\?]?$",
+          "originalSource": "/calls/:path*"
         },
         {
           "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?\\/files(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json)?[\\/#\\?]?$",
@@ -82,6 +90,10 @@
           "originalSource": "/api/chat/:path*"
         },
         {
+          "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?\\/api\\/calls(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json)?[\\/#\\?]?$",
+          "originalSource": "/api/calls/:path*"
+        },
+        {
           "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?\\/api\\/files(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json)?[\\/#\\?]?$",
           "originalSource": "/api/files/:path*"
         },
@@ -101,7 +113,7 @@
       "wasm": [],
       "assets": [],
       "env": {
-        "__NEXT_BUILD_ID": "MxP9uLkgldn-7bdGHVY4T",
+        "__NEXT_BUILD_ID": "2TvcUokgLfHFC0pko5FH6",
         "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "NtsVH2c1/FQIfM4C8kA4wngom860HSoRaHM4YY8iFsA=",
         "__NEXT_PREVIEW_MODE_ID": "0fd01a8ca9e34854246143e130ade9a0",
         "__NEXT_PREVIEW_MODE_SIGNING_KEY": "bfbe68d8997eb29743d5fbc55fb3cf73091013f5daee50db48279b45e9b2d799",

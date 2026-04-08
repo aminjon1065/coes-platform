@@ -1,25 +1,39 @@
 import { createDepartmentAction } from "./actions";
-import { flattenDepartments, getDepartmentTree } from "@/lib/admin";
+import {
+  flattenDepartments,
+  getDepartmentAdminSummary,
+} from "@/lib/admin";
 
-function DepartmentTree({ nodes, depth = 0 }: { nodes: Awaited<ReturnType<typeof getDepartmentTree>>; depth?: number }) {
+type DepartmentTreeProps = {
+  nodes: Awaited<ReturnType<typeof getDepartmentAdminSummary>>;
+  depth?: number;
+};
+
+function DepartmentTree({ nodes, depth = 0 }: DepartmentTreeProps) {
   return (
     <ul className="portal-list admin-tree-list">
-      {nodes.map((node) => (
-        <li key={node.id} style={{ marginLeft: depth * 18 }}>
-          <strong>{node.name}</strong>
-          <p className="portal-note">{node.code} · {node.isActive ? "active" : "inactive"}</p>
-          {node.children.length > 0 ? (
-            <DepartmentTree depth={depth + 1} nodes={node.children} />
-          ) : null}
-        </li>
-      ))}
+      {nodes.map((node) => {
+        return (
+          <li key={node.id} style={{ marginLeft: depth * 18 }}>
+            <strong>{node.name}</strong>
+            <p className="portal-note">{node.code} В· {node.isActive ? "active" : "inactive"}</p>
+            <p className="portal-note">
+              {node.metrics.positionCount} positions В· {node.metrics.occupiedCount} occupied В·{" "}
+              {node.metrics.vacantCount} vacant В· {node.metrics.userCount} users in subtree
+            </p>
+            {node.children.length > 0 ? (
+              <DepartmentTree depth={depth + 1} nodes={node.children} />
+            ) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
 export default async function AdminDepartmentsPage() {
-  const tree = await getDepartmentTree();
-  const flat = flattenDepartments(tree);
+  const tree = await getDepartmentAdminSummary();
+  const flat = flattenDepartments(tree) as Array<(typeof tree)[number] & { depth: number }>;
 
   return (
     <div className="portal-stack">
@@ -28,10 +42,14 @@ export default async function AdminDepartmentsPage() {
           <div className="portal-section-head">
             <div>
               <span className="portal-pill">Departments</span>
-              <h2>Hierarchy</h2>
+              <h2>Hierarchy and operational load</h2>
             </div>
           </div>
-          {tree.length === 0 ? <p className="portal-note">No departments configured.</p> : <DepartmentTree nodes={tree} />}
+          {tree.length === 0 ? (
+            <p className="portal-note">No departments configured.</p>
+          ) : (
+            <DepartmentTree nodes={tree} />
+          )}
         </article>
 
         <article className="portal-panel">
@@ -51,12 +69,15 @@ export default async function AdminDepartmentsPage() {
               Parent department
               <select className="portal-input" defaultValue="" name="parentDepartmentId">
                 <option value="">Root</option>
-                {flat.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {"  ".repeat(department.depth)}
-                    {department.name}
-                  </option>
-                ))}
+                {flat.map((department) => {
+                  return (
+                    <option key={department.id} value={department.id}>
+                      {"  ".repeat(department.depth)}
+                      {department.name}
+                      {department.metrics ? ` (${department.metrics.positionCount} positions)` : ""}
+                    </option>
+                  );
+                })}
               </select>
             </label>
             <button className="portal-button" type="submit">

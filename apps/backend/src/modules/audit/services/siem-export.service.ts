@@ -36,6 +36,10 @@ export interface AuditQueryFilters {
 
 @Injectable()
 export class SiemExportService {
+  private schedulerSummary = {
+    archive: { cron: '30 2 * * *', lastRunAt: null as string | null, affected: 0, error: null as string | null },
+    purge: { cron: '0 3 1 * *', lastRunAt: null as string | null, affected: 0, error: null as string | null },
+  };
   private readonly logger = new Logger(SiemExportService.name);
 
   constructor(
@@ -160,6 +164,7 @@ export class SiemExportService {
    */
   @Cron('30 2 * * *')
   async archiveOldEvents(): Promise<void> {
+    const ranAt = new Date().toISOString();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 90); // 90-day hot retention
 
@@ -169,7 +174,15 @@ export class SiemExportService {
       order: { occurredAt: 'ASC' },
     });
 
-    if (oldEvents.length === 0) return;
+    if (oldEvents.length === 0) {
+      this.schedulerSummary.archive = {
+        ...this.schedulerSummary.archive,
+        lastRunAt: ranAt,
+        affected: 0,
+        error: null,
+      };
+      return;
+    }
 
     const archives = oldEvents.map((e) =>
       this.archiveRepo.create({
@@ -198,6 +211,12 @@ export class SiemExportService {
       .execute();
 
     this.logger.log(`Archived ${oldEvents.length} audit events older than ${cutoff.toISOString()}`);
+    this.schedulerSummary.archive = {
+      ...this.schedulerSummary.archive,
+      lastRunAt: ranAt,
+      affected: oldEvents.length,
+      error: null,
+    };
   }
 
   /**
@@ -206,6 +225,7 @@ export class SiemExportService {
    */
   @Cron('0 3 1 * *')
   async purgeExpiredArchives(): Promise<void> {
+    const ranAt = new Date().toISOString();
     const cutoff = new Date();
     cutoff.setFullYear(cutoff.getFullYear() - 7);
 
@@ -216,6 +236,16 @@ export class SiemExportService {
       .execute();
 
     this.logger.log(`Purged ${result.affected ?? 0} archived audit events older than 7 years`);
+    this.schedulerSummary.purge = {
+      ...this.schedulerSummary.purge,
+      lastRunAt: ranAt,
+      affected: result.affected ?? 0,
+      error: null,
+    };
+  }
+
+  getSchedulerSummary() {
+    return this.schedulerSummary;
   }
 
   // ── Internal helpers ────────────────────────────────────────────────────────

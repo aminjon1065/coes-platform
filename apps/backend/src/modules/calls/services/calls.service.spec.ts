@@ -13,6 +13,9 @@ import { CallParticipant, ParticipantStatus } from '../entities/call-participant
 import { CallRecording, RecordingStatus } from '../entities/call-recording.entity';
 import { CallSchedule } from '../entities/call-schedule.entity';
 import { AuditService } from '../../audit/services/audit.service';
+import { MinioService } from '../../files/services/minio.service';
+import { GatewayEventsService } from '../../../infra/events/gateway-events.service';
+import { MediaCommandsService } from '../../../infra/events/media-commands.service';
 import { InitiateCallDto, ScheduleCallDto } from '../dto/initiate-call.dto';
 
 // ─── Retention map mirrored from the SUT ────────────────────────────────────
@@ -131,6 +134,7 @@ describe('CallsService', () => {
     create: jest.fn(),
     save: jest.fn(),
     findOne: jest.fn(),
+    find: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
 
@@ -142,6 +146,15 @@ describe('CallsService', () => {
 
   const mockEmitter = { emit: jest.fn() };
   const mockAudit   = { emit: jest.fn().mockResolvedValue(undefined) };
+  const mockGatewayEvents = { publishToRoom: jest.fn().mockResolvedValue(undefined) };
+  const mockMinioService = { presignedGetUrl: jest.fn().mockResolvedValue('https://minio/recording') };
+  const mockMediaCommands = {
+    endCallSession: jest.fn().mockResolvedValue(undefined),
+    kickParticipant: jest.fn().mockResolvedValue(undefined),
+    setParticipantMute: jest.fn().mockResolvedValue(undefined),
+    startRecording: jest.fn().mockResolvedValue(undefined),
+    stopRecording: jest.fn().mockResolvedValue(undefined),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -155,6 +168,9 @@ describe('CallsService', () => {
         { provide: getRepositoryToken(CallSchedule),    useValue: mockSchedulesRepo    },
         { provide: EventEmitter2,                       useValue: mockEmitter          },
         { provide: AuditService,                        useValue: mockAudit            },
+        { provide: MinioService,                        useValue: mockMinioService     },
+        { provide: GatewayEventsService,                useValue: mockGatewayEvents    },
+        { provide: MediaCommandsService,                useValue: mockMediaCommands    },
       ],
     }).compile();
 
@@ -345,12 +361,14 @@ describe('CallsService', () => {
 
   describe('endCall', () => {
     it('throws NotFoundException when session does not exist', async () => {
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       mockSessionsRepo.findOne.mockResolvedValue(null);
 
       await expect(service.endCall('sess-x', 'actor-1')).rejects.toThrow(NotFoundException);
     });
 
     it('returns session unchanged when already ENDED', async () => {
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       const session = makeSession({ status: CallStatus.ENDED });
       mockSessionsRepo.findOne.mockResolvedValue(session);
 
@@ -361,10 +379,11 @@ describe('CallsService', () => {
     });
 
     it('sets status to ENDED and sets endedAt', async () => {
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       const session = makeSession({ status: CallStatus.ACTIVE });
       mockSessionsRepo.findOne.mockResolvedValue(session);
       mockSessionsRepo.save.mockResolvedValue(session);
-      mockRecordingsRepo.createQueryBuilder.mockReturnValue(makeQb());
+      mockRecordingsRepo.find.mockResolvedValue([]);
 
       await service.endCall('sess-1', 'actor-1');
 
@@ -373,10 +392,11 @@ describe('CallsService', () => {
     });
 
     it('emits call.session_ended', async () => {
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       const session = makeSession();
       mockSessionsRepo.findOne.mockResolvedValue(session);
       mockSessionsRepo.save.mockResolvedValue(session);
-      mockRecordingsRepo.createQueryBuilder.mockReturnValue(makeQb());
+      mockRecordingsRepo.find.mockResolvedValue([]);
 
       await service.endCall('sess-1', 'actor-1');
 
@@ -390,6 +410,7 @@ describe('CallsService', () => {
 
   describe('startRecording', () => {
     it('throws NotFoundException when session is not found', async () => {
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       mockSessionsRepo.findOne.mockResolvedValue(null);
 
       await expect(service.startRecording('sess-x', 'actor-1', 3)).rejects.toThrow(
@@ -398,6 +419,7 @@ describe('CallsService', () => {
     });
 
     it('throws ForbiddenException when actorClearance < session.classification', async () => {
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       mockSessionsRepo.findOne.mockResolvedValue(makeSession({ classification: 3 }));
 
       await expect(service.startRecording('sess-1', 'actor-1', 1)).rejects.toThrow(
@@ -406,6 +428,7 @@ describe('CallsService', () => {
     });
 
     it('throws BadRequestException when session is not ACTIVE', async () => {
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       mockSessionsRepo.findOne.mockResolvedValue(makeSession({ status: CallStatus.ENDED }));
 
       await expect(service.startRecording('sess-1', 'actor-1', 3)).rejects.toThrow(
@@ -421,7 +444,9 @@ describe('CallsService', () => {
     ])(
       'sets expiresAt to RETENTION_DAYS[%i]=%i days from now for classification %i',
       async (classification, expectedDays) => {
+        mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
         mockSessionsRepo.findOne.mockResolvedValue(makeSession({ classification }));
+        mockRecordingsRepo.findOne.mockResolvedValue(null);
         const recording = makeRecording({ classification });
         mockRecordingsRepo.create.mockReturnValue(recording);
         mockRecordingsRepo.save.mockResolvedValue(recording);
@@ -440,7 +465,9 @@ describe('CallsService', () => {
     );
 
     it('creates recording with RECORDING status', async () => {
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       mockSessionsRepo.findOne.mockResolvedValue(makeSession());
+      mockRecordingsRepo.findOne.mockResolvedValue(null);
       const recording = makeRecording();
       mockRecordingsRepo.create.mockReturnValue(recording);
       mockRecordingsRepo.save.mockResolvedValue(recording);
@@ -453,7 +480,9 @@ describe('CallsService', () => {
     });
 
     it('emits call.recording_started', async () => {
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       mockSessionsRepo.findOne.mockResolvedValue(makeSession());
+      mockRecordingsRepo.findOne.mockResolvedValue(null);
       const recording = makeRecording();
       mockRecordingsRepo.create.mockReturnValue(recording);
       mockRecordingsRepo.save.mockResolvedValue(recording);
@@ -484,20 +513,22 @@ describe('CallsService', () => {
       await expect(service.stopRecording('rec-1', 'actor-1')).rejects.toThrow(BadRequestException);
     });
 
-    it('transitions recording status to STOPPED and sets stoppedAt', async () => {
+    it('transitions recording status to PROCESSING and sets stoppedAt', async () => {
       const recording = makeRecording({ status: RecordingStatus.RECORDING });
       mockRecordingsRepo.findOne.mockResolvedValue(recording);
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       mockRecordingsRepo.save.mockResolvedValue(recording);
 
       await service.stopRecording('rec-1', 'actor-1');
 
-      expect(recording.status).toBe(RecordingStatus.STOPPED);
+      expect(recording.status).toBe(RecordingStatus.PROCESSING);
       expect(recording.stoppedAt).toBeInstanceOf(Date);
     });
 
     it('emits call.recording_stopped with correct ids', async () => {
       const recording = makeRecording({ id: 'rec-1', sessionId: 'sess-1' });
       mockRecordingsRepo.findOne.mockResolvedValue(recording);
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ isModerator: true }));
       mockRecordingsRepo.save.mockResolvedValue(recording);
 
       await service.stopRecording('rec-1', 'actor-1');
@@ -607,6 +638,36 @@ describe('CallsService', () => {
         expect.objectContaining({
           relations: expect.arrayContaining(['participants', 'recordings']),
         }),
+      );
+    });
+  });
+
+  describe('getRecordingDownloadUrl', () => {
+    it('throws BadRequestException when recording artifact is not ready', async () => {
+      mockRecordingsRepo.findOne.mockResolvedValue(
+        makeRecording({ status: RecordingStatus.PROCESSING, storageKey: null }),
+      );
+
+      await expect(
+        service.getRecordingDownloadUrl('rec-1', 'actor-1', 2),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns presigned URL for a participant with sufficient clearance', async () => {
+      const recording = makeRecording({
+        status: RecordingStatus.READY,
+        storageKey: 'recordings/cls1/rec-1/rec-1.tar',
+        session: makeSession({ id: 'sess-1', classification: 1 }),
+      } as Partial<CallRecording> & { session: CallSession });
+      mockRecordingsRepo.findOne.mockResolvedValue(recording);
+      mockParticipantsRepo.findOne.mockResolvedValue(makeParticipant({ sessionId: 'sess-1', userId: 'actor-2' }));
+
+      const result = await service.getRecordingDownloadUrl('rec-1', 'actor-2', 2);
+
+      expect(result.url).toBe('https://minio/recording');
+      expect(mockMinioService.presignedGetUrl).toHaveBeenCalledWith(
+        'recordings/cls1/rec-1/rec-1.tar',
+        3600,
       );
     });
   });

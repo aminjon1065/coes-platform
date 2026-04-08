@@ -11,6 +11,9 @@ import { Role } from '../entities/role.entity';
 import { Delegation } from '../entities/delegation.entity';
 import { OrgService } from '../../org/services/org.service';
 import { CreateRoleDto } from '../dto/create-role.dto';
+import { AssignUserRoleDto } from '../dto/assign-user-role.dto';
+import { AuditService } from '../../audit/services/audit.service';
+import { AuditSeverity } from '../../audit/entities/audit-event.entity';
 
 const AUTHZ_CACHE_TTL = 60; // seconds
 const CACHE_KEY_PREFIX = 'authz:';
@@ -51,6 +54,19 @@ export interface PortalContextSummary {
   workspaces: PortalWorkspaceSummary[];
 }
 
+export interface UserRoleAssignmentSummary {
+  id: string;
+  userId: string;
+  roleId: string;
+  roleName: string;
+  departmentScopeId: string | null;
+  positionId: string | null;
+  grantedById: string | null;
+  expiresAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+}
+
 @Injectable()
 export class AuthorizationService {
   private readonly logger = new Logger(AuthorizationService.name);
@@ -67,6 +83,7 @@ export class AuthorizationService {
     @Inject(CACHE_MANAGER)
     private readonly cache: Cache,
     private readonly orgService: OrgService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -240,7 +257,7 @@ export class AuthorizationService {
     return permissions.map((permission) => permission.name);
   }
 
-  async createRole(dto: CreateRoleDto): Promise<Role> {
+  async createRole(dto: CreateRoleDto, actorId?: string): Promise<Role> {
     const existing = await this.roleRepo.findOne({ where: { name: dto.name } });
     if (existing) {
       throw new ConflictException(`Role '${dto.name}' already exists`);
@@ -273,10 +290,25 @@ export class AuthorizationService {
       permissions,
     });
 
-    return this.roleRepo.save(role);
+    const saved = await this.roleRepo.save(role);
+    await this.auditService.emit({
+      actorId,
+      eventType: 'admin.role.created',
+      resourceType: 'role',
+      resourceId: saved.id,
+      success: true,
+      severity: AuditSeverity.INFO,
+      metadata: {
+        name: saved.name,
+        permissionNames,
+        parentRoleId: saved.parentRoleId,
+      },
+    });
+
+    return saved;
   }
 
-  async deleteRole(id: string): Promise<boolean> {
+  async deleteRole(id: string, actorId?: string): Promise<boolean> {
     const role = await this.roleRepo.findOne({ where: { id } });
     if (!role) {
       throw new NotFoundException(`Role ${id} not found`);
@@ -294,7 +326,153 @@ export class AuthorizationService {
     }
 
     await this.roleRepo.delete(id);
+    await this.auditService.emit({
+      actorId,
+      eventType: 'admin.role.deleted',
+      resourceType: 'role',
+      resourceId: id,
+      success: true,
+      severity: AuditSeverity.WARNING,
+    });
     return true;
+  }
+
+  async listUserRoleAssignments(userId: string): Promise<UserRoleAssignmentSummary[]> {
+    const assignments = await this.assignmentRepo.find({
+      where: { userId, revokedAt: IsNull() },
+      relations: ['role'],
+      order: { createdAt: 'DESC' },
+    });
+
+    return assignments.map((assignment) => ({
+      id: assignment.id,
+      userId: assignment.userId,
+      roleId: assignment.roleId,
+      roleName: assignment.role.name,
+      departmentScopeId: assignment.departmentScopeId,
+      positionId: assignment.positionId,
+      grantedById: assignment.grantedById,
+      expiresAt: assignment.expiresAt,
+      revokedAt: assignment.revokedAt,
+      createdAt: assignment.createdAt,
+    }));
+  }
+
+  async assignRoleToUser(
+    actorId: string,
+    userId: string,
+    dto: AssignUserRoleDto,
+  ): Promise<UserRoleAssignmentSummary> {
+    const role = await this.roleRepo.findOne({ where: { id: dto.roleId } });
+    if (!role) {
+      throw new NotFoundException(`Role ${dto.roleId} not found`);
+    }
+
+    const existingWhere: {
+      userId: string;
+      roleId: string;
+      revokedAt: ReturnType<typeof IsNull>;
+      departmentScopeId?: string;
+      positionId?: string;
+    } = {
+      userId,
+      roleId: dto.roleId,
+      revokedAt: IsNull(),
+    };
+
+    if (dto.departmentScopeId) {
+      existingWhere.departmentScopeId = dto.departmentScopeId;
+    }
+
+    if (dto.positionId) {
+      existingWhere.positionId = dto.positionId;
+    }
+
+    const existing = await this.assignmentRepo.findOne({
+      where: existingWhere,
+      relations: ['role'],
+    });
+
+    if (existing) {
+      throw new ConflictException('Matching active role assignment already exists');
+    }
+
+    const assignment = await this.assignmentRepo.save(
+      this.assignmentRepo.create({
+        userId,
+        roleId: dto.roleId,
+        departmentScopeId: dto.departmentScopeId ?? null,
+        positionId: dto.positionId ?? null,
+        grantedById: actorId,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+      }),
+    );
+
+    const saved = await this.assignmentRepo.findOne({
+      where: { id: assignment.id },
+      relations: ['role'],
+    });
+
+    if (!saved) {
+      throw new NotFoundException(`Assignment ${assignment.id} not found after creation`);
+    }
+
+    await this.auditService.emit({
+      actorId,
+      eventType: 'admin.user_role.assigned',
+      resourceType: 'user-role-assignment',
+      resourceId: saved.id,
+      success: true,
+      severity: AuditSeverity.INFO,
+      metadata: {
+        userId,
+        roleId: saved.roleId,
+        departmentScopeId: saved.departmentScopeId,
+        positionId: saved.positionId,
+        expiresAt: saved.expiresAt,
+      },
+    });
+
+    return {
+      id: saved.id,
+      userId: saved.userId,
+      roleId: saved.roleId,
+      roleName: saved.role.name,
+      departmentScopeId: saved.departmentScopeId,
+      positionId: saved.positionId,
+      grantedById: saved.grantedById,
+      expiresAt: saved.expiresAt,
+      revokedAt: saved.revokedAt,
+      createdAt: saved.createdAt,
+    };
+  }
+
+  async revokeUserRoleAssignment(actorId: string, userId: string, assignmentId: string): Promise<void> {
+    const assignment = await this.assignmentRepo.findOne({
+      where: { id: assignmentId, userId, revokedAt: IsNull() },
+    });
+
+    if (!assignment) {
+      throw new NotFoundException(`Assignment ${assignmentId} not found`);
+    }
+
+    await this.assignmentRepo.update(assignmentId, {
+      revokedAt: new Date(),
+      grantedById: assignment.grantedById ?? actorId,
+    });
+    await this.invalidateUserCache(userId);
+    await this.auditService.emit({
+      actorId,
+      eventType: 'admin.user_role.revoked',
+      resourceType: 'user-role-assignment',
+      resourceId: assignmentId,
+      success: true,
+      severity: AuditSeverity.WARNING,
+      metadata: {
+        userId,
+        roleId: assignment.roleId,
+      },
+    });
   }
 
   async getPortalContextForUser(userId: string): Promise<PortalContextSummary> {

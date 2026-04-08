@@ -67,6 +67,24 @@ export class UsersController {
     return { items, total };
   }
 
+  @Get('admin/registry')
+  @RequirePermission('iam.user.read')
+  @ApiOperation({ summary: 'List user registry with role and position aggregates for admin views' })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  getAdminRegistry(
+    @Query('search') search?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.usersService.getAdminRegistry({
+      search,
+      limit,
+      offset,
+    });
+  }
+
   @Get('me')
   @ApiOperation({ summary: 'Get own profile' })
   getMe(@CurrentUser() actor: AuthenticatedUser) {

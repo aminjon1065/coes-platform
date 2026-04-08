@@ -18,6 +18,7 @@ import { WorkflowStep, WorkflowStepStatus } from '../entities/workflow-step.enti
 import { AuditService } from '../../audit/services/audit.service';
 import { OrgService } from '../../org/services/org.service';
 import { UsersService } from '../../users/services/users.service';
+import { OutboxService } from '../../outbox/services/outbox.service';
 
 import { IssueResolutionDto } from '../dto/issue-resolution.dto';
 
@@ -40,6 +41,7 @@ export class ResolutionService {
     private readonly orgService: OrgService,
     private readonly usersService: UsersService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly outboxService: OutboxService,
   ) {}
 
   // ─── Issue Resolution ────────────────────────────────────────────────────────
@@ -127,23 +129,31 @@ export class ResolutionService {
     });
 
     // Publish event to create tasks in TaskManagement domain (Phase 2.2)
-    this.eventEmitter.emit('edms.resolution_issued', {
-      documentId,
-      resolutionId: resolution.id,
-      issuingPositionId: actorPositionId,
-      issuingUserId: actorId,
-      text: resolution.text,
-      priority: resolution.priority,
-      deadline: resolution.deadline,
-      assignments: assignments.map(a => ({
-        assignmentId: a.id,
-        positionId: a.positionId,
-        assignedUserId: a.assignedUserId,
-        executorRole: a.executorRole,
-        instruction: a.instruction,
-        deadline: a.deadline,
-      })),
-    });
+    await this.outboxService.publish(
+      'edms.resolution_issued',
+      {
+        documentId,
+        resolutionId: resolution.id,
+        issuingPositionId: actorPositionId,
+        issuingUserId: actorId,
+        text: resolution.text,
+        priority: resolution.priority,
+        deadline: resolution.deadline,
+        assignments: assignments.map(a => ({
+          assignmentId: a.id,
+          positionId: a.positionId,
+          assignedUserId: a.assignedUserId,
+          executorRole: a.executorRole,
+          instruction: a.instruction,
+          deadline: a.deadline,
+        })),
+      },
+      {
+        source: 'edms',
+        aggregateType: 'document',
+        aggregateId: documentId,
+      },
+    );
 
     return this.resolutionRepo.findOne({
       where: { id: resolution.id },

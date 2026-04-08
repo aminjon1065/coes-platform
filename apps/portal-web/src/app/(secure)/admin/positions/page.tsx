@@ -1,5 +1,10 @@
 import { createPositionAction } from "./actions";
-import { flattenDepartments, getDepartmentTree, listPositions } from "@/lib/admin";
+import {
+  flattenDepartments,
+  getDepartmentTree,
+  getPositionAdminRegistry,
+  listPositions,
+} from "@/lib/admin";
 
 const POSITION_LEVELS = [
   "chairman",
@@ -15,11 +20,13 @@ const POSITION_LEVELS = [
 ] as const;
 
 export default async function AdminPositionsPage() {
-  const [positions, departmentTree] = await Promise.all([
+  const [positions, positionRegistry, departmentTree] = await Promise.all([
     listPositions(),
+    getPositionAdminRegistry(),
     getDepartmentTree(),
   ]);
   const departments = flattenDepartments(departmentTree);
+  const positionMeta = new Map(positionRegistry.map((position) => [position.id, position] as const));
 
   return (
     <div className="portal-stack">
@@ -28,21 +35,51 @@ export default async function AdminPositionsPage() {
           <div className="portal-section-head">
             <div>
               <span className="portal-pill">Positions</span>
-              <h2>Registry</h2>
+              <h2>Registry and occupancy</h2>
             </div>
           </div>
           <ul className="portal-list">
             {positions.length === 0 ? (
               <li>No positions configured.</li>
             ) : (
-              positions.map((position) => (
-                <li key={position.id}>
-                  <strong>{position.title}</strong>
-                  <p className="portal-note">
-                    {position.departmentName ?? position.departmentId} · {position.level}
-                  </p>
-                </li>
-              ))
+              positions.map((position) => {
+                const meta = positionMeta.get(position.id);
+
+                return (
+                  <li key={position.id}>
+                    <div className="portal-stack">
+                      <div>
+                        <strong>{position.title}</strong>
+                        <p className="portal-note">
+                          {position.departmentName ?? position.departmentId} В· {position.level}
+                        </p>
+                      </div>
+                      <div className="portal-columns portal-columns-tight">
+                        <div>
+                          <p className="portal-note">Current occupant</p>
+                          <p>
+                            {meta?.occupant
+                              ? `${meta.occupant.displayName} (${meta.occupant.email})`
+                              : "Vacant"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="portal-note">Command chain</p>
+                          <p>
+                            {meta?.commandChain.length
+                              ? meta.commandChain.map((item) => item.title).join(" -> ")
+                              : "No chain"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="portal-note">Assignment history</p>
+                          <p>{meta?.history.length ?? 0} records</p>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })
             )}
           </ul>
         </article>

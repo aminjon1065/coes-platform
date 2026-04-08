@@ -71,6 +71,7 @@ describe('TasksEdmsListener — EDMS resolution → Tasks (2.2.4)', () => {
   let historyRepo: ReturnType<typeof makeRepo>;
   let auditService: jest.Mocked<AuditService>;
   let eventEmitter: jest.Mocked<EventEmitter2>;
+  let inboxService: { executeOnce: jest.Mock };
 
   beforeEach(async () => {
     taskRepo       = makeTaskRepo();
@@ -79,6 +80,12 @@ describe('TasksEdmsListener — EDMS resolution → Tasks (2.2.4)', () => {
     historyRepo    = makeRepo();
     auditService   = { emit: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as any;
     eventEmitter   = { emit: jest.fn() } as any;
+    inboxService   = {
+      executeOnce: jest.fn().mockImplementation(async (_consumer, _eventType, _payload, handler) => {
+        await handler();
+        return true;
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -89,6 +96,7 @@ describe('TasksEdmsListener — EDMS resolution → Tasks (2.2.4)', () => {
         { provide: getRepositoryToken(TaskHistory),    useValue: historyRepo },
         { provide: AuditService,   useValue: auditService },
         { provide: EventEmitter2,  useValue: eventEmitter },
+        { provide: InboxService,   useValue: inboxService },
       ],
     }).compile();
 
@@ -101,7 +109,18 @@ describe('TasksEdmsListener — EDMS resolution → Tasks (2.2.4)', () => {
 
       await listener.onResolutionIssued(RESOLUTION_PAYLOAD);
 
+      expect(inboxService.executeOnce).toHaveBeenCalled();
       expect(taskRepo.save).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips duplicate resolution payload when inbox reports already processed', async () => {
+      inboxService.executeOnce.mockResolvedValue(false);
+      typeRepo.findOne.mockResolvedValue({ id: 'type-doc', name: 'Document-Generated Task', active: true });
+
+      await listener.onResolutionIssued(RESOLUTION_PAYLOAD);
+
+      expect(taskRepo.save).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it('maps priority "urgent" → TaskPriority.HIGH', async () => {
@@ -275,11 +294,13 @@ import { ChatDomainListener } from '../../chat/listeners/chat-domain.listener';
 import { ChatService } from '../../chat/services/chat.service';
 import { PresenceService, PresenceStatus } from '../../chat/services/presence.service';
 import { ChannelType } from '../../chat/entities/channel.entity';
+import { InboxService } from '../../inbox/services/inbox.service';
 
 describe('ChatDomainListener — Task/EDMS → Chat channels (2.2.4)', () => {
   let listener: ChatDomainListener;
   let chatService: jest.Mocked<ChatService>;
   let presenceService: jest.Mocked<PresenceService>;
+  let inboxService: { executeOnce: jest.Mock };
 
   beforeEach(async () => {
     chatService = {
@@ -292,12 +313,19 @@ describe('ChatDomainListener — Task/EDMS → Chat channels (2.2.4)', () => {
     presenceService = {
       setPresence: jest.fn().mockResolvedValue(undefined),
     } as any;
+    inboxService = {
+      executeOnce: jest.fn().mockImplementation(async (_consumer, _eventType, _payload, handler) => {
+        await handler();
+        return true;
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatDomainListener,
         { provide: ChatService,    useValue: chatService },
         { provide: PresenceService, useValue: presenceService },
+        { provide: InboxService, useValue: inboxService },
       ],
     }).compile();
 
@@ -315,6 +343,7 @@ describe('ChatDomainListener — Task/EDMS → Chat channels (2.2.4)', () => {
         assigningPositionId: 'pos-b',
       });
 
+      expect(inboxService.executeOnce).toHaveBeenCalled();
       expect(chatService.createLinkedChannel).toHaveBeenCalledWith(
         expect.objectContaining({
           type: ChannelType.TASK_LINKED,
@@ -362,6 +391,19 @@ describe('ChatDomainListener — Task/EDMS → Chat channels (2.2.4)', () => {
           assigningPositionId: 'pos-b',
         }),
       ).resolves.not.toThrow();
+    });
+
+    it('skips duplicate task-channel request when inbox reports already processed', async () => {
+      inboxService.executeOnce.mockResolvedValue(false);
+
+      await listener.onTaskChannelRequested({
+        taskId: 'task-dup',
+        taskTitle: 'Duplicate task',
+        responsiblePositionId: 'pos-a',
+        assigningPositionId: 'pos-b',
+      });
+
+      expect(chatService.createLinkedChannel).not.toHaveBeenCalled();
     });
   });
 
@@ -413,6 +455,14 @@ describe('ChatDomainListener — Task/EDMS → Chat channels (2.2.4)', () => {
       await expect(
         listener.onDocumentRegistered({ documentId: 'doc-fail', registrationNumber: 'X-1', actorId: 'u' }),
       ).resolves.not.toThrow();
+    });
+
+    it('skips duplicate document-channel request when inbox reports already processed', async () => {
+      inboxService.executeOnce.mockResolvedValue(false);
+
+      await listener.onDocumentRegistered({ documentId: 'doc-dup', registrationNumber: 'X-1', actorId: 'u' });
+
+      expect(chatService.createLinkedChannel).not.toHaveBeenCalled();
     });
   });
 

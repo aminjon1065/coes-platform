@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { NotificationService, NotificationRequest } from '../services/notification.service';
+import { InboxService } from '../../inbox/services/inbox.service';
 
 /**
  * 2.6.2 — Domain event listener that bridges the platform event bus to the
@@ -17,12 +18,22 @@ import { NotificationService, NotificationRequest } from '../services/notificati
 export class NotificationDomainListener {
   private readonly logger = new Logger(NotificationDomainListener.name);
 
-  constructor(private readonly notificationService: NotificationService) {}
+  constructor(
+    private readonly notificationService: NotificationService,
+    private readonly inboxService: InboxService,
+  ) {}
 
   @OnEvent('notification.requested')
   async onNotificationRequested(payload: NotificationRequest): Promise<void> {
     try {
-      await this.notificationService.dispatch(payload);
+      await this.inboxService.executeOnce(
+        'notifications',
+        'notification.requested',
+        payload as unknown as Record<string, unknown>,
+        async () => {
+          await this.notificationService.dispatch(payload);
+        },
+      );
     } catch (err) {
       // Never let notification failures bubble up and break the emitting domain's transaction
       this.logger.error(

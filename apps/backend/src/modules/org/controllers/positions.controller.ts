@@ -29,6 +29,12 @@ export class PositionsController {
     return this.orgService.getAllActivePositions();
   }
 
+  @Get('admin/registry')
+  @ApiOperation({ summary: 'Get admin registry for positions with occupant, chain and history' })
+  getAdminRegistry() {
+    return this.orgService.getPositionAdminRegistry();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get position by ID' })
   getById(@Param('id', ParseUUIDPipe) id: string) {

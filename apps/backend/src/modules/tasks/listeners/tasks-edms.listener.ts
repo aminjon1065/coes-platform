@@ -4,24 +4,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { Task, TaskStatus, TaskPriority, TaskSource, TASK_TRANSITIONS } from '../entities/task.entity';
+import { Task, TaskStatus, TaskPriority, TaskSource } from '../entities/task.entity';
 import { TaskType } from '../entities/task-type.entity';
 import { TaskAssignment, AssignmentType } from '../entities/task-assignment.entity';
 import { TaskHistory } from '../entities/task-history.entity';
 import { AuditService } from '../../audit/services/audit.service';
+import { InboxService } from '../../inbox/services/inbox.service';
 
-/**
- * Listens for EDMS resolution events and automatically creates Tasks
- * in the Task Management domain (Phase 2.2 — EDMS → Task integration).
- *
- * Flow:
- *   ResolutionService.issueResolution()
- *     → emits 'edms.resolution_issued'
- *     → TasksEdmsListener.onResolutionIssued()
- *       → creates one Task per executor assignment
- *       → emits 'tasks.edms_task_created' with { assignmentId, taskId }
- *         → EdmsModule listener calls ResolutionService.linkTask()
- */
 @Injectable()
 export class TasksEdmsListener {
   private readonly logger = new Logger(TasksEdmsListener.name);
@@ -37,6 +26,7 @@ export class TasksEdmsListener {
     private readonly historyRepo: Repository<TaskHistory>,
     private readonly auditService: AuditService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly inboxService: InboxService,
   ) {}
 
   @OnEvent('edms.resolution_issued')
@@ -58,26 +48,30 @@ export class TasksEdmsListener {
     }>;
   }): Promise<void> {
     try {
-      // Find or create a default "Document-Generated Task" type
-      const taskType = await this.resolveDocumentTaskType();
-      if (!taskType) {
-        this.logger.warn('No active TaskType found for document-generated tasks. Skipping task creation.');
-        return;
-      }
+      await this.inboxService.executeOnce(
+        'tasks-edms-listener',
+        'edms.resolution_issued',
+        payload,
+        async () => {
+          const taskType = await this.resolveDocumentTaskType();
+          if (!taskType) {
+            this.logger.warn('No active TaskType found for document-generated tasks. Skipping task creation.');
+            return;
+          }
 
-      // Map EDMS resolution priority → Task priority
-      const taskPriority = this.mapPriority(payload.priority);
+          const taskPriority = this.mapPriority(payload.priority);
 
-      for (const assignment of payload.assignments) {
-        await this.createTaskFromAssignment(
-          taskType,
-          payload,
-          assignment,
-          taskPriority,
-        );
-      }
+          for (const assignment of payload.assignments) {
+            await this.createTaskFromAssignment(
+              taskType,
+              payload,
+              assignment,
+              taskPriority,
+            );
+          }
+        },
+      );
     } catch (err) {
-      // Never throw from an event listener — log and continue
       this.logger.error(
         `Failed to create tasks from resolution ${payload.resolutionId}: ${(err as Error).message}`,
         (err as Error).stack,
@@ -85,10 +79,6 @@ export class TasksEdmsListener {
     }
   }
 
-  /**
-   * When EDMS executor assignment completion is synced back,
-   * this handles the reverse direction (Task → EDMS completion).
-   */
   @OnEvent('task.status_changed')
   async onTaskStatusChanged(payload: {
     taskId: string;
@@ -102,7 +92,6 @@ export class TasksEdmsListener {
     const task = await this.taskRepo.findOne({ where: { id: payload.taskId } });
     if (!task || task.source !== TaskSource.DOCUMENT_GENERATED || !task.sourceDocumentId) return;
 
-    // Emit back to EDMS domain to update executor assignment status
     this.eventEmitter.emit('tasks.document_task_completed', {
       taskId: payload.taskId,
       sourceDocumentId: task.sourceDocumentId,
@@ -112,8 +101,6 @@ export class TasksEdmsListener {
       actorId: payload.actorId,
     });
   }
-
-  // ─── Private helpers ─────────────────────────────────────────────────────────
 
   private async createTaskFromAssignment(
     taskType: TaskType,
@@ -142,7 +129,7 @@ export class TasksEdmsListener {
       status: TaskStatus.ASSIGNED,
       priority,
       source: TaskSource.DOCUMENT_GENERATED,
-      classification: 1, // Inherited from document — minimal default; real impl reads document classification
+      classification: 1,
       assigningPositionId: resolution.issuingPositionId,
       createdById: resolution.issuingUserId,
       responsiblePositionId: assignment.positionId,
@@ -152,7 +139,6 @@ export class TasksEdmsListener {
     });
     await this.taskRepo.save(task);
 
-    // Create primary assignment record
     const taskAssignment = this.assignmentRepo.create({
       taskId: task.id,
       positionId: assignment.positionId,
@@ -164,7 +150,6 @@ export class TasksEdmsListener {
     });
     await this.assignmentRepo.save(taskAssignment);
 
-    // Record creation in history
     const history = this.historyRepo.create({
       taskId: task.id,
       eventType: 'task_created_from_resolution',
@@ -194,7 +179,6 @@ export class TasksEdmsListener {
       },
     });
 
-    // Notify EDMS to link this task back to the executor assignment
     this.eventEmitter.emit('tasks.edms_task_created', {
       assignmentId: assignment.assignmentId,
       taskId: task.id,
@@ -207,13 +191,11 @@ export class TasksEdmsListener {
   }
 
   private async resolveDocumentTaskType(): Promise<TaskType | null> {
-    // Try to find an existing type for document-generated tasks
     const type = await this.typeRepo.findOne({
       where: { name: 'Document-Generated Task', active: true },
     });
     if (type) return type;
 
-    // Auto-create a default type if none exists
     try {
       const newType = this.typeRepo.create({
         name: 'Document-Generated Task',
@@ -240,9 +222,12 @@ export class TasksEdmsListener {
 
   private mapPriority(resolutionPriority: string): TaskPriority {
     switch (resolutionPriority) {
-      case 'emergency': return TaskPriority.CRITICAL;
-      case 'urgent':    return TaskPriority.HIGH;
-      default:          return TaskPriority.NORMAL;
+      case 'emergency':
+        return TaskPriority.CRITICAL;
+      case 'urgent':
+        return TaskPriority.HIGH;
+      default:
+        return TaskPriority.NORMAL;
     }
   }
 }

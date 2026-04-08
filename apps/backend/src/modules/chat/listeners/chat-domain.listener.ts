@@ -4,6 +4,7 @@ import { ChatService } from '../services/chat.service';
 import { PresenceService, PresenceStatus } from '../services/presence.service';
 import { ChannelType } from '../entities/channel.entity';
 import { MemberRole } from '../entities/channel-member.entity';
+import { InboxService } from '../../inbox/services/inbox.service';
 
 /**
  * Subscribes to domain events from Tasks, EDMS, and Org modules
@@ -20,6 +21,7 @@ export class ChatDomainListener {
   constructor(
     private readonly chatService: ChatService,
     private readonly presenceService: PresenceService,
+    private readonly inboxService: InboxService,
   ) {}
 
   // ─── Task-linked channel (2.3.4 / 2.4.5) ─────────────────────────────────────
@@ -32,20 +34,27 @@ export class ChatDomainListener {
     assigningPositionId: string;
   }): Promise<void> {
     try {
-      const memberIds = Array.from(
-        new Set([payload.responsiblePositionId, payload.assigningPositionId]),
+      await this.inboxService.executeOnce(
+        'chat-task-channel',
+        'task.channel_requested',
+        payload,
+        async () => {
+          const memberIds = Array.from(
+            new Set([payload.responsiblePositionId, payload.assigningPositionId]),
+          );
+
+          const channel = await this.chatService.createLinkedChannel({
+            type: ChannelType.TASK_LINKED,
+            name: `Task: ${payload.taskTitle.substring(0, 100)}`,
+            classification: 1,
+            linkedEntityId: payload.taskId,
+            linkedEntityType: 'task',
+            memberPositionIds: memberIds,
+          });
+
+          this.logger.log(`Created task-linked channel ${channel.id} for task ${payload.taskId}`);
+        },
       );
-
-      const channel = await this.chatService.createLinkedChannel({
-        type: ChannelType.TASK_LINKED,
-        name: `Task: ${payload.taskTitle.substring(0, 100)}`,
-        classification: 1,
-        linkedEntityId: payload.taskId,
-        linkedEntityType: 'task',
-        memberPositionIds: memberIds,
-      });
-
-      this.logger.log(`Created task-linked channel ${channel.id} for task ${payload.taskId}`);
     } catch (err) {
       this.logger.error(
         `Failed to create task-linked channel for task ${payload.taskId}: ${(err as Error).message}`,
@@ -112,16 +121,23 @@ export class ChatDomainListener {
     actorId: string;
   }): Promise<void> {
     try {
-      await this.chatService.createLinkedChannel({
-        type: ChannelType.DOCUMENT_LINKED,
-        name: `Document: ${payload.registrationNumber}`,
-        classification: 1, // Real impl reads document classification
-        linkedEntityId: payload.documentId,
-        linkedEntityType: 'document',
-        memberPositionIds: [],
-        createdById: payload.actorId,
-      });
-      this.logger.log(`Created document-linked channel for document ${payload.documentId}`);
+      await this.inboxService.executeOnce(
+        'chat-document-channel',
+        'edms.document.registered',
+        payload,
+        async () => {
+          await this.chatService.createLinkedChannel({
+            type: ChannelType.DOCUMENT_LINKED,
+            name: `Document: ${payload.registrationNumber}`,
+            classification: 1,
+            linkedEntityId: payload.documentId,
+            linkedEntityType: 'document',
+            memberPositionIds: [],
+            createdById: payload.actorId,
+          });
+          this.logger.log(`Created document-linked channel for document ${payload.documentId}`);
+        },
+      );
     } catch (err) {
       this.logger.error(
         `Failed to create document-linked channel for document ${payload.documentId}: ${(err as Error).message}`,

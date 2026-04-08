@@ -20,6 +20,22 @@
   },
   "dynamicRoutes": [
     {
+      "page": "/analytics/forms/[id]",
+      "regex": "^/analytics/forms/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/analytics/forms/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/analytics/incidents/[id]",
+      "regex": "^/analytics/incidents/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/analytics/incidents/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
       "page": "/api/admin/roles/[id]",
       "regex": "^/api/admin/roles/([^/]+?)(?:/)?$",
       "routeKeys": {
@@ -34,6 +50,56 @@
         "nxtPid": "nxtPid"
       },
       "namedRegex": "^/api/admin/users/(?<nxtPid>[^/]+?)/offboard(?:/)?$"
+    },
+    {
+      "page": "/api/admin/users/[id]/positions",
+      "regex": "^/api/admin/users/([^/]+?)/positions(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/admin/users/(?<nxtPid>[^/]+?)/positions(?:/)?$"
+    },
+    {
+      "page": "/api/admin/users/[id]/positions/[positionId]",
+      "regex": "^/api/admin/users/([^/]+?)/positions/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPpositionId": "nxtPpositionId"
+      },
+      "namedRegex": "^/api/admin/users/(?<nxtPid>[^/]+?)/positions/(?<nxtPpositionId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/admin/users/[id]/roles",
+      "regex": "^/api/admin/users/([^/]+?)/roles(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/admin/users/(?<nxtPid>[^/]+?)/roles(?:/)?$"
+    },
+    {
+      "page": "/api/admin/users/[id]/roles/[assignmentId]",
+      "regex": "^/api/admin/users/([^/]+?)/roles/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPassignmentId": "nxtPassignmentId"
+      },
+      "namedRegex": "^/api/admin/users/(?<nxtPid>[^/]+?)/roles/(?<nxtPassignmentId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/calls/recordings/[id]/download",
+      "regex": "^/api/calls/recordings/([^/]+?)/download(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/calls/recordings/(?<nxtPid>[^/]+?)/download(?:/)?$"
+    },
+    {
+      "page": "/api/calls/[id]/media-session",
+      "regex": "^/api/calls/([^/]+?)/media\\-session(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/calls/(?<nxtPid>[^/]+?)/media\\-session(?:/)?$"
     },
     {
       "page": "/api/chat/channels/dm/[positionId]",
@@ -322,6 +388,14 @@
       "namedRegex": "^/api/tasks/(?<nxtPid>[^/]+?)/transition(?:/)?$"
     },
     {
+      "page": "/calls/[id]",
+      "regex": "^/calls/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/calls/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
       "page": "/chat/[id]",
       "regex": "^/chat/([^/]+?)(?:/)?$",
       "routeKeys": {
@@ -346,6 +420,14 @@
       "namedRegex": "^/files/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/reporting/[id]",
+      "regex": "^/reporting/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/reporting/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
       "page": "/tasks/[id]",
       "regex": "^/tasks/([^/]+?)(?:/)?$",
       "routeKeys": {
@@ -366,6 +448,12 @@
       "regex": "^/_not\\-found(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/404",
+      "regex": "^/404(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/404(?:/)?$"
     },
     {
       "page": "/admin",
@@ -414,6 +502,30 @@
       "regex": "^/analytics(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/analytics(?:/)?$"
+    },
+    {
+      "page": "/analytics/forms",
+      "regex": "^/analytics/forms(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/analytics/forms(?:/)?$"
+    },
+    {
+      "page": "/analytics/incidents",
+      "regex": "^/analytics/incidents(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/analytics/incidents(?:/)?$"
+    },
+    {
+      "page": "/analytics/reports",
+      "regex": "^/analytics/reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/analytics/reports(?:/)?$"
+    },
+    {
+      "page": "/calls",
+      "regex": "^/calls(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/calls(?:/)?$"
     },
     {
       "page": "/chat",
@@ -468,6 +580,12 @@
       "regex": "^/notifications(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/notifications(?:/)?$"
+    },
+    {
+      "page": "/reporting",
+      "regex": "^/reporting(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reporting(?:/)?$"
     },
     {
       "page": "/search",

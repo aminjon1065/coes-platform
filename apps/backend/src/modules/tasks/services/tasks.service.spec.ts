@@ -21,6 +21,7 @@ import { TaskComment } from '../entities/task-comment.entity';
 import { TaskAttachment } from '../entities/task-attachment.entity';
 import { AuditService } from '../../audit/services/audit.service';
 import { OrgService } from '../../org/services/org.service';
+import { OutboxService } from '../../outbox/services/outbox.service';
 
 // ── Mock helpers ───────────────────────────────────────────────────────────────
 
@@ -138,6 +139,7 @@ describe('TasksService', () => {
   let auditService: { emit: jest.Mock };
   let orgService: jest.Mocked<Pick<OrgService, 'isSubordinateTo' | 'getDescendants'>>;
   let eventEmitter: { emit: jest.Mock };
+  let outboxService: { publish: jest.Mock };
 
   beforeEach(() => {
     taskRepo       = mockRepo<Task>();
@@ -153,6 +155,7 @@ describe('TasksService', () => {
       getDescendants:  jest.fn().mockResolvedValue([]),
     };
     eventEmitter   = { emit: jest.fn() };
+    outboxService  = { publish: jest.fn().mockResolvedValue({ id: 'outbox-1', status: 'dispatched' }) };
 
     service = new TasksService(
       taskRepo       as any,
@@ -165,6 +168,7 @@ describe('TasksService', () => {
       auditService   as unknown as AuditService,
       orgService     as unknown as OrgService,
       eventEmitter   as unknown as EventEmitter2,
+      outboxService  as unknown as OutboxService,
     );
   });
 
@@ -395,7 +399,7 @@ describe('TasksService', () => {
       );
     });
 
-    it('emits task.channel_requested when transitioning DRAFT → ASSIGNED', async () => {
+    it('writes task.channel_requested to the outbox when transitioning DRAFT → ASSIGNED', async () => {
       taskRepo.findOne.mockResolvedValue(
         makeTask({
           status: TaskStatus.DRAFT,
@@ -412,9 +416,10 @@ describe('TasksService', () => {
         3,
       );
 
-      expect(eventEmitter.emit).toHaveBeenCalledWith(
+      expect(outboxService.publish).toHaveBeenCalledWith(
         'task.channel_requested',
         expect.objectContaining({ taskId: 'task-1' }),
+        expect.objectContaining({ source: 'tasks', aggregateType: 'task', aggregateId: 'task-1' }),
       );
     });
 
@@ -441,10 +446,10 @@ describe('TasksService', () => {
         3,
       );
 
-      // Should emit TASK_ALL_SUBTASKS_COMPLETE notification
-      expect(eventEmitter.emit).toHaveBeenCalledWith(
+      expect(outboxService.publish).toHaveBeenCalledWith(
         'notification.requested',
         expect.objectContaining({ type: 'TASK_ALL_SUBTASKS_COMPLETE' }),
+        expect.objectContaining({ source: 'tasks', aggregateType: 'task', aggregateId: 'parent-task' }),
       );
     });
   });

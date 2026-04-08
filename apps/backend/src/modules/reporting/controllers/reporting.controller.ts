@@ -8,7 +8,10 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FastifyRequest } from 'fastify';
 import { ReportingService } from '../services/reporting.service';
 import {
   ReportType,
@@ -16,15 +19,22 @@ import {
   DeliveryChannel,
 } from '../entities/report-definition.entity';
 
-const ACTOR_ID       = '00000000-0000-0000-0000-000000000001';
-const USER_CLEARANCE = 3;
+interface ReportingRequest extends FastifyRequest {
+  user: {
+    sub: string;
+    clearanceLevel?: number;
+  };
+}
 
-@Controller('api/v1/reporting')
+@ApiTags('Reporting')
+@ApiBearerAuth()
+@Controller({ path: 'reporting', version: '1' })
 export class ReportingController {
   constructor(private readonly reportingService: ReportingService) {}
 
   // ── Definitions ─────────────────────────────────────────────────────────────
 
+  @ApiOperation({ summary: 'Create report definition' })
   @Post('definitions')
   @HttpCode(HttpStatus.CREATED)
   createDefinition(
@@ -41,36 +51,43 @@ export class ReportingController {
       deliveryConfig?: object;
       classification?: number;
     },
+    @Req() req: ReportingRequest,
   ) {
-    return this.reportingService.createDefinition({ ...body, ownerId: ACTOR_ID });
+    return this.reportingService.createDefinition({ ...body, ownerId: req.user.sub });
   }
 
+  @ApiOperation({ summary: 'List report definitions' })
   @Get('definitions')
-  listDefinitions() {
-    return this.reportingService.listDefinitions(USER_CLEARANCE);
+  listDefinitions(@Req() req: ReportingRequest) {
+    return this.reportingService.listDefinitions(req.user.clearanceLevel ?? 0);
   }
 
+  @ApiOperation({ summary: 'Get report definition' })
   @Get('definitions/:id')
-  getDefinition(@Param('id', ParseUUIDPipe) id: string) {
-    return this.reportingService.getDefinition(id, USER_CLEARANCE);
+  getDefinition(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReportingRequest) {
+    return this.reportingService.getDefinition(id, req.user.clearanceLevel ?? 0);
   }
 
   // ── Execution ────────────────────────────────────────────────────────────────
 
+  @ApiOperation({ summary: 'Trigger report execution' })
   @Post('definitions/:id/run')
   @HttpCode(HttpStatus.ACCEPTED)
   triggerReport(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { parameters?: object },
+    @Req() req: ReportingRequest,
   ) {
-    return this.reportingService.triggerReport(id, body.parameters ?? {}, ACTOR_ID, 'manual');
+    return this.reportingService.triggerReport(id, body.parameters ?? {}, req.user.sub, 'manual');
   }
 
+  @ApiOperation({ summary: 'Get report execution' })
   @Get('executions/:id')
   getExecution(@Param('id', ParseUUIDPipe) id: string) {
     return this.reportingService.getExecution(id);
   }
 
+  @ApiOperation({ summary: 'List definition executions' })
   @Get('definitions/:id/executions')
   listExecutions(
     @Param('id', ParseUUIDPipe) id: string,

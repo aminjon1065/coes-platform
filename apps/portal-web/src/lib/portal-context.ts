@@ -36,11 +36,13 @@ const BASELINE_NAV: PortalNavItem[] = [
   { href: "/files", label: "Files", workspace: "core" },
   { href: "/notifications", label: "Notifications", workspace: "core" },
   { href: "/chat", label: "Chat", workspace: "core" },
+  { href: "/calls", label: "Calls", workspace: "core" },
 ];
 
 const OPTIONAL_NAV: PortalNavItem[] = [
   { href: "/gis", label: "GIS", workspace: "analytics" },
   { href: "/analytics", label: "Analytics", workspace: "analytics" },
+  { href: "/reporting", label: "Reporting", workspace: "analytics" },
   { href: "/search", label: "Search", workspace: "analytics" },
   { href: "/admin", label: "Admin", workspace: "admin" },
 ];

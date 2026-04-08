@@ -20,6 +20,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AuditService } from '../../audit/services/audit.service';
 import { OrgService } from '../../org/services/org.service';
+import { OutboxService } from '../../outbox/services/outbox.service';
 
 import { CreateTaskDto } from '../dto/create-task.dto';
 import { UpdateTaskDto } from '../dto/update-task.dto';
@@ -55,6 +56,7 @@ export class TasksService {
     private readonly auditService: AuditService,
     private readonly orgService: OrgService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly outboxService: OutboxService,
   ) {}
 
   // ─── Create ──────────────────────────────────────────────────────────────────
@@ -390,12 +392,20 @@ export class TasksService {
 
     // 2.3.4 — Emit channel creation request on first assignment
     if (previousStatus === TaskStatus.DRAFT && targetStatus === TaskStatus.ASSIGNED) {
-      this.eventEmitter.emit('task.channel_requested', {
-        taskId: task.id,
-        taskTitle: task.title,
-        responsiblePositionId: task.responsiblePositionId,
-        assigningPositionId: task.assigningPositionId,
-      });
+      await this.outboxService.publish(
+        'task.channel_requested',
+        {
+          taskId: task.id,
+          taskTitle: task.title,
+          responsiblePositionId: task.responsiblePositionId,
+          assigningPositionId: task.assigningPositionId,
+        },
+        {
+          source: 'tasks',
+          aggregateType: 'task',
+          aggregateId: task.id,
+        },
+      );
     }
 
     return task;
@@ -429,12 +439,20 @@ export class TasksService {
     if (allDone && parent.status === TaskStatus.IN_PROGRESS) {
       // All children done — parent can be completed by its executor
       // We emit a notification rather than auto-completing (human must confirm)
-      this.eventEmitter.emit('notification.requested', {
-        type: 'TASK_ALL_SUBTASKS_COMPLETE',
-        recipientPositionId: parent.responsiblePositionId,
-        priority: 'normal',
-        payload: { taskId: parent.id, taskTitle: parent.title },
-      });
+      await this.outboxService.publish(
+        'notification.requested',
+        {
+          type: 'TASK_ALL_SUBTASKS_COMPLETE',
+          recipientPositionId: parent.responsiblePositionId,
+          priority: 'normal',
+          payload: { taskId: parent.id, taskTitle: parent.title },
+        },
+        {
+          source: 'tasks',
+          aggregateType: 'task',
+          aggregateId: parent.id,
+        },
+      );
 
       await this.recordHistory(parent.id, 'all_subtasks_completed', actorId, actorPositionId, null, {
         childCount: children.length,
@@ -443,17 +461,25 @@ export class TasksService {
 
     if (anyBlocking && parent.status === TaskStatus.IN_PROGRESS) {
       const blockedChild = children.find(c => blockingStatuses.has(c.status));
-      this.eventEmitter.emit('notification.requested', {
-        type: 'TASK_SUBTASK_BLOCKED',
-        recipientPositionId: parent.responsiblePositionId,
-        priority: 'high',
-        payload: {
-          taskId: parent.id,
-          taskTitle: parent.title,
-          blockedChildId: blockedChild?.id,
-          blockedStatus: blockedChild?.status,
+      await this.outboxService.publish(
+        'notification.requested',
+        {
+          type: 'TASK_SUBTASK_BLOCKED',
+          recipientPositionId: parent.responsiblePositionId,
+          priority: 'high',
+          payload: {
+            taskId: parent.id,
+            taskTitle: parent.title,
+            blockedChildId: blockedChild?.id,
+            blockedStatus: blockedChild?.status,
+          },
         },
-      });
+        {
+          source: 'tasks',
+          aggregateType: 'task',
+          aggregateId: parent.id,
+        },
+      );
     }
   }
 

@@ -24,6 +24,8 @@ import { GisModule } from './modules/gis/gis.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { MlModule } from './modules/ml/ml.module';
 import { ReportingModule } from './modules/reporting/reporting.module';
+import { OutboxModule } from './modules/outbox/outbox.module';
+import { InboxModule } from './modules/inbox/inbox.module';
 import { validateConfig } from './infra/config/config.validation';
 import databaseConfig from './infra/config/database.config';
 import redisConfig from './infra/config/redis.config';
@@ -116,6 +118,9 @@ const envFilePath = [
 
     // Task scheduling (cron jobs)
     ScheduleModule.forRoot(),
+
+    OutboxModule,
+    InboxModule,
 
     // Rate limiting
     ThrottlerModule.forRootAsync({

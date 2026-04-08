@@ -17,6 +17,7 @@ import {
   DeliveryChannel,
 } from '../entities/report-definition.entity';
 import { ReportExecution } from '../entities/report-execution.entity';
+import { AuditService } from '../../audit/services/audit.service';
 
 // ── Query engines ─────────────────────────────────────────────────────────────
 
@@ -27,6 +28,12 @@ type ReportResult = {
 
 @Injectable()
 export class ReportingService {
+  private schedulerSummary = {
+    cron: '*/5 * * * *',
+    lastRunAt: null as string | null,
+    triggeredCount: 0,
+    error: null as string | null,
+  };
   private readonly logger = new Logger(ReportingService.name);
 
   constructor(
@@ -36,6 +43,7 @@ export class ReportingService {
     private readonly execRepo: Repository<ReportExecution>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly auditService: AuditService,
     private readonly events: EventEmitter2,
   ) {}
 
@@ -67,7 +75,19 @@ export class ReportingService {
       classification:   dto.classification ?? 1,
       ownerId:          dto.ownerId,
     });
-    return this.defRepo.save(def);
+    const saved = await this.defRepo.save(def);
+    await this.auditService.emit({
+      actorId: dto.ownerId,
+      eventType: 'reporting.definition.created',
+      resourceType: 'ReportDefinition',
+      resourceId: saved.id,
+      metadata: {
+        reportType: saved.reportType,
+        defaultFormat: saved.defaultFormat,
+        isScheduled: saved.isScheduled,
+      },
+    });
+    return saved;
   }
 
   async listDefinitions(userClearance: number): Promise<ReportDefinition[]> {
@@ -107,6 +127,17 @@ export class ReportingService {
       deliveryChannel: def.deliveryChannel,
     });
     const saved = await this.execRepo.save(exec);
+    await this.auditService.emit({
+      actorId: triggeredById ?? undefined,
+      eventType: 'reporting.execution.triggered',
+      resourceType: 'ReportExecution',
+      resourceId: saved.id,
+      metadata: {
+        definitionId,
+        triggerSource,
+        format: saved.format,
+      },
+    });
 
     // Run asynchronously — caller gets the pending execution immediately
     setImmediate(() => this.runExecution(saved.id, def));
@@ -441,10 +472,12 @@ export class ReportingService {
   /** Run all scheduled reports that are due (cron: every 5 minutes, checks each definition's schedule). */
   @Cron('*/5 * * * *')
   async runScheduledReports(): Promise<void> {
+    const runStartedAt = new Date().toISOString();
     const scheduled = await this.defRepo.find({
       where: { isScheduled: true, isActive: true },
     });
 
+    let triggeredCount = 0;
     for (const def of scheduled) {
       if (!def.cronExpression) continue;
       if (!this.isCronDue(def.cronExpression)) continue;
@@ -452,10 +485,28 @@ export class ReportingService {
       this.logger.log(`Running scheduled report: ${def.name}`);
       try {
         await this.triggerReport(def.id, {}, null, 'scheduled');
+        triggeredCount += 1;
       } catch (err: any) {
         this.logger.error(`Scheduled report ${def.name} trigger failed: ${err?.message}`);
+        this.schedulerSummary = {
+          cron: '*/5 * * * *',
+          lastRunAt: runStartedAt,
+          triggeredCount,
+          error: err instanceof Error ? err.message : String(err?.message ?? 'Unknown error'),
+        };
       }
     }
+
+    this.schedulerSummary = {
+      cron: '*/5 * * * *',
+      lastRunAt: runStartedAt,
+      triggeredCount,
+      error: null,
+    };
+  }
+
+  getSchedulerSummary() {
+    return this.schedulerSummary;
   }
 
   /** Naive cron-due check: true if "now" falls within the current 5-min window for the expression. */

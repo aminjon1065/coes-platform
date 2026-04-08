@@ -38,7 +38,7 @@ This plan does **not** add major new business scope. Its purpose is to make the 
 - ✅ Root workspace/tooling baseline normalized around root-level `npm` workspaces and `package-lock.json`
 - ✅ `apps/backend` build restored and backend Jest suite is green (`26/26` suites, `525/525` tests)
 - ✅ `apps/gateway` test tooling restored and suite is green
-- ✅ `apps/map-client` and `apps/field-pwa` TypeScript build blockers removed
+- ✅ `apps/map-client` and `apps/field-pwa` TypeScript build blockers removed; office GIS access is now delivered through `apps/portal-web`
 - ✅ `apps/media` build/tooling blockers removed
 - ✅ `plan.md` truth alignment, `docs/truth-matrix.md`, and baseline smoke CI gate are in place
 - ✅ Search document/task indexing is now repository-backed and covered by backend smoke tests
@@ -54,7 +54,7 @@ This plan does **not** add major new business scope. Its purpose is to make the 
 
 The 12-week plan is considered complete only if all of the following are true:
 
-- `apps/backend`, `apps/gateway`, `apps/media`, `apps/portal-web`, `apps/map-client`, and `apps/field-pwa` are the active frontend/backend build targets in CI.
+- `apps/backend`, `apps/gateway`, `apps/media`, `apps/portal-web`, and `apps/field-pwa` are the active production frontend/backend build targets in CI; `apps/map-client` is treated as a legacy GIS codebase until final retirement.
 - Backend unit/integration test suites are green with enforced coverage thresholds for critical modules.
 - Event-driven smoke flows are automated:
   - EDMS Resolution -> Task -> Notification -> Realtime
@@ -134,7 +134,7 @@ The 12-week plan is considered complete only if all of the following are true:
 | 2.1.2 | Split backend tests into unit / integration / smoke layers | ⏳ | Current suite is broad but operationally fragile |
 | 2.1.3 | Add gateway unit and websocket integration test pipeline | ⏳ | Authentication, room fan-out, disconnect, presence |
 | 2.1.4 | Add media service tests for signaling/session lifecycle | ⏳ | Join, produce, consume, end-session, cleanup |
-| 2.1.5 | Add frontend build-validation and route smoke tests | ⏳ | Web, map-client, field-pwa |
+| 2.1.5 | Add frontend build-validation and route smoke tests | ⏳ | Portal-web, field-pwa, and any remaining legacy GIS compatibility paths until `apps/map-client` is fully retired |
 
 ### 2.2 CI/CD Hardening
 | # | Task | Status | Notes |
@@ -328,7 +328,7 @@ The 12-week plan is considered complete only if all of the following are true:
 | Repo / CI / Build | Tech Lead + DevOps | All app owners |
 | Core Backend Domains | Backend Team | QA |
 | Realtime / Gateway / Media | Backend Realtime Owner | DevOps |
-| Web / Map / PWA | Frontend Team | QA |
+| Portal Web / GIS / PWA | Frontend Team | QA |
 | Search / Files / Notifications | Backend Platform Owner | DevOps |
 | Security / SRE / DR | DevOps / Security Owner | Tech Lead |
 | UAT / Pilot Readiness | Product / Operations Owner | QA + Engineering |
@@ -350,8 +350,8 @@ The 12-week plan is considered complete only if all of the following are true:
 
 ## Final Deliverables by End of Week 12
 
-1. A reproducible monorepo with deterministic install, build, test, and deploy workflows.
-2. A truthful `plan.md` whose completion markers are backed by evidence.
+1. A reproducible monorepo with deterministic install, build, test, and deploy workflows for the active platform surfaces: backend, gateway, media, portal-web, and field-pwa.
+2. A truthful `plan.md` whose completion markers are backed by evidence and reflect `apps/portal-web` as the main office frontend.
 3. Production-grade implementations for currently stubbed critical integrations.
 4. Automated smoke coverage for the most important cross-domain flows.
 5. Enterprise-ready operational assets: dashboards, alerts, runbooks, DR procedures, release checklist, rollback checklist, support model, and pilot sign-off packet.

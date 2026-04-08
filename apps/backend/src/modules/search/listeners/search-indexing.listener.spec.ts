@@ -7,6 +7,7 @@ import { Document, DocumentDirection, DocumentStatus } from '../../edms/entities
 import { DocumentType } from '../../edms/entities/document-type.entity';
 import { Task, TaskPriority, TaskSource, TaskStatus } from '../../tasks/entities/task.entity';
 import { TaskType } from '../../tasks/entities/task-type.entity';
+import { InboxService } from '../../inbox/services/inbox.service';
 
 function makeDocument(overrides: Partial<Document> = {}): Document {
   return {
@@ -119,6 +120,7 @@ describe('SearchIndexingListener', () => {
   let documentRepo: { findOne: jest.Mock };
   let taskRepo: { findOne: jest.Mock };
   let indexService: jest.Mocked<SearchIndexService>;
+  let inboxService: { executeOnce: jest.Mock };
 
   beforeEach(async () => {
     documentRepo = { findOne: jest.fn() };
@@ -131,6 +133,12 @@ describe('SearchIndexingListener', () => {
       deleteTask: jest.fn(),
       deleteMessage: jest.fn(),
     } as unknown as jest.Mocked<SearchIndexService>;
+    inboxService = {
+      executeOnce: jest.fn().mockImplementation(async (_consumer, _eventType, _payload, handler) => {
+        await handler();
+        return true;
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -138,6 +146,7 @@ describe('SearchIndexingListener', () => {
         { provide: getRepositoryToken(Document), useValue: documentRepo },
         { provide: getRepositoryToken(Task), useValue: taskRepo },
         { provide: SearchIndexService, useValue: indexService },
+        { provide: InboxService, useValue: inboxService },
       ],
     }).compile();
 
@@ -150,6 +159,7 @@ describe('SearchIndexingListener', () => {
 
       await listener.handleDocumentChange({ documentId: 'doc-1' });
 
+      expect(inboxService.executeOnce).toHaveBeenCalled();
       expect(documentRepo.findOne).toHaveBeenCalledWith({ where: { id: 'doc-1' } });
       expect(indexService.indexDocument).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -177,6 +187,7 @@ describe('SearchIndexingListener', () => {
 
       await listener.handleTaskChange({ taskId: 'task-1' });
 
+      expect(inboxService.executeOnce).toHaveBeenCalled();
       expect(taskRepo.findOne).toHaveBeenCalledWith({ where: { id: 'task-1' } });
       expect(indexService.indexTask).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -195,6 +206,43 @@ describe('SearchIndexingListener', () => {
 
       expect(indexService.deleteTask).toHaveBeenCalledWith('task-missing');
       expect(indexService.indexTask).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleMessageCreated', () => {
+    it('indexes message through inbox guard', async () => {
+      await listener.handleMessageCreated({
+        messageId: 'msg-1',
+        channelId: 'chan-1',
+        body: 'hello',
+        senderId: 'user-1',
+        senderPositionId: 'pos-1',
+        classification: 1,
+        sequence: 1,
+        createdAt: '2026-01-03T10:00:00Z',
+      });
+
+      expect(inboxService.executeOnce).toHaveBeenCalled();
+      expect(indexService.indexMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'msg-1', body: 'hello' }),
+      );
+    });
+
+    it('skips duplicate message payload when inbox reports already processed', async () => {
+      inboxService.executeOnce.mockResolvedValue(false);
+
+      await listener.handleMessageCreated({
+        messageId: 'msg-1',
+        channelId: 'chan-1',
+        body: 'hello',
+        senderId: 'user-1',
+        senderPositionId: 'pos-1',
+        classification: 1,
+        sequence: 1,
+        createdAt: '2026-01-03T10:00:00Z',
+      });
+
+      expect(indexService.indexMessage).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,5 +1,6 @@
 import { types as msTypes } from 'mediasoup';
 import { Redis } from 'ioredis';
+import { WebSocket } from 'ws';
 import { WorkerPool } from '../workers/worker-pool';
 import { logger } from '../logger';
 
@@ -23,6 +24,7 @@ export interface Participant {
   joinedAt: Date;
   audioMuted: boolean;
   videoMuted: boolean;
+  socket?: WebSocket;
 }
 
 const SESSION_TTL_SECONDS = 6 * 60 * 60; // 6 hours max session lifetime
@@ -35,12 +37,20 @@ export class SessionManager {
     private readonly redis: Redis,
   ) {}
 
-  async createSession(sessionId: string, channelId: string): Promise<CallSession> {
+  async createSession(
+    sessionId: string,
+    channelId: string,
+    classification = 0,
+  ): Promise<CallSession> {
     if (this.sessions.has(sessionId)) {
       return this.sessions.get(sessionId)!;
     }
 
     const router = await this.workerPool.createRouter();
+    router.appData = {
+      ...(router.appData ?? {}),
+      classification,
+    };
 
     const session: CallSession = {
       sessionId,
@@ -60,6 +70,7 @@ export class SessionManager {
       JSON.stringify({
         sessionId,
         channelId,
+        classification,
         instanceId: process.env.INSTANCE_ID ?? process.pid.toString(),
         createdAt: session.createdAt.toISOString(),
       }),
@@ -87,6 +98,33 @@ export class SessionManager {
 
   getSession(sessionId: string): CallSession | undefined {
     return this.sessions.get(sessionId);
+  }
+
+  getParticipant(sessionId: string, participantId: string): Participant | undefined {
+    return this.sessions.get(sessionId)?.participants.get(participantId);
+  }
+
+  setParticipantMute(
+    sessionId: string,
+    participantId: string,
+    audioMuted?: boolean,
+    videoMuted?: boolean,
+  ): { session: CallSession; participant: Participant } | null {
+    const session = this.sessions.get(sessionId);
+    const participant = session?.participants.get(participantId);
+
+    if (!session || !participant) {
+      return null;
+    }
+
+    if (audioMuted !== undefined) {
+      participant.audioMuted = audioMuted;
+    }
+    if (videoMuted !== undefined) {
+      participant.videoMuted = videoMuted;
+    }
+
+    return { session, participant };
   }
 
   addParticipant(sessionId: string, participant: Participant): void {
@@ -128,8 +166,8 @@ export class SessionManager {
 
     logger.info({ sessionId, participantId }, 'Participant left session');
 
-    // Auto-end empty sessions
-    if (session.participants.size === 0) {
+    // Keep the router alive while server-side recording is finalizing.
+    if (session.participants.size === 0 && !session.recordingActive) {
       await this.endSession(sessionId);
     }
   }
