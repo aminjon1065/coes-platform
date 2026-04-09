@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Device } from "mediasoup-client";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 type ProducerDescriptor = {
   producerId: string;
@@ -526,93 +535,104 @@ export function MediaCallClient({ sessionId }: MediaCallClientProps) {
   }
 
   return (
-    <section className="portal-panel">
-      <div className="portal-section-head">
-        <div>
-          <span className="portal-pill">Media</span>
-          <h2>Audio and video room</h2>
-        </div>
-        <p className="portal-note">status {status}</p>
-      </div>
-      {error ? <p className="portal-note">Error: {error}</p> : null}
-
-      <div className="portal-actions">
-        <button
-          className="portal-button secondary"
-          onClick={() => void updateMute(!audioMuted, videoMuted)}
-          type="button"
-        >
-          {audioMuted ? "Unmute audio" : "Mute audio"}
-        </button>
-        <button
-          className="portal-button secondary"
-          onClick={() => void updateMute(audioMuted, !videoMuted)}
-          type="button"
-        >
-          {videoMuted ? "Enable video" : "Disable video"}
-        </button>
-        <button
-          className="portal-button secondary"
-          onClick={() => void toggleScreenShare()}
-          type="button"
-        >
-          {screenSharing ? "Stop sharing" : "Share screen"}
-        </button>
-      </div>
-
-      <div className="portal-columns admin-split">
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Local preview</h2>
+    <Card className="border-border/60 bg-white/90 shadow-sm">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">Media</Badge>
+            <Badge variant="secondary">{status}</Badge>
           </div>
-          <video ref={localVideoRef} autoPlay className="portal-media-tile" muted playsInline />
-          <p className="portal-note">
-            {audioMuted ? "audio muted" : "audio live"} | {videoMuted ? "video muted" : "video live"}
-          </p>
-        </article>
-
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Participants</h2>
+          <div className="space-y-1">
+            <CardTitle className="font-heading text-2xl">Audio and video room</CardTitle>
+            <CardDescription>Browser media session and participant streams.</CardDescription>
           </div>
-          <ul className="portal-list">
-            {Object.values(participants).length === 0 ? (
-              <li>No remote participants yet.</li>
-            ) : (
-              Object.values(participants).map((participant) => (
-              <li key={participant.participantId}>
-                  <strong>{participant.displayName}</strong>
-                  <p className="portal-note">
-                    {participant.audioMuted ? "audio muted" : "audio live"} |{" "}
-                    {participant.videoMuted ? "video muted" : "video live"}
-                  </p>
-                </li>
-              ))
-            )}
-          </ul>
-        </article>
-      </div>
-
-      {remoteVideoConsumers.length > 0 ? (
-        <div className="portal-columns">
-          {remoteVideoConsumers.map((consumer) => (
-            <RemoteVideoTile consumer={consumer} key={consumer.consumerId} />
-          ))}
         </div>
-      ) : null}
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {error ? (
+          <div className="rounded-2xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            Error: {error}
+          </div>
+        ) : null}
 
-      {remoteAudioConsumers.map((consumer) => (
-        <audio
-          autoPlay
-          key={consumer.consumerId}
-          ref={(node) => {
-            if (node) {
-              node.srcObject = consumer.stream;
-            }
-          }}
-        />
-      ))}
-    </section>
+        <div className="flex flex-wrap gap-3">
+          <Button type="button" variant="outline" onClick={() => void updateMute(!audioMuted, videoMuted)}>
+            {audioMuted ? "Unmute audio" : "Mute audio"}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => void updateMute(audioMuted, !videoMuted)}>
+            {videoMuted ? "Enable video" : "Disable video"}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => void toggleScreenShare()}>
+            {screenSharing ? "Stop sharing" : "Share screen"}
+          </Button>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-2">
+          <Card className="border-border/60 bg-background/80 shadow-none">
+            <CardHeader>
+              <CardTitle className="font-heading text-xl">Local preview</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <video
+                ref={localVideoRef}
+                autoPlay
+                className="aspect-video w-full rounded-3xl border border-border/70 bg-slate-950 object-cover"
+                muted
+                playsInline
+              />
+              <p className="text-sm text-muted-foreground">
+                {audioMuted ? "audio muted" : "audio live"} | {videoMuted ? "video muted" : "video live"}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 bg-background/80 shadow-none">
+            <CardHeader>
+              <CardTitle className="font-heading text-xl">Participants</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {Object.values(participants).length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-sm text-muted-foreground">
+                  No remote participants yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Object.values(participants).map((participant) => (
+                    <div key={participant.participantId} className="rounded-2xl border border-border/70 bg-white/70 p-4">
+                      <p className="text-base font-semibold text-foreground">{participant.displayName}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {participant.audioMuted ? "audio muted" : "audio live"} |{" "}
+                        {participant.videoMuted ? "video muted" : "video live"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {remoteVideoConsumers.length > 0 ? (
+          <div className="grid gap-6 md:grid-cols-2">
+            {remoteVideoConsumers.map((consumer) => (
+              <RemoteVideoTile consumer={consumer} key={consumer.consumerId} />
+            ))}
+          </div>
+        ) : null}
+
+        {remoteAudioConsumers.map((consumer) => (
+          <audio
+            autoPlay
+            key={consumer.consumerId}
+            ref={(node) => {
+              if (node) {
+                node.srcObject = consumer.stream;
+              }
+            }}
+          />
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -626,10 +646,21 @@ function RemoteVideoTile({ consumer }: { consumer: RemoteConsumer }) {
   }, [consumer.stream]);
 
   return (
-    <article className="portal-panel">
-      <strong>{consumer.displayName}</strong>
-      <p className="portal-note">{consumer.source === "screen" ? "screen share" : "camera"}</p>
-      <video autoPlay className="portal-media-tile" playsInline ref={ref} />
-    </article>
+    <Card className="border-border/60 bg-background/80 shadow-none">
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="font-heading text-xl">{consumer.displayName}</CardTitle>
+          <Badge variant="outline">{consumer.source === "screen" ? "screen share" : "camera"}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <video
+          autoPlay
+          className="aspect-video w-full rounded-3xl border border-border/70 bg-slate-950 object-cover"
+          playsInline
+          ref={ref}
+        />
+      </CardContent>
+    </Card>
   );
 }

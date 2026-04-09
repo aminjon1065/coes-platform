@@ -1,4 +1,15 @@
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { initiateCallAction, scheduleCallAction } from "./actions";
 import { listUpcomingCallSchedules } from "@/lib/calls";
 import { listChatChannels } from "@/lib/chat";
@@ -23,158 +34,176 @@ export default async function CallsPage() {
   defaultEnd.setHours(defaultEnd.getHours() + 1);
 
   return (
-    <div className="portal-stack">
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <div>
-            <span className="portal-pill">Calls</span>
-            <h2>Operational calls and scheduled meetings</h2>
+    <div className="space-y-6">
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader className="gap-3">
+          <Badge variant="outline" className="w-fit">
+            Calls
+          </Badge>
+          <div className="space-y-1">
+            <CardTitle className="font-heading text-3xl">Operational calls and scheduled meetings</CardTitle>
+            <CardDescription>
+              Secure calls reuse portal session, channel context, and clearance model.
+            </CardDescription>
           </div>
-        </div>
-        <p className="portal-note">
-          Secure office calls share the portal session, channel context, and clearance
-          model. Use this workspace for instant coordination and scheduled meetings.
-        </p>
-      </section>
+        </CardHeader>
+      </Card>
 
-      <section className="portal-columns admin-split">
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Start call now</h2>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Start call now</CardTitle>
+            <CardDescription>Initiate an ad hoc bridge for an existing chat channel.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={initiateCallAction} className="grid gap-4">
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Channel</span>
+                <select className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15" name="channelId" required>
+                  <option value="">Select chat channel</option>
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name} | {channel.type} | class {channel.classification}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Title</span>
+                <Input name="title" placeholder="Incident bridge" />
+              </label>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Classification</span>
+                  <Input defaultValue="1" max="3" min="0" name="classification" type="number" />
+                </label>
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Max participants</span>
+                  <Input defaultValue="25" max="200" min="2" name="maxParticipants" type="number" />
+                </label>
+              </div>
+              <Button type="submit">Initiate call</Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Schedule meeting</CardTitle>
+            <CardDescription>Prepare a scheduled meeting and optionally bind it to a channel.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={scheduleCallAction} className="grid gap-4">
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Title</span>
+                <Input name="title" placeholder="Daily coordination" required />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Description</span>
+                <Textarea name="description" rows={4} />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Channel</span>
+                <select className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15" defaultValue="" name="channelId">
+                  <option value="">No linked channel</option>
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Start</span>
+                  <Input
+                    defaultValue={toDatetimeLocalValue(defaultStart)}
+                    name="scheduledStart"
+                    required
+                    type="datetime-local"
+                  />
+                </label>
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>End</span>
+                  <Input
+                    defaultValue={toDatetimeLocalValue(defaultEnd)}
+                    name="scheduledEnd"
+                    required
+                    type="datetime-local"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Classification</span>
+                  <Input defaultValue="1" max="3" min="0" name="classification" type="number" />
+                </label>
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Max participants</span>
+                  <Input defaultValue="25" max="200" min="2" name="maxParticipants" type="number" />
+                </label>
+              </div>
+              <Button type="submit" variant="outline">Save schedule</Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle className="font-heading text-2xl">Upcoming meetings</CardTitle>
+            <CardDescription>Future schedules visible to the current user.</CardDescription>
           </div>
-          <form action={initiateCallAction} className="portal-form">
-            <label>
-              Channel
-              <select className="portal-input" name="channelId" required>
-                <option value="">Select chat channel</option>
-                {channels.map((channel) => (
-                  <option key={channel.id} value={channel.id}>
-                    {channel.name} | {channel.type} | class {channel.classification}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Title
-              <input className="portal-input" name="title" placeholder="Incident bridge" />
-            </label>
-            <label>
-              Classification
-              <input className="portal-input" defaultValue="1" max="3" min="0" name="classification" type="number" />
-            </label>
-            <label>
-              Max participants
-              <input className="portal-input" defaultValue="25" max="200" min="2" name="maxParticipants" type="number" />
-            </label>
-            <button className="portal-button" type="submit">
-              Initiate call
-            </button>
-          </form>
-        </article>
-
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Schedule meeting</h2>
-          </div>
-          <form action={scheduleCallAction} className="portal-form">
-            <label>
-              Title
-              <input className="portal-input" name="title" placeholder="Daily coordination" required />
-            </label>
-            <label>
-              Description
-              <textarea className="portal-input" name="description" rows={4} />
-            </label>
-            <label>
-              Channel
-              <select className="portal-input" defaultValue="" name="channelId">
-                <option value="">No linked channel</option>
-                {channels.map((channel) => (
-                  <option key={channel.id} value={channel.id}>
-                    {channel.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Start
-              <input
-                className="portal-input"
-                defaultValue={toDatetimeLocalValue(defaultStart)}
-                name="scheduledStart"
-                required
-                type="datetime-local"
-              />
-            </label>
-            <label>
-              End
-              <input
-                className="portal-input"
-                defaultValue={toDatetimeLocalValue(defaultEnd)}
-                name="scheduledEnd"
-                required
-                type="datetime-local"
-              />
-            </label>
-            <label>
-              Classification
-              <input className="portal-input" defaultValue="1" max="3" min="0" name="classification" type="number" />
-            </label>
-            <label>
-              Max participants
-              <input className="portal-input" defaultValue="25" max="200" min="2" name="maxParticipants" type="number" />
-            </label>
-            <button className="portal-button secondary" type="submit">
-              Save schedule
-            </button>
-          </form>
-        </article>
-      </section>
-
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <h2>Upcoming meetings</h2>
-        </div>
-        <p className="portal-note">{total} visible scheduled meetings</p>
-        <ul className="portal-list">
+          <Badge variant="secondary">{total} meetings</Badge>
+        </CardHeader>
+        <CardContent>
           {schedules.length === 0 ? (
-            <li>No upcoming meetings.</li>
+            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-sm text-muted-foreground">
+              No upcoming meetings.
+            </div>
           ) : (
-            schedules.map((schedule) => (
-              <li key={schedule.id}>
-                <strong>{schedule.title}</strong>
-                <p className="portal-note">
-                  {schedule.scheduledStart} to {schedule.scheduledEnd}
-                </p>
-                <p className="portal-note">
-                  class {schedule.classification} | max {schedule.maxParticipants} | organizer {schedule.organizerId}
-                </p>
-                {schedule.description ? <p className="portal-note">{schedule.description}</p> : null}
-                {schedule.sessionId ? (
-                  <p>
-                    <Link className="portal-item-link" href={`/calls/${schedule.sessionId}`}>
-                      Open active session
-                    </Link>
-                  </p>
-                ) : null}
-                {schedule.channelId ? (
-                  <form action={initiateCallAction} className="portal-form">
-                    <input name="channelId" type="hidden" value={schedule.channelId} />
-                    <input name="title" type="hidden" value={schedule.title} />
-                    <input name="classification" type="hidden" value={String(schedule.classification)} />
-                    <input name="maxParticipants" type="hidden" value={String(schedule.maxParticipants)} />
-                    <button className="portal-button secondary" type="submit">
-                      Start from schedule
-                    </button>
-                  </form>
-                ) : (
-                  <p className="portal-note">No linked channel, schedule is informational only.</p>
-                )}
-              </li>
-            ))
+            <div className="space-y-4">
+              {schedules.map((schedule) => (
+                <div key={schedule.id} className="rounded-3xl border border-border/70 bg-background/80 p-5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-semibold text-foreground">{schedule.title}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {schedule.scheduledStart} to {schedule.scheduledEnd}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        class {schedule.classification} | max {schedule.maxParticipants} | organizer {schedule.organizerId}
+                      </p>
+                      {schedule.description ? (
+                        <p className="text-sm text-muted-foreground">{schedule.description}</p>
+                      ) : null}
+                    </div>
+                    {schedule.sessionId ? (
+                      <Link href={`/calls/${schedule.sessionId}`}>
+                        <Button type="button" variant="outline">Open active session</Button>
+                      </Link>
+                    ) : null}
+                  </div>
+                  <div className="mt-4">
+                    {schedule.channelId ? (
+                      <form action={initiateCallAction}>
+                        <input name="channelId" type="hidden" value={schedule.channelId} />
+                        <input name="title" type="hidden" value={schedule.title} />
+                        <input name="classification" type="hidden" value={String(schedule.classification)} />
+                        <input name="maxParticipants" type="hidden" value={String(schedule.maxParticipants)} />
+                        <Button type="submit" variant="outline">Start from schedule</Button>
+                      </form>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No linked channel, schedule is informational only.</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-        </ul>
-      </section>
+        </CardContent>
+      </Card>
     </div>
   );
 }

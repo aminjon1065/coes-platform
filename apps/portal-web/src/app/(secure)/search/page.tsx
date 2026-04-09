@@ -1,5 +1,15 @@
 import Link from "next/link";
 import { PORTAL_SEARCH_INDICES, type PortalSearchIndex, runGlobalSearch } from "@/lib/search";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
 type SearchPageProps = {
   searchParams?: Promise<{ q?: string; indices?: string | string[] }>;
@@ -43,84 +53,124 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       : null;
 
   return (
-    <div className="portal-stack">
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <div>
-            <span className="portal-pill">Search</span>
-            <h2>Global search</h2>
-          </div>
-        </div>
-        <form className="portal-form" method="get">
-          <label>
-            Query
-            <input
-              className="portal-input"
-              defaultValue={query}
-              name="q"
-              placeholder="Search tasks, documents, and indexed messages"
-            />
-          </label>
-          <div className="portal-check-grid">
-            {PORTAL_SEARCH_INDICES.map((index) => (
-              <label key={index} className="portal-check">
-                <input
-                  defaultChecked={indices.length === 0 || indices.includes(index)}
-                  name="indices"
-                  type="checkbox"
-                  value={index}
+    <div className="space-y-6">
+      <section className="grid gap-4 xl:grid-cols-[1fr_0.85fr]">
+        <Card className="overflow-hidden border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(232,242,252,0.88))]">
+          <CardHeader className="space-y-4">
+            <Badge className="w-fit">Search</Badge>
+            <div className="space-y-3">
+              <CardTitle className="font-display text-4xl leading-tight">Global search</CardTitle>
+              <CardDescription className="max-w-2xl text-base">
+                Unified cross-domain search across indexed tasks, documents, and messages.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4" method="get">
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Query
+                <Input
+                  defaultValue={query}
+                  name="q"
+                  placeholder="Search tasks, documents, and indexed messages"
                 />
-                <span>{index}</span>
               </label>
-            ))}
-          </div>
-          <div className="portal-actions">
-            <button className="portal-button" type="submit">
-              Search
-            </button>
-          </div>
-        </form>
+              <div className="grid gap-3 md:grid-cols-3">
+                {PORTAL_SEARCH_INDICES.map((index) => (
+                  <label
+                    className="flex items-center gap-3 rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground"
+                    key={index}
+                  >
+                    <input
+                      className="size-4 accent-[var(--primary)]"
+                      defaultChecked={indices.length === 0 || indices.includes(index)}
+                      name="indices"
+                      type="checkbox"
+                      value={index}
+                    />
+                    <span>{index}</span>
+                  </label>
+                ))}
+              </div>
+              <Button className="w-fit" type="submit">
+                Search
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(13,27,47,0.94),rgba(19,46,78,0.9))] text-white">
+          <CardHeader>
+            <CardDescription className="text-white/60">Search summary</CardDescription>
+            <CardTitle className="font-display text-3xl text-white">
+              {result ? `${result.total} hits` : "Awaiting query"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-white/70">
+            {result ? (
+              <>
+                <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                  Took {result.took} ms
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(indices.length > 0 ? indices : PORTAL_SEARCH_INDICES).map((index) => (
+                    <Badge className="border-white/10 bg-white/10 text-white" key={index}>
+                      {index}
+                    </Badge>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p>Enter a query to run the unified cross-domain search.</p>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
-      <section className="portal-panel">
-        {result ? (
-          <>
-            <p className="portal-note">
-              {result.total} hits · {result.took} ms
-            </p>
-            <ul className="portal-list">
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-display text-2xl">Results</CardTitle>
+          <CardDescription>Ranked results from the selected search indices.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {result ? (
+            <ul className="space-y-3">
               {result.hits.map((hit) => (
-                <li key={`${hit.index}-${hit.id}`}>
-                  <div className="portal-row">
-                    <div>
-                      <span className="portal-pill">{hit.index}</span>
-                      <h3>
+                <li className="rounded-3xl border border-border/70 bg-white/70 p-4" key={`${hit.index}-${hit.id}`}>
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-3">
+                      <Badge>{hit.index}</Badge>
+                      <div>
                         {hit.href ? (
-                          <Link className="portal-item-link" href={hit.href}>
+                          <Link className="font-semibold text-foreground" href={hit.href}>
                             {hit.title}
                           </Link>
                         ) : (
-                          hit.title
+                          <p className="font-semibold text-foreground">{hit.title}</p>
                         )}
-                      </h3>
-                      <p>{renderSnippet(hit)}</p>
-                      <p className="portal-note">
+                      </div>
+                      <p className="leading-7 text-foreground">{renderSnippet(hit)}</p>
+                      <p className="text-sm text-muted-foreground">
                         class {hit.classification ?? "n/a"} · updated {formatDateTime(hit.updatedAt)}
                       </p>
                     </div>
-                    <div className="portal-metadata">
-                      <span>score {hit.score.toFixed(2)}</span>
-                    </div>
+                    <div className="text-sm text-muted-foreground">score {hit.score.toFixed(2)}</div>
                   </div>
                 </li>
               ))}
-              {result.hits.length === 0 ? <li>No results found.</li> : null}
+              {result.hits.length === 0 ? (
+                <li className="rounded-2xl border border-dashed border-border bg-background/70 p-4 text-sm text-muted-foreground">
+                  No results found.
+                </li>
+              ) : null}
             </ul>
-          </>
-        ) : (
-          <p className="portal-note">Enter a query to run the unified cross-domain search.</p>
-        )}
-      </section>
+          ) : (
+            <p className="rounded-2xl border border-dashed border-border bg-background/70 p-4 text-sm text-muted-foreground">
+              Enter a query to run the unified cross-domain search.
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

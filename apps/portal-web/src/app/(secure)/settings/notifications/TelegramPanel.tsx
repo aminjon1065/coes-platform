@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 type TelegramSub = {
   chatId: string;
@@ -18,7 +20,7 @@ export default function TelegramPanel() {
 
   const fetchSub = useCallback(async () => {
     const res = await fetch("/api/notifications/telegram-subscription");
-    const data = await res.json() as TelegramSub;
+    const data = (await res.json()) as TelegramSub;
     setSub(data);
     return data;
   }, []);
@@ -33,7 +35,7 @@ export default function TelegramPanel() {
     try {
       const res = await fetch("/api/notifications/telegram/link");
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json() as { deepLink: string };
+      const data = (await res.json()) as { deepLink: string };
       setDeepLink(data.deepLink);
       startPolling();
     } catch (e) {
@@ -55,7 +57,7 @@ export default function TelegramPanel() {
         setDeepLink(null);
         return;
       }
-      if (attempts >= 30) { // 60 seconds
+      if (attempts >= 30) {
         clearInterval(interval);
         setPolling(false);
       }
@@ -77,76 +79,67 @@ export default function TelegramPanel() {
   }
 
   if (sub === undefined) {
-    return <p className="portal-note">Loading Telegram status...</p>;
-  }
-
-  if (sub?.status === "active") {
-    return (
-      <div>
-        <p style={{ color: "var(--success, green)", fontWeight: 600 }}>
-          Connected to Telegram
-          {sub.displayName ? ` (${sub.displayName})` : ""}
-          {sub.username ? ` @${sub.username}` : ""}
-        </p>
-        {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
-        <button
-          className="portal-button secondary"
-          onClick={unlink}
-          disabled={busy}
-          style={{ marginTop: "0.75rem" }}
-        >
-          {busy ? "Unlinking..." : "Disconnect Telegram"}
-        </button>
-      </div>
-    );
+    return <p className="text-sm text-muted-foreground">Loading Telegram status...</p>;
   }
 
   return (
-    <div>
-      <p className="portal-note">
-        Not connected. Link your Telegram account to receive alerts via the bot.
-      </p>
-      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
+    <div className="space-y-4">
+      {sub?.status === "active" ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+          <p>
+            Connected to Telegram
+            {sub.displayName ? ` (${sub.displayName})` : ""}
+            {sub.username ? ` @${sub.username}` : ""}
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Not connected. Link your Telegram account to receive alerts via the bot.
+        </p>
+      )}
 
-      {deepLink ? (
-        <div style={{ marginTop: "0.75rem" }}>
-          <p className="portal-note">
+      {error ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <p>{error}</p>
+        </div>
+      ) : null}
+
+      {sub?.status === "active" ? (
+        <Button disabled={busy} onClick={unlink} type="button" variant="outline">
+          {busy ? "Unlinking..." : "Disconnect Telegram"}
+        </Button>
+      ) : deepLink ? (
+        <div className="space-y-4 rounded-3xl border border-border/70 bg-background/80 p-5">
+          <p className="text-sm text-muted-foreground">
             {polling
               ? "Waiting for you to open the bot link..."
               : "Click the link below to connect:"}
           </p>
-          <a
-            href={deepLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="portal-button"
-            style={{ display: "inline-block", marginBottom: "0.5rem" }}
-          >
-            Open Telegram Bot
+          <a href={deepLink} rel="noopener noreferrer" target="_blank">
+            <Button type="button">Open Telegram Bot</Button>
           </a>
-          {polling && (
-            <p className="portal-note" style={{ marginTop: "0.5rem" }}>
-              Detecting connection... this may take a few seconds after you open the bot.
+          {polling ? (
+            <p className="text-sm text-muted-foreground">
+              Detecting connection. This may take a few seconds after you open the bot.
             </p>
-          )}
-          <br />
-          <button
-            className="portal-button secondary"
-            onClick={() => { setDeepLink(null); setPolling(false); }}
-            style={{ marginTop: "0.25rem" }}
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setDeepLink(null);
+              setPolling(false);
+            }}
           >
             Cancel
-          </button>
+          </Button>
         </div>
       ) : (
-        <button
-          className="portal-button"
-          onClick={generateLink}
-          disabled={busy}
-          style={{ marginTop: "0.75rem" }}
-        >
+        <Button disabled={busy} onClick={generateLink} type="button">
           {busy ? "Generating link..." : "Connect Telegram"}
-        </button>
+        </Button>
       )}
     </div>
   );

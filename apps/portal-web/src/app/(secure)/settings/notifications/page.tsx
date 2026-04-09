@@ -1,8 +1,16 @@
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { authorizedBackendJson } from "@/lib/auth";
+import PreferencesForm from "./PreferencesForm";
 import PushToggle from "./PushToggle";
 import TelegramPanel from "./TelegramPanel";
-import PreferencesForm from "./PreferencesForm";
-import Link from "next/link";
 
 type Preference = {
   notificationType: string | null;
@@ -26,45 +34,57 @@ export default async function NotificationSettingsPage() {
   const preferences = await getPreferences();
 
   return (
-    <div style={{ padding: "2rem", maxWidth: "720px" }}>
-      <nav style={{ marginBottom: "1.5rem" }}>
-        <Link href="/settings/security" className="portal-button secondary">
-          Security
-        </Link>
-        <span
-          className="portal-button"
-          style={{ marginLeft: "0.5rem", pointerEvents: "none", opacity: 1 }}
-        >
-          Notifications
-        </span>
-      </nav>
+    <div className="space-y-6">
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader className="gap-4">
+          <div className="space-y-1">
+            <CardTitle className="font-heading text-3xl">Notification settings</CardTitle>
+            <CardDescription>
+              Manage delivery channels for browser, Telegram, and default portal notifications.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/settings/security">
+              <Button type="button" variant="outline">Security</Button>
+            </Link>
+            <Button type="button" disabled>Notifications</Button>
+          </div>
+        </CardHeader>
+      </Card>
 
-      <h1>Notification Settings</h1>
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader>
+          <CardTitle className="font-heading text-2xl">Delivery Preferences</CardTitle>
+          <CardDescription>Default delivery channels for all notification types.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PreferencesForm initialPreferences={preferences} />
+        </CardContent>
+      </Card>
 
-      {/* ── Delivery Preferences ─────────────────────────────────────────── */}
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Delivery Preferences</h2>
-        <PreferencesForm initialPreferences={preferences} />
-      </section>
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader>
+          <CardTitle className="font-heading text-2xl">Browser Push Notifications</CardTitle>
+          <CardDescription>
+            Receive alerts in this browser even when the portal tab is in the background.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PushToggle />
+        </CardContent>
+      </Card>
 
-      {/* ── Web Push ─────────────────────────────────────────────────────── */}
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Browser Push Notifications</h2>
-        <p className="portal-note">
-          Receive alerts in this browser even when the portal tab is in the background.
-          Each device must be enabled separately.
-        </p>
-        <PushToggle />
-      </section>
-
-      {/* ── Telegram ─────────────────────────────────────────────────────── */}
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Telegram Alerts</h2>
-        <p className="portal-note">
-          Connect your Telegram account to receive critical alerts via the CoESCD bot.
-        </p>
-        <TelegramPanel />
-      </section>
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader>
+          <CardTitle className="font-heading text-2xl">Telegram Alerts</CardTitle>
+          <CardDescription>
+            Connect your Telegram account to receive critical alerts via the CoESCD bot.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TelegramPanel />
+        </CardContent>
+      </Card>
     </div>
   );
 }

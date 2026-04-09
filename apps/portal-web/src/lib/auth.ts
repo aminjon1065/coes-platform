@@ -52,6 +52,8 @@ async function backendJson<T>(
   const response = await fetch(`${getBackendBaseUrl()}${path}`, {
     ...init,
     cache: "no-store",
+    // Abort requests that take longer than 10 s — prevents server action hangs
+    signal: init.signal ?? AbortSignal.timeout(10_000),
     headers: {
       "Content-Type": "application/json",
       ...(init.headers ?? {}),
@@ -247,6 +249,8 @@ export async function loginAndCreateSession(
   const user = await fetchOwnProfile(result.accessToken);
   const cookieStore = await cookies();
   await persistSession(cookieStore, result, user);
+  // Clear any stale MFA pending cookie from a previous login attempt
+  cookieStore.delete(MFA_PENDING_COOKIE);
 
   return { status: "ok", user };
 }

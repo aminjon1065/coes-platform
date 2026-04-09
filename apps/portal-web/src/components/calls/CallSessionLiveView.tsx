@@ -1,6 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { usePortalRealtimeRoom } from "@/components/realtime/usePortalRealtimeRoom";
 import type { PortalCallSession } from "@/lib/calls";
 
@@ -113,72 +121,90 @@ export function CallSessionLiveView({ session }: CallSessionLiveViewProps) {
   });
 
   return (
-    <div className="portal-stack">
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <h2>Live session state</h2>
-          <p className="portal-note">
-            realtime {status}
-            {lastEventAt ? ` | last event ${formatDateTime(lastEventAt)}` : ""}
-          </p>
-        </div>
-        <p className="portal-note">
-          status {liveSession.status} | participants {liveSession.participants.length}/{liveSession.maxParticipants}
-        </p>
-      </section>
-
-      <section className="portal-columns admin-split">
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Participants</h2>
+    <div className="space-y-6">
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle className="font-heading text-2xl">Live session state</CardTitle>
+            <CardDescription>
+              realtime {status}
+              {lastEventAt ? ` | last event ${formatDateTime(lastEventAt)}` : ""}
+            </CardDescription>
           </div>
-          <ul className="portal-list">
+          <Badge variant="secondary">
+            {liveSession.participants.length}/{liveSession.maxParticipants} participants
+          </Badge>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            status {liveSession.status}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-xl">Participants</CardTitle>
+          </CardHeader>
+          <CardContent>
             {liveSession.participants.length === 0 ? (
-              <li>No participants registered.</li>
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-sm text-muted-foreground">
+                No participants registered.
+              </div>
             ) : (
-              liveSession.participants.map((participant) => (
-                <li key={participant.id}>
-                  <strong>{participant.displayName}</strong>
-                  <p className="portal-note">
-                    {participant.status}
-                    {participant.isModerator ? " | moderator" : ""}
-                    {participant.positionId ? ` | position ${participant.positionId}` : ""}
-                  </p>
-                  <p className="portal-note">
-                    joined {formatDateTime(participant.joinedAt)} | left {formatDateTime(participant.leftAt)}
-                  </p>
-                </li>
-              ))
+              <div className="space-y-3">
+                {liveSession.participants.map((participant) => (
+                  <div key={participant.id} className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-semibold text-foreground">{participant.displayName}</p>
+                      <Badge variant="outline">{participant.status}</Badge>
+                      {participant.isModerator ? <Badge variant="secondary">moderator</Badge> : null}
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {participant.positionId ? `position ${participant.positionId} | ` : ""}
+                      joined {formatDateTime(participant.joinedAt)} | left {formatDateTime(participant.leftAt)}
+                    </p>
+                  </div>
+                ))}
+              </div>
             )}
-          </ul>
-        </article>
+          </CardContent>
+        </Card>
 
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Recordings</h2>
-          </div>
-          <ul className="portal-list">
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-xl">Recordings</CardTitle>
+          </CardHeader>
+          <CardContent>
             {liveSession.recordings.length === 0 ? (
-              <li>No recordings for this session.</li>
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-sm text-muted-foreground">
+                No recordings for this session.
+              </div>
             ) : (
-              liveSession.recordings.map((recording) => (
-                <li key={recording.id}>
-                  <strong>{recording.status}</strong>
-                  <p className="portal-note">
-                    started {formatDateTime(recording.startedAt)} | stopped {formatDateTime(recording.stoppedAt)}
-                  </p>
-                  <p className="portal-note">
-                    expires {formatDateTime(recording.expiresAt)} | duration {recording.durationSeconds ?? 0}s | size {recording.sizeBytes ?? 0} bytes
-                  </p>
-                  <p className="portal-note">
-                    artifact {recording.storageKey ?? "not finalized yet"}
-                  </p>
-                </li>
-              ))
+              <div className="space-y-3">
+                {liveSession.recordings.map((recording) => (
+                  <div key={recording.id} className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-semibold text-foreground">{recording.status}</p>
+                      <Badge variant="outline">class {recording.classification}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      started {formatDateTime(recording.startedAt)} | stopped {formatDateTime(recording.stoppedAt)}
+                    </p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      expires {formatDateTime(recording.expiresAt)} | duration {recording.durationSeconds ?? 0}s | size {recording.sizeBytes ?? 0} bytes
+                    </p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      artifact {recording.storageKey ?? "not finalized yet"}
+                    </p>
+                  </div>
+                ))}
+              </div>
             )}
-          </ul>
-        </article>
-      </section>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

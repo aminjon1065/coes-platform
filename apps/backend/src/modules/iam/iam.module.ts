@@ -18,6 +18,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthController } from './controllers/auth.controller';
 import { MfaController } from './controllers/mfa.controller';
 import { SsoController } from './controllers/sso.controller';
+import { UsersModule } from '../users/users.module';
 
 @Global()
 @Module({
@@ -25,6 +26,7 @@ import { SsoController } from './controllers/sso.controller';
     TypeOrmModule.forFeature([UserCredential, RefreshToken, SsoConfiguration, MfaCredential]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({}), // Configured dynamically per call in IamService
+    UsersModule,
   ],
   controllers: [AuthController, MfaController, SsoController],
   providers: [

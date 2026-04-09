@@ -1,7 +1,15 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  getAnalyticsForm,
-  listAnalyticsFormSubmissions,
-} from "@/lib/analytics";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { getAnalyticsForm, listAnalyticsFormSubmissions } from "@/lib/analytics";
 import {
   publishAnalyticsFormAction,
   reviewAnalyticsSubmissionAction,
@@ -24,106 +32,132 @@ export default async function AnalyticsFormDetailPage({
   ]);
 
   return (
-    <div className="portal-stack">
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <div>
-            <span className="portal-pill">{form.status}</span>
-            <h2>{form.name}</h2>
+    <div className="space-y-6">
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader className="gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{form.status}</Badge>
+            <Badge variant="secondary">{form.incidentType ?? "Generic"}</Badge>
+            <Badge variant="secondary">{form.fieldCount} fields</Badge>
           </div>
-        </div>
-        <p className="portal-note">
-          {form.incidentType ?? "Generic"} | classification {form.classification} | {form.fieldCount} fields
-        </p>
-        {form.description ? <p className="portal-note">{form.description}</p> : null}
+          <div className="space-y-1">
+            <CardTitle className="font-heading text-3xl">{form.name}</CardTitle>
+            <CardDescription>
+              Classification {form.classification}
+              {form.description ? ` | ${form.description}` : ""}
+            </CardDescription>
+          </div>
+        </CardHeader>
         {form.status !== "published" ? (
-          <form action={publishAnalyticsFormAction}>
-            <input name="formId" type="hidden" value={form.id} />
-            <button className="portal-button" type="submit">
-              Publish form
-            </button>
-          </form>
+          <CardContent>
+            <form action={publishAnalyticsFormAction}>
+              <input name="formId" type="hidden" value={form.id} />
+              <Button type="submit">Publish form</Button>
+            </form>
+          </CardContent>
         ) : null}
-      </section>
+      </Card>
 
-      <section className="portal-columns">
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Fields</h2>
-          </div>
-          <pre className="portal-code-block">
-            {JSON.stringify(form.fields ?? [], null, 2)}
-          </pre>
-        </article>
+      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Fields</CardTitle>
+            <CardDescription>Current field schema for this template.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <pre className="overflow-x-auto rounded-3xl border border-border/70 bg-slate-950 p-4 text-xs text-slate-100">
+              {JSON.stringify(form.fields ?? [], null, 2)}
+            </pre>
+          </CardContent>
+        </Card>
 
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Submit sample payload</h2>
-          </div>
-          <form action={submitAnalyticsFormAction} className="portal-form">
-            <input name="formId" type="hidden" value={form.id} />
-            <label>
-              Incident ID
-              <input className="portal-input" name="incidentId" />
-            </label>
-            <label>
-              Incident ref
-              <input className="portal-input" name="incidentRef" />
-            </label>
-            <label>
-              Data JSON
-              <textarea className="portal-input" name="dataJson" rows={8} />
-            </label>
-            <button className="portal-button" type="submit">
-              Submit form
-            </button>
-          </form>
-        </article>
-      </section>
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Submit sample payload</CardTitle>
+            <CardDescription>Send a test submission against the template schema.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={submitAnalyticsFormAction} className="grid gap-4">
+              <input name="formId" type="hidden" value={form.id} />
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Incident ID</span>
+                  <Input name="incidentId" />
+                </label>
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Incident ref</span>
+                  <Input name="incidentRef" />
+                </label>
+              </div>
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Data JSON</span>
+                <Textarea name="dataJson" rows={8} />
+              </label>
+              <Button type="submit">Submit form</Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
 
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <h2>Submissions</h2>
-        </div>
-        <ul className="portal-list">
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader>
+          <CardTitle className="font-heading text-2xl">Submissions</CardTitle>
+          <CardDescription>Review incoming payloads and moderation decisions.</CardDescription>
+        </CardHeader>
+        <CardContent>
           {submissions.length === 0 ? (
-            <li>No submissions for this form yet.</li>
+            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-sm text-muted-foreground">
+              No submissions for this form yet.
+            </div>
           ) : (
-            submissions.map((submission) => (
-              <li key={submission.id}>
-                <strong>{submission.status}</strong>
-                <p className="portal-note">
-                  submitted {submission.submittedAt} | incident {submission.incidentRef ?? submission.incidentId ?? "n/a"}
-                </p>
-                <pre className="portal-code-block">
-                  {JSON.stringify(submission.data, null, 2)}
-                </pre>
-                <form action={reviewAnalyticsSubmissionAction} className="portal-form">
-                  <input name="formId" type="hidden" value={form.id} />
-                  <input name="submissionId" type="hidden" value={submission.id} />
-                  <label>
-                    Review status
-                    <select className="portal-input" defaultValue={submission.status} name="status">
-                      <option value="submitted">submitted</option>
-                      <option value="under_review">under_review</option>
-                      <option value="accepted">accepted</option>
-                      <option value="rejected">rejected</option>
-                      <option value="requires_revision">requires_revision</option>
-                    </select>
-                  </label>
-                  <label>
-                    Notes
-                    <input className="portal-input" defaultValue={submission.reviewNotes ?? ""} name="notes" />
-                  </label>
-                  <button className="portal-button secondary" type="submit">
-                    Review submission
-                  </button>
-                </form>
-              </li>
-            ))
+            <div className="space-y-4">
+              {submissions.map((submission) => (
+                <div key={submission.id} className="rounded-3xl border border-border/70 bg-background/80 p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{submission.status}</Badge>
+                    <Badge variant="secondary">
+                      {submission.incidentRef ?? submission.incidentId ?? "n/a"}
+                    </Badge>
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Submitted {submission.submittedAt}
+                  </p>
+                  <pre className="mt-4 overflow-x-auto rounded-3xl border border-border/70 bg-slate-950 p-4 text-xs text-slate-100">
+                    {JSON.stringify(submission.data, null, 2)}
+                  </pre>
+                  <form action={reviewAnalyticsSubmissionAction} className="mt-4 grid gap-4 md:grid-cols-2">
+                    <input name="formId" type="hidden" value={form.id} />
+                    <input name="submissionId" type="hidden" value={submission.id} />
+                    <label className="space-y-2 text-sm font-medium text-foreground">
+                      <span>Review status</span>
+                      <select
+                        className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+                        defaultValue={submission.status}
+                        name="status"
+                      >
+                        <option value="submitted">submitted</option>
+                        <option value="under_review">under_review</option>
+                        <option value="accepted">accepted</option>
+                        <option value="rejected">rejected</option>
+                        <option value="requires_revision">requires_revision</option>
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm font-medium text-foreground">
+                      <span>Notes</span>
+                      <Input defaultValue={submission.reviewNotes ?? ""} name="notes" />
+                    </label>
+                    <div className="md:col-span-2">
+                      <Button type="submit" variant="outline">
+                        Review submission
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              ))}
+            </div>
           )}
-        </ul>
-      </section>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -1,4 +1,13 @@
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   endCallAction,
   joinCallAction,
@@ -6,10 +15,7 @@ import {
   startCallRecordingAction,
   stopCallRecordingAction,
 } from "../actions";
-import {
-  moderateParticipantAction,
-  removeParticipantAction,
-} from "./actions";
+import { moderateParticipantAction, removeParticipantAction } from "./actions";
 import { CallSessionLiveView } from "@/components/calls/CallSessionLiveView";
 import { MediaCallClient } from "@/components/calls/MediaCallClient";
 import { getSessionUser } from "@/lib/auth";
@@ -30,175 +36,209 @@ export default async function CallSessionPage({ params }: CallSessionPageProps) 
   const isModerator = Boolean(currentParticipant?.isModerator);
 
   return (
-    <div className="portal-stack">
-      <nav className="portal-note">
-        <Link href="/calls">Calls</Link> / {session.title ?? session.id}
+    <div className="space-y-6">
+      <nav className="text-sm text-muted-foreground">
+        <Link className="transition hover:text-foreground" href="/calls">
+          Calls
+        </Link>{" "}
+        / {session.title ?? session.id}
       </nav>
 
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <div>
-            <span className="portal-pill">{session.status}</span>
-            <h2>{session.title ?? "Untitled call session"}</h2>
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader className="gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{session.status}</Badge>
+            <Badge variant="secondary">Class {session.classification}</Badge>
+            <Badge variant="secondary">Max {session.maxParticipants}</Badge>
           </div>
-        </div>
-        <p className="portal-note">
-          channel {session.channelId} | class {session.classification} | max {session.maxParticipants}
-        </p>
-        <p className="portal-note">
-          initiated by {session.initiatedById} | started {session.actualStart ?? "n/a"} | ended {session.endedAt ?? "active"}
-        </p>
-      </section>
+          <div className="space-y-1">
+            <CardTitle className="font-heading text-3xl">
+              {session.title ?? "Untitled call session"}
+            </CardTitle>
+            <CardDescription>channel {session.channelId}</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+            initiated by {session.initiatedById}
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+            started {session.actualStart ?? "n/a"}
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+            ended {session.endedAt ?? "active"}
+          </div>
+        </CardContent>
+      </Card>
 
-      <section className="portal-panel">
-        <CallSessionLiveView session={session} />
-      </section>
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardContent className="pt-6">
+          <CallSessionLiveView session={session} />
+        </CardContent>
+      </Card>
 
       {session.status === "active" ? <MediaCallClient sessionId={session.id} /> : null}
 
-      <section className="portal-columns admin-split">
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Moderator controls</h2>
-          </div>
-          <div className="portal-stack">
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Moderator controls</CardTitle>
+            <CardDescription>Session membership, lifecycle, and recording controls.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
             {currentParticipant ? (
-              <form action={leaveCallAction} className="portal-form">
+              <form action={leaveCallAction}>
                 <input name="sessionId" type="hidden" value={session.id} />
-                <button className="portal-button secondary" type="submit">
+                <Button type="submit" variant="outline">
                   Leave call
-                </button>
+                </Button>
               </form>
             ) : (
-              <form action={joinCallAction} className="portal-form">
+              <form action={joinCallAction}>
                 <input name="sessionId" type="hidden" value={session.id} />
-                <button className="portal-button" type="submit">
-                  Join call
-                </button>
+                <Button type="submit">Join call</Button>
               </form>
             )}
 
             {session.status === "active" ? (
-              <form action={endCallAction} className="portal-form">
+              <form action={endCallAction}>
                 <input name="sessionId" type="hidden" value={session.id} />
-                <button className="portal-button secondary" type="submit">
+                <Button type="submit" variant="outline">
                   End session
-                </button>
+                </Button>
               </form>
             ) : null}
 
             {session.status === "active" && !activeRecording ? (
-              <form action={startCallRecordingAction} className="portal-form">
+              <form action={startCallRecordingAction}>
                 <input name="sessionId" type="hidden" value={session.id} />
-                <button className="portal-button secondary" type="submit">
+                <Button type="submit" variant="outline">
                   Start recording
-                </button>
+                </Button>
               </form>
             ) : null}
 
             {activeRecording ? (
-              <form action={stopCallRecordingAction} className="portal-form">
+              <form action={stopCallRecordingAction}>
                 <input name="sessionId" type="hidden" value={session.id} />
                 <input name="recordingId" type="hidden" value={activeRecording.id} />
-                <button className="portal-button secondary" type="submit">
+                <Button type="submit" variant="outline">
                   Stop recording
-                </button>
+                </Button>
               </form>
             ) : null}
-          </div>
-        </article>
+          </CardContent>
+        </Card>
 
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Operational notes</h2>
-          </div>
-          <p className="portal-note">
-            Live participant and recording state is streamed through the shared portal realtime gateway.
-          </p>
-          <p className="portal-note">
-            Browser media now uses the dedicated mediasoup service in `apps/media`, while this page remains the control plane for permissions, lifecycle, and recording.
-          </p>
-          <p className="portal-note">
-            Recordings finalize server-side into a session artifact manifest. While the recorder is shutting down, the status stays in `processing`.
-          </p>
-        </article>
-      </section>
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Operational notes</CardTitle>
+            <CardDescription>How realtime media and recordings are handled in the portal.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              Live participant and recording state is streamed through the shared portal realtime gateway.
+            </p>
+            <p>
+              Browser media uses the dedicated mediasoup service in `apps/media`, while this page remains the control plane for permissions, lifecycle, and recording.
+            </p>
+            <p>
+              Recordings finalize server-side into a session artifact manifest. While the recorder is shutting down, the status stays in `processing`.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <h2>Recordings</h2>
-        </div>
-        {session.recordings.length === 0 ? (
-          <p className="portal-note">No recordings for this session yet.</p>
-        ) : (
-          <ul className="portal-list">
-            {session.recordings.map((recording) => (
-              <li key={recording.id}>
-                <strong>{recording.status}</strong>
-                <p className="portal-note">
-                  started {recording.startedAt} | stopped {recording.stoppedAt ?? "active"}
-                </p>
-                  <p className="portal-note">
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader>
+          <CardTitle className="font-heading text-2xl">Recordings</CardTitle>
+          <CardDescription>Session capture state and downloadable archives.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {session.recordings.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-sm text-muted-foreground">
+              No recordings for this session yet.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {session.recordings.map((recording) => (
+                <div key={recording.id} className="rounded-3xl border border-border/70 bg-background/80 p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{recording.status}</Badge>
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    started {recording.startedAt} | stopped {recording.stoppedAt ?? "active"}
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
                     duration {recording.durationSeconds ?? "n/a"}s | size {recording.sizeBytes ?? "n/a"} bytes
                   </p>
-                  <p className="portal-note">
+                  <p className="mt-2 text-sm text-muted-foreground">
                     artifact {recording.storageKey ?? "not finalized yet"}
                   </p>
                   {recording.status === "ready" ? (
-                    <p className="portal-note">
-                      <a href={`/api/calls/recordings/${recording.id}/download`}>Download archive</a>
-                    </p>
+                    <a
+                      className="mt-3 inline-flex text-sm font-medium text-primary transition hover:text-primary/80"
+                      href={`/api/calls/recordings/${recording.id}/download`}
+                    >
+                      Download archive
+                    </a>
                   ) : null}
-                </li>
+                </div>
               ))}
-          </ul>
-        )}
-      </section>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {isModerator ? (
-        <section className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Participant moderation</h2>
-          </div>
-          <ul className="portal-list">
-            {session.participants
-              .filter((participant) => participant.id !== currentParticipant?.id)
-              .map((participant) => (
-                <li key={participant.id}>
-                  <strong>{participant.displayName}</strong>
-                  <p className="portal-note">
-                    {participant.status}
-                    {participant.isModerator ? " | moderator" : ""}
-                  </p>
-                  <div className="portal-actions">
-                    <form action={moderateParticipantAction}>
-                      <input name="sessionId" type="hidden" value={session.id} />
-                      <input name="participantId" type="hidden" value={participant.id} />
-                      <input name="audioMuted" type="hidden" value={String(!participant.audioMuted)} />
-                      <button className="portal-button secondary" type="submit">
-                        {participant.audioMuted ? "Unmute audio" : "Mute audio"}
-                      </button>
-                    </form>
-                    <form action={moderateParticipantAction}>
-                      <input name="sessionId" type="hidden" value={session.id} />
-                      <input name="participantId" type="hidden" value={participant.id} />
-                      <input name="videoMuted" type="hidden" value={String(!participant.videoMuted)} />
-                      <button className="portal-button secondary" type="submit">
-                        {participant.videoMuted ? "Enable video" : "Mute video"}
-                      </button>
-                    </form>
-                    <form action={removeParticipantAction}>
-                      <input name="sessionId" type="hidden" value={session.id} />
-                      <input name="participantId" type="hidden" value={participant.id} />
-                      <button className="portal-button secondary" type="submit">
-                        Remove participant
-                      </button>
-                    </form>
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Participant moderation</CardTitle>
+            <CardDescription>Moderator-only actions for other session participants.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {session.participants
+                .filter((participant) => participant.id !== currentParticipant?.id)
+                .map((participant) => (
+                  <div key={participant.id} className="rounded-3xl border border-border/70 bg-background/80 p-5">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-lg font-semibold text-foreground">{participant.displayName}</p>
+                        <Badge variant="outline">{participant.status}</Badge>
+                        {participant.isModerator ? <Badge variant="secondary">moderator</Badge> : null}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <form action={moderateParticipantAction}>
+                        <input name="sessionId" type="hidden" value={session.id} />
+                        <input name="participantId" type="hidden" value={participant.id} />
+                        <input name="audioMuted" type="hidden" value={String(!participant.audioMuted)} />
+                        <Button type="submit" variant="outline">
+                          {participant.audioMuted ? "Unmute audio" : "Mute audio"}
+                        </Button>
+                      </form>
+                      <form action={moderateParticipantAction}>
+                        <input name="sessionId" type="hidden" value={session.id} />
+                        <input name="participantId" type="hidden" value={participant.id} />
+                        <input name="videoMuted" type="hidden" value={String(!participant.videoMuted)} />
+                        <Button type="submit" variant="outline">
+                          {participant.videoMuted ? "Enable video" : "Mute video"}
+                        </Button>
+                      </form>
+                      <form action={removeParticipantAction}>
+                        <input name="sessionId" type="hidden" value={session.id} />
+                        <input name="participantId" type="hidden" value={participant.id} />
+                        <Button type="submit" variant="outline">
+                          Remove participant
+                        </Button>
+                      </form>
+                    </div>
                   </div>
-                </li>
-              ))}
-          </ul>
-        </section>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : null}
     </div>
   );

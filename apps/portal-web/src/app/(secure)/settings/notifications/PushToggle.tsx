@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const raw = atob(base64);
-  return Uint8Array.from(Array.from(raw), (c) => c.charCodeAt(0));
+  const bytes = Uint8Array.from(Array.from(raw), (c) => c.charCodeAt(0));
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }
 
 type SwState = "loading" | "unsupported" | "denied" | "subscribed" | "unsubscribed";
@@ -37,7 +43,7 @@ export default function PushToggle() {
     setError(null);
     try {
       const keyRes = await fetch("/api/notifications/push-public-key");
-      const { publicKey } = await keyRes.json() as { publicKey: string };
+      const { publicKey } = (await keyRes.json()) as { publicKey: string };
       if (!publicKey) throw new Error("Push notifications are not configured on this server");
 
       const permission = await Notification.requestPermission();
@@ -101,12 +107,12 @@ export default function PushToggle() {
   }
 
   if (swState === "loading") {
-    return <p className="portal-note">Checking push notification status...</p>;
+    return <p className="text-sm text-muted-foreground">Checking push notification status...</p>;
   }
 
   if (swState === "unsupported") {
     return (
-      <p className="portal-note">
+      <p className="text-sm text-muted-foreground">
         Push notifications are not supported in this browser.
       </p>
     );
@@ -114,33 +120,39 @@ export default function PushToggle() {
 
   if (swState === "denied") {
     return (
-      <p className="portal-note" style={{ color: "var(--danger)" }}>
-        Push notifications are blocked. Allow them in browser settings, then reload.
-      </p>
+      <div className="flex items-start gap-3 rounded-2xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <AlertCircle className="mt-0.5 size-4 shrink-0" />
+        <p>Push notifications are blocked. Allow them in browser settings, then reload.</p>
+      </div>
     );
   }
 
   return (
-    <div>
-      <p className="portal-note">
-        Status:{" "}
-        <strong style={{ color: swState === "subscribed" ? "var(--success, green)" : undefined }}>
-          {swState === "subscribed" ? "Enabled on this device" : "Disabled"}
-        </strong>
-      </p>
-      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground">Status:</span>
+        {swState === "subscribed" ? (
+          <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+            Enabled on this device
+          </Badge>
+        ) : (
+          <Badge variant="outline">Disabled</Badge>
+        )}
+      </div>
+      {error ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <p>{error}</p>
+        </div>
+      ) : null}
       {swState === "subscribed" ? (
-        <button
-          className="portal-button secondary"
-          onClick={unsubscribe}
-          disabled={busy}
-        >
+        <Button disabled={busy} onClick={unsubscribe} type="button" variant="outline">
           {busy ? "Disabling..." : "Disable on this device"}
-        </button>
+        </Button>
       ) : (
-        <button className="portal-button" onClick={subscribe} disabled={busy}>
+        <Button disabled={busy} onClick={subscribe} type="button">
           {busy ? "Enabling..." : "Enable push notifications"}
-        </button>
+        </Button>
       )}
     </div>
   );

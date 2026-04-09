@@ -1,6 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { usePortalRealtimeRoom } from "@/components/realtime/usePortalRealtimeRoom";
 import type {
   PortalChatChannelDetail,
@@ -320,76 +330,86 @@ export function ChatThreadClient({
   }
 
   return (
-    <div className="portal-stack">
-      <section className="portal-panel chat-thread-panel">
-        <div className="portal-section-head">
-          <div>
-            <span className="portal-pill">{channel.type}</span>
-            <h2>{channel.name}</h2>
+    <div className="space-y-6">
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{channel.type}</Badge>
+              <Badge variant="secondary">Unread {channel.unreadCount}</Badge>
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="font-heading text-2xl">{channel.name}</CardTitle>
+              <CardDescription>{channel.members.length} members</CardDescription>
+            </div>
           </div>
-          <p className="portal-note">
-            {channel.members.length} members · unread {channel.unreadCount}
-          </p>
-        </div>
-        <ul className="portal-list">
-          {channel.members.map((member) => (
-            <li key={member.id}>
-              <div className="portal-row">
-                <span>{member.userId ?? member.positionId}</span>
-                <span className="portal-note">{presenceLabel(member.userId ? presenceByUserId[member.userId] : null)}</span>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {channel.members.map((member) => (
+              <div
+                key={member.id}
+                className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2 text-sm"
+              >
+                <span className="font-medium text-foreground">
+                  {member.userId ?? member.positionId}
+                </span>
+                <span className="ml-2 text-muted-foreground">
+                  {presenceLabel(member.userId ? presenceByUserId[member.userId] : null)}
+                </span>
               </div>
-            </li>
-          ))}
-        </ul>
-        {typingUsers.length > 0 ? (
-          <p className="portal-note">Typing: {typingUsers.join(", ")}</p>
-        ) : null}
-        <ul className="portal-list chat-message-list">
+            ))}
+          </div>
+          {typingUsers.length > 0 ? (
+            <p className="text-sm text-muted-foreground">Typing: {typingUsers.join(", ")}</p>
+          ) : null}
           {messages.length === 0 ? (
-            <li>No messages yet.</li>
+            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-sm text-muted-foreground">
+              No messages yet.
+            </div>
           ) : (
-            messages.map((message) => (
-              <li key={message.id} className="chat-message-item">
-                <div className="portal-row">
-                  <div>
-                    <strong>{message.senderLabel}</strong>
-                    <p>{message.isDeleted ? "Message deleted" : message.body ?? "Attachment only"}</p>
-                    <p className="portal-note">
-                      #{message.sequence} · {formatDateTime(message.createdAt)}
-                      {message.isEdited ? " · edited" : ""}
-                    </p>
-                    {message.senderId === currentCredentialId && !message.isDeleted ? (
-                      <div className="portal-actions">
-                        <button
-                          className="portal-button secondary"
-                          onClick={() => void handleEdit(message.id, message.body)}
-                          type="button"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="portal-button secondary"
-                          onClick={() => void handleDelete(message.id)}
-                          type="button"
-                        >
-                          Delete
-                        </button>
+            <div className="space-y-4">
+              {messages.map((message) => (
+                <div key={message.id} className="rounded-3xl border border-border/70 bg-background/80 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-base font-semibold text-foreground">{message.senderLabel}</p>
+                        {message.isDeleted ? <Badge variant="outline">deleted</Badge> : null}
+                        {message.isEdited ? <Badge variant="secondary">edited</Badge> : null}
                       </div>
-                    ) : null}
+                      <p className="text-sm text-foreground">
+                        {message.isDeleted ? "Message deleted" : message.body ?? "Attachment only"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        #{message.sequence} | {formatDateTime(message.createdAt)}
+                      </p>
+                    </div>
                   </div>
+                  {message.senderId === currentCredentialId && !message.isDeleted ? (
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <Button type="button" variant="outline" onClick={() => void handleEdit(message.id, message.body)}>
+                        Edit
+                      </Button>
+                      <Button type="button" variant="outline" onClick={() => void handleDelete(message.id)}>
+                        Delete
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
-              </li>
-            ))
+              ))}
+            </div>
           )}
-        </ul>
-      </section>
+        </CardContent>
+      </Card>
 
-      <section className="portal-panel">
-        <form className="portal-form" onSubmit={handleSubmit}>
-          <label>
-            New message
-            <textarea
-              className="portal-input"
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader>
+          <CardTitle className="font-heading text-xl">New message</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <Textarea
               name="body"
               onChange={(event) => {
                 setBody(event.target.value);
@@ -404,14 +424,12 @@ export function ChatThreadClient({
               rows={4}
               value={body}
             />
-          </label>
-          <div className="portal-actions">
-            <button className="portal-button" disabled={isPending} type="submit">
+            <Button disabled={isPending} type="submit">
               {isPending ? "Sending..." : "Send"}
-            </button>
-          </div>
-        </form>
-      </section>
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

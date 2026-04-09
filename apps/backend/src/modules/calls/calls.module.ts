@@ -31,6 +31,6 @@ import { MediaCommandsService } from '../../infra/events/media-commands.service'
     CallRecordingEventsService,
     CallRecordingRetentionService,
   ],
-  exports: [CallsService],
+  exports: [CallsService, CallAdminService],
 })
 export class CallsModule {}

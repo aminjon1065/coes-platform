@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type Preference = {
   notificationType: string | null;
@@ -74,79 +77,67 @@ export default function PreferencesForm({ initialPreferences }: Props) {
   }
 
   return (
-    <div>
-      <p className="portal-note">
-        Default delivery channels for all notification types. Individual notification
-        types can override these defaults.
+    <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">
+        Individual notification types can override these defaults.
       </p>
-      <table style={{ borderCollapse: "collapse", width: "100%", marginTop: "1rem" }}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Channel</th>
-            <th style={thStyle}>Enabled</th>
-          </tr>
-        </thead>
-        <tbody>
+
+      <div className="overflow-hidden rounded-3xl border border-border/70">
+        <div className="grid grid-cols-[1fr_auto] gap-4 border-b border-border/70 bg-muted/30 px-4 py-3 text-sm font-medium text-foreground">
+          <span>Channel</span>
+          <span>Enabled</span>
+        </div>
+        <div className="divide-y divide-border/70 bg-background/80">
           {CHANNELS.map(({ key, label }) => (
-            <tr key={key}>
-              <td style={tdStyle}>{label}</td>
-              <td style={tdStyle}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(pref[key])}
-                  onChange={() => toggle(key)}
-                />
-              </td>
-            </tr>
-          ))}
-          <tr>
-            <td style={tdStyle}>Email throttle (minutes)</td>
-            <td style={tdStyle}>
+            <div key={key} className="grid grid-cols-[1fr_auto] items-center gap-4 px-4 py-3 text-sm">
+              <span className="text-foreground">{label}</span>
               <input
-                type="number"
-                min={0}
-                max={1440}
-                value={pref.emailThrottleMinutes}
-                onChange={(e) => {
-                  setSaved(false);
-                  setPref((prev) => ({
-                    ...prev,
-                    emailThrottleMinutes: Math.max(0, Math.min(1440, Number(e.target.value))),
-                  }));
-                }}
-                style={{ width: "80px" }}
+                checked={Boolean(pref[key])}
+                className="size-4 accent-[var(--primary)]"
+                onChange={() => toggle(key)}
+                type="checkbox"
               />
-              <span className="portal-note" style={{ marginLeft: "0.5rem" }}>
-                (0 = no throttle)
-              </span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          ))}
+          <div className="grid gap-3 px-4 py-4 md:grid-cols-[1fr_auto] md:items-center">
+            <div>
+              <p className="text-sm font-medium text-foreground">Email throttle (minutes)</p>
+              <p className="text-sm text-muted-foreground">0 means no throttle.</p>
+            </div>
+            <Input
+              className="w-full md:w-28"
+              max={1440}
+              min={0}
+              type="number"
+              value={pref.emailThrottleMinutes}
+              onChange={(e) => {
+                setSaved(false);
+                setPref((prev) => ({
+                  ...prev,
+                  emailThrottleMinutes: Math.max(0, Math.min(1440, Number(e.target.value))),
+                }));
+              }}
+            />
+          </div>
+        </div>
+      </div>
 
-      {error && <p style={{ color: "var(--danger)", marginTop: "0.5rem" }}>{error}</p>}
-      {saved && <p style={{ color: "var(--success, green)", marginTop: "0.5rem" }}>Saved.</p>}
+      {error ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <p>{error}</p>
+        </div>
+      ) : null}
+      {saved ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+          <p>Saved.</p>
+        </div>
+      ) : null}
 
-      <button
-        className="portal-button"
-        style={{ marginTop: "1rem" }}
-        onClick={save}
-        disabled={saving}
-      >
+      <Button disabled={saving} onClick={save} type="button">
         {saving ? "Saving..." : "Save preferences"}
-      </button>
+      </Button>
     </div>
   );
 }
-
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid #ddd",
-  fontWeight: 600,
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid #eee",
-};

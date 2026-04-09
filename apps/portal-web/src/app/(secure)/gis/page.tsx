@@ -1,3 +1,15 @@
+import type { ReactNode } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { GisMapClient } from "@/components/gis/GisMapClient";
 import {
   enrichGisPoint,
   getPortalTileBaseUrl,
@@ -9,7 +21,6 @@ import {
   queryLayerFeaturesByBbox,
   queryLayerFeaturesByRadius,
 } from "@/lib/gis";
-import { GisMapClient } from "@/components/gis/GisMapClient";
 import { reportIncidentAction, resolveIncidentAction } from "./actions";
 
 function formatDateTime(value: string | null) {
@@ -24,26 +35,38 @@ type GisPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+function Select({
+  children,
+  defaultValue,
+  name,
+}: {
+  children: ReactNode;
+  defaultValue?: string;
+  name: string;
+}) {
+  return (
+    <select
+      className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+      defaultValue={defaultValue}
+      name={name}
+    >
+      {children}
+    </select>
+  );
+}
+
 export default async function GisPage({ searchParams }: GisPageProps) {
   const params = ((await searchParams) ?? {}) as SearchParams;
-  const selectedLayerId =
-    typeof params.layerId === "string" ? params.layerId : undefined;
-  const selectedIncidentId =
-    typeof params.incidentId === "string" ? params.incidentId : undefined;
-  const queryMode =
-    typeof params.queryMode === "string" ? params.queryMode : undefined;
+  const selectedLayerId = typeof params.layerId === "string" ? params.layerId : undefined;
+  const selectedIncidentId = typeof params.incidentId === "string" ? params.incidentId : undefined;
+  const queryMode = typeof params.queryMode === "string" ? params.queryMode : undefined;
   const lon = typeof params.lon === "string" ? Number(params.lon) : undefined;
   const lat = typeof params.lat === "string" ? Number(params.lat) : undefined;
-  const radiusMetres =
-    typeof params.radiusMetres === "string" ? Number(params.radiusMetres) : undefined;
-  const minLon =
-    typeof params.minLon === "string" ? Number(params.minLon) : undefined;
-  const minLat =
-    typeof params.minLat === "string" ? Number(params.minLat) : undefined;
-  const maxLon =
-    typeof params.maxLon === "string" ? Number(params.maxLon) : undefined;
-  const maxLat =
-    typeof params.maxLat === "string" ? Number(params.maxLat) : undefined;
+  const radiusMetres = typeof params.radiusMetres === "string" ? Number(params.radiusMetres) : undefined;
+  const minLon = typeof params.minLon === "string" ? Number(params.minLon) : undefined;
+  const minLat = typeof params.minLat === "string" ? Number(params.minLat) : undefined;
+  const maxLon = typeof params.maxLon === "string" ? Number(params.maxLon) : undefined;
+  const maxLat = typeof params.maxLat === "string" ? Number(params.maxLat) : undefined;
 
   const [summary, incidents, layers] = await Promise.all([
     getGisSummaryData(),
@@ -51,353 +74,246 @@ export default async function GisPage({ searchParams }: GisPageProps) {
     getGisLayersData({ status: "ACTIVE", limit: 50, offset: 0 }),
   ]);
 
-  const [selectedLayer, selectedIncident, spatialResult, pointEnrichment] =
-    await Promise.all([
-      selectedLayerId ? getGisLayerDetail(selectedLayerId) : Promise.resolve(null),
-      selectedIncidentId
-        ? getGisIncidentDetail(selectedIncidentId)
-        : Promise.resolve(null),
-      selectedLayerId && queryMode === "radius" && lon != null && lat != null && radiusMetres
-        ? queryLayerFeaturesByRadius({
+  const [selectedLayer, selectedIncident, spatialResult, pointEnrichment] = await Promise.all([
+    selectedLayerId ? getGisLayerDetail(selectedLayerId) : Promise.resolve(null),
+    selectedIncidentId ? getGisIncidentDetail(selectedIncidentId) : Promise.resolve(null),
+    selectedLayerId && queryMode === "radius" && lon != null && lat != null && radiusMetres
+      ? queryLayerFeaturesByRadius({
+          layerId: selectedLayerId,
+          lon,
+          lat,
+          radiusMetres,
+          limit: 25,
+        })
+      : selectedLayerId &&
+          queryMode === "bbox" &&
+          minLon != null &&
+          minLat != null &&
+          maxLon != null &&
+          maxLat != null
+        ? queryLayerFeaturesByBbox({
             layerId: selectedLayerId,
-            lon,
-            lat,
-            radiusMetres,
+            minLon,
+            minLat,
+            maxLon,
+            maxLat,
             limit: 25,
           })
-        : selectedLayerId &&
-            queryMode === "bbox" &&
-            minLon != null &&
-            minLat != null &&
-            maxLon != null &&
-            maxLat != null
-          ? queryLayerFeaturesByBbox({
-              layerId: selectedLayerId,
-              minLon,
-              minLat,
-              maxLon,
-              maxLat,
-              limit: 25,
-            })
-          : Promise.resolve(null),
-      lon != null && lat != null ? enrichGisPoint(lon, lat) : Promise.resolve(null),
-    ]);
+        : Promise.resolve(null),
+    lon != null && lat != null ? enrichGisPoint(lon, lat) : Promise.resolve(null),
+  ]);
 
   return (
-    <div className="portal-stack">
-      <section className="portal-panel">
-        <span className="portal-pill">GIS subsystem</span>
-        <h2>Operational map</h2>
-        <p className="portal-note">
-          First portal slice: read-only layers, incidents and summary via portal BFF.
-        </p>
-      </section>
+    <div className="space-y-6">
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader className="gap-3">
+          <Badge variant="outline" className="w-fit">GIS subsystem</Badge>
+          <div className="space-y-1">
+            <CardTitle className="font-heading text-3xl">Operational map</CardTitle>
+            <CardDescription>
+              Read-only layers, live incidents, and spatial tools through the portal BFF.
+            </CardDescription>
+          </div>
+        </CardHeader>
+      </Card>
 
-      <div className="gis-shell">
-        <aside className="gis-sidebar">
-          <section className="portal-panel">
-            <div className="portal-section-head">
-              <h2>Overview</h2>
-            </div>
-            <div className="gis-kpis">
-              <div className="gis-kpi">
-                <span className="portal-note">Total incidents</span>
-                <strong>{summary.totalIncidents}</strong>
-              </div>
-              <div className="gis-kpi">
-                <span className="portal-note">Open incidents</span>
-                <strong>{summary.openIncidents}</strong>
-              </div>
-              <div className="gis-kpi">
-                <span className="portal-note">High severity</span>
-                <strong>{summary.highSeverityIncidents}</strong>
-              </div>
-              <div className="gis-kpi">
-                <span className="portal-note">Visible layers</span>
-                <strong>{layers.total}</strong>
-              </div>
-            </div>
-          </section>
+      <div className="grid gap-6 xl:grid-cols-[0.35fr_0.65fr]">
+        <aside className="space-y-6">
+          <Card className="border-border/60 bg-white/90 shadow-sm">
+            <CardHeader>
+              <CardTitle className="font-heading text-2xl">Overview</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4"><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total incidents</p><p className="mt-2 text-2xl font-semibold text-foreground">{summary.totalIncidents}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4"><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Open incidents</p><p className="mt-2 text-2xl font-semibold text-foreground">{summary.openIncidents}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4"><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">High severity</p><p className="mt-2 text-2xl font-semibold text-foreground">{summary.highSeverityIncidents}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4"><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Visible layers</p><p className="mt-2 text-2xl font-semibold text-foreground">{layers.total}</p></div>
+            </CardContent>
+          </Card>
 
-          <section className="portal-panel">
-            <div className="portal-section-head">
-              <h2>Hazard mix</h2>
-            </div>
-            <ul className="gis-layer-list">
+          <Card className="border-border/60 bg-white/90 shadow-sm">
+            <CardHeader><CardTitle className="font-heading text-2xl">Hazard mix</CardTitle></CardHeader>
+            <CardContent>
               {summary.topHazards.length === 0 ? (
-                <li className="gis-layer-item">No summary data.</li>
+                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-sm text-muted-foreground">No summary data.</div>
               ) : (
-                summary.topHazards.map((hazard) => (
-                  <li className="gis-layer-item" key={hazard.hazard}>
-                    <strong>{hazard.hazard}</strong>
-                    <p className="portal-note">{hazard.count} incidents</p>
-                  </li>
-                ))
+                <div className="space-y-3">
+                  {summary.topHazards.map((hazard) => (
+                    <div className="rounded-2xl border border-border/70 bg-background/80 p-4" key={hazard.hazard}>
+                      <p className="text-base font-semibold text-foreground">{hazard.hazard}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{hazard.count} incidents</p>
+                    </div>
+                  ))}
+                </div>
               )}
-            </ul>
-          </section>
+            </CardContent>
+          </Card>
 
-          <section className="portal-panel">
-            <div className="portal-section-head">
-              <h2>Active layers</h2>
-            </div>
-            <ul className="gis-layer-list">
+          <Card className="border-border/60 bg-white/90 shadow-sm">
+            <CardHeader><CardTitle className="font-heading text-2xl">Active layers</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
               {layers.items.map((layer) => (
-                <li className="gis-layer-item" key={layer.id}>
-                  <strong>{layer.name}</strong>
-                  <p className="portal-note">
-                    {layer.geometryType} · class {layer.classification}
-                  </p>
-                  {layer.description ? <p className="portal-note">{layer.description}</p> : null}
-                  <p className="portal-note">
-                    <a href={`/gis?layerId=${layer.id}`}>Open layer detail</a>
-                  </p>
-                </li>
+                <div className="rounded-2xl border border-border/70 bg-background/80 p-4" key={layer.id}>
+                  <p className="text-base font-semibold text-foreground">{layer.name}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{layer.geometryType} | class {layer.classification}</p>
+                  {layer.description ? <p className="mt-2 text-sm text-muted-foreground">{layer.description}</p> : null}
+                  <a className="mt-2 inline-flex text-sm font-medium text-primary transition hover:text-primary/80" href={`/gis?layerId=${layer.id}`}>Open layer detail</a>
+                </div>
               ))}
-            </ul>
-          </section>
+            </CardContent>
+          </Card>
 
-          <section className="portal-panel">
-            <div className="portal-section-head">
-              <h2>Recent incidents</h2>
-            </div>
-            <ul className="gis-incident-list">
+          <Card className="border-border/60 bg-white/90 shadow-sm">
+            <CardHeader><CardTitle className="font-heading text-2xl">Recent incidents</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
               {incidents.items.slice(0, 6).map((incident) => (
-                <li className="gis-incident-item" key={incident.id}>
-                  <strong>{incident.title}</strong>
-                  <p className="portal-note">
-                    {incident.incidentType} · {incident.severity}
-                  </p>
-                  <p className="portal-note">{formatDateTime(incident.reportedAt)}</p>
-                  <p className="portal-note">
-                    <a href={`/gis?incidentId=${incident.id}`}>Inspect incident</a>
-                  </p>
-                </li>
+                <div className="rounded-2xl border border-border/70 bg-background/80 p-4" key={incident.id}>
+                  <p className="text-base font-semibold text-foreground">{incident.title}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{incident.incidentType} | {incident.severity}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{formatDateTime(incident.reportedAt)}</p>
+                  <a className="mt-2 inline-flex text-sm font-medium text-primary transition hover:text-primary/80" href={`/gis?incidentId=${incident.id}`}>Inspect incident</a>
+                </div>
               ))}
-            </ul>
-          </section>
+            </CardContent>
+          </Card>
 
-          <section className="portal-panel">
-            <div className="portal-section-head">
-              <h2>Report incident</h2>
-            </div>
-            <form action={reportIncidentAction} className="portal-form">
-              <div className="portal-columns portal-columns-tight">
-                <label>
-                  Incident ref
-                  <input className="portal-input" name="incidentRef" required />
-                </label>
-                <label>
-                  Type
-                  <input className="portal-input" defaultValue="flood" name="incidentType" required />
-                </label>
-                <label>
-                  Severity
-                  <select className="portal-input" defaultValue="medium" name="severity">
-                    <option value="low">low</option>
-                    <option value="medium">medium</option>
-                    <option value="significant">significant</option>
-                    <option value="high">high</option>
-                    <option value="critical">critical</option>
-                  </select>
-                </label>
-                <label>
-                  Classification
-                  <input className="portal-input" defaultValue={1} max={3} min={0} name="classification" type="number" />
-                </label>
-                <label>
-                  Lon
-                  <input className="portal-input" name="lon" step="0.0001" type="number" required />
-                </label>
-                <label>
-                  Lat
-                  <input className="portal-input" name="lat" step="0.0001" type="number" required />
-                </label>
-              </div>
-              <label>
-                Title
-                <input className="portal-input" name="title" required />
-              </label>
-              <label>
-                Administrative code
-                <input className="portal-input" name="administrativeCode" />
-              </label>
-              <button className="portal-button" type="submit">
-                Report incident
-              </button>
-            </form>
-          </section>
+          <Card className="border-border/60 bg-white/90 shadow-sm">
+            <CardHeader>
+              <CardTitle className="font-heading text-2xl">Report incident</CardTitle>
+              <CardDescription>Create a new GIS-linked operational incident.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form action={reportIncidentAction} className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm font-medium text-foreground"><span>Incident ref</span><Input name="incidentRef" required /></label>
+                <label className="space-y-2 text-sm font-medium text-foreground"><span>Type</span><Input defaultValue="flood" name="incidentType" required /></label>
+                <label className="space-y-2 text-sm font-medium text-foreground"><span>Severity</span><Select defaultValue="medium" name="severity"><option value="low">low</option><option value="medium">medium</option><option value="significant">significant</option><option value="high">high</option><option value="critical">critical</option></Select></label>
+                <label className="space-y-2 text-sm font-medium text-foreground"><span>Classification</span><Input defaultValue={1} max={3} min={0} name="classification" type="number" /></label>
+                <label className="space-y-2 text-sm font-medium text-foreground"><span>Lon</span><Input name="lon" required step="0.0001" type="number" /></label>
+                <label className="space-y-2 text-sm font-medium text-foreground"><span>Lat</span><Input name="lat" required step="0.0001" type="number" /></label>
+                <label className="space-y-2 text-sm font-medium text-foreground md:col-span-2"><span>Title</span><Input name="title" required /></label>
+                <label className="space-y-2 text-sm font-medium text-foreground md:col-span-2"><span>Administrative code</span><Input name="administrativeCode" /></label>
+                <div className="md:col-span-2"><Button type="submit">Report incident</Button></div>
+              </form>
+            </CardContent>
+          </Card>
         </aside>
 
-        <div className="portal-stack">
-          <GisMapClient
-            incidents={incidents.items}
-            layers={layers.items}
-            tileBaseUrl={getPortalTileBaseUrl()}
-          />
+        <div className="space-y-6">
+          <GisMapClient incidents={incidents.items} layers={layers.items} tileBaseUrl={getPortalTileBaseUrl()} />
 
-          <section className="portal-columns">
-            <article className="portal-panel">
-              <div className="portal-section-head">
-                <h2>Spatial query</h2>
-              </div>
-              <form className="portal-form" method="get">
-                <label>
-                  Layer
-                  <select className="portal-input" defaultValue={selectedLayerId ?? layers.items[0]?.id ?? ""} name="layerId">
-                    {layers.items.map((layer) => (
-                      <option key={layer.id} value={layer.id}>
-                        {layer.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Query mode
-                  <select className="portal-input" defaultValue={queryMode ?? "radius"} name="queryMode">
-                    <option value="radius">radius</option>
-                    <option value="bbox">bbox</option>
-                  </select>
-                </label>
-                <div className="portal-columns portal-columns-tight">
-                  <label>
-                    Lon
-                    <input className="portal-input" defaultValue={lon ?? ""} name="lon" step="0.0001" type="number" />
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card className="border-border/60 bg-white/90 shadow-sm">
+              <CardHeader><CardTitle className="font-heading text-2xl">Spatial query</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <form className="grid gap-4" method="get">
+                  <label className="space-y-2 text-sm font-medium text-foreground">
+                    <span>Layer</span>
+                    <Select defaultValue={selectedLayerId ?? layers.items[0]?.id ?? ""} name="layerId">
+                      {layers.items.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}
+                    </Select>
                   </label>
-                  <label>
-                    Lat
-                    <input className="portal-input" defaultValue={lat ?? ""} name="lat" step="0.0001" type="number" />
+                  <label className="space-y-2 text-sm font-medium text-foreground">
+                    <span>Query mode</span>
+                    <Select defaultValue={queryMode ?? "radius"} name="queryMode">
+                      <option value="radius">radius</option>
+                      <option value="bbox">bbox</option>
+                    </Select>
                   </label>
-                  <label>
-                    Radius metres
-                    <input className="portal-input" defaultValue={radiusMetres ?? 10000} name="radiusMetres" type="number" />
-                  </label>
-                </div>
-                <div className="portal-columns portal-columns-tight">
-                  <label>
-                    Min lon
-                    <input className="portal-input" defaultValue={minLon ?? ""} name="minLon" step="0.0001" type="number" />
-                  </label>
-                  <label>
-                    Min lat
-                    <input className="portal-input" defaultValue={minLat ?? ""} name="minLat" step="0.0001" type="number" />
-                  </label>
-                  <label>
-                    Max lon
-                    <input className="portal-input" defaultValue={maxLon ?? ""} name="maxLon" step="0.0001" type="number" />
-                  </label>
-                  <label>
-                    Max lat
-                    <input className="portal-input" defaultValue={maxLat ?? ""} name="maxLat" step="0.0001" type="number" />
-                  </label>
-                </div>
-                <button className="portal-button" type="submit">
-                  Run spatial query
-                </button>
-              </form>
-              {pointEnrichment ? (
-                <p className="portal-note">
-                  Point enrichment: {pointEnrichment.administrativeName ?? "unknown"} ·{" "}
-                  {pointEnrichment.administrativeCode ?? "no-code"}
-                </p>
-              ) : null}
-            </article>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <label className="space-y-2 text-sm font-medium text-foreground"><span>Lon</span><Input defaultValue={lon ?? ""} name="lon" step="0.0001" type="number" /></label>
+                    <label className="space-y-2 text-sm font-medium text-foreground"><span>Lat</span><Input defaultValue={lat ?? ""} name="lat" step="0.0001" type="number" /></label>
+                    <label className="space-y-2 text-sm font-medium text-foreground"><span>Radius metres</span><Input defaultValue={radiusMetres ?? 10000} name="radiusMetres" type="number" /></label>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm font-medium text-foreground"><span>Min lon</span><Input defaultValue={minLon ?? ""} name="minLon" step="0.0001" type="number" /></label>
+                    <label className="space-y-2 text-sm font-medium text-foreground"><span>Min lat</span><Input defaultValue={minLat ?? ""} name="minLat" step="0.0001" type="number" /></label>
+                    <label className="space-y-2 text-sm font-medium text-foreground"><span>Max lon</span><Input defaultValue={maxLon ?? ""} name="maxLon" step="0.0001" type="number" /></label>
+                    <label className="space-y-2 text-sm font-medium text-foreground"><span>Max lat</span><Input defaultValue={maxLat ?? ""} name="maxLat" step="0.0001" type="number" /></label>
+                  </div>
+                  <Button type="submit">Run spatial query</Button>
+                </form>
+                {pointEnrichment ? (
+                  <p className="text-sm text-muted-foreground">
+                    Point enrichment: {pointEnrichment.administrativeName ?? "unknown"} | {pointEnrichment.administrativeCode ?? "no-code"}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
 
-            <article className="portal-panel">
-              <div className="portal-section-head">
-                <h2>Query results</h2>
-              </div>
-              {selectedLayer ? (
-                <p className="portal-note">
-                  Layer: {selectedLayer.name} · {selectedLayer.geometryType} · class{" "}
-                  {selectedLayer.classification}
-                </p>
-              ) : (
-                <p className="portal-note">Select a layer to inspect metadata and run queries.</p>
-              )}
-              <ul className="gis-layer-list">
+            <Card className="border-border/60 bg-white/90 shadow-sm">
+              <CardHeader>
+                <CardTitle className="font-heading text-2xl">Query results</CardTitle>
+                <CardDescription>
+                  {selectedLayer ? `Layer: ${selectedLayer.name} | ${selectedLayer.geometryType} | class ${selectedLayer.classification}` : "Select a layer to inspect metadata and run queries."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
                 {spatialResult?.items.length ? (
-                  spatialResult.items.map((item) => (
-                    <li className="gis-layer-item" key={item.id}>
-                      <strong>{item.externalId ?? item.id}</strong>
-                      <p className="portal-note">
-                        {item.geometryType} · class {item.classification}
-                        {item.distanceMetres != null ? ` · ${item.distanceMetres} m` : ""}
-                      </p>
-                      <p className="portal-note">{item.summary}</p>
-                    </li>
-                  ))
+                  <div className="space-y-3">
+                    {spatialResult.items.map((item) => (
+                      <div className="rounded-2xl border border-border/70 bg-background/80 p-4" key={item.id}>
+                        <p className="text-base font-semibold text-foreground">{item.externalId ?? item.id}</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {item.geometryType} | class {item.classification}
+                          {item.distanceMetres != null ? ` | ${item.distanceMetres} m` : ""}
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">{item.summary}</p>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
-                  <li className="gis-layer-item">No query results yet.</li>
+                  <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-sm text-muted-foreground">No query results yet.</div>
                 )}
-              </ul>
-            </article>
-          </section>
+              </CardContent>
+            </Card>
+          </div>
 
-          <section className="portal-columns">
-            <article className="portal-panel">
-              <div className="portal-section-head">
-                <h2>Incident detail</h2>
-              </div>
-              {!selectedIncident ? (
-                <p className="portal-note">Pick an incident from the recent list to inspect or resolve it.</p>
-              ) : (
-                <div className="portal-stack">
-                  <div>
-                    <strong>{selectedIncident.title}</strong>
-                    <p className="portal-note">
-                      {selectedIncident.incidentType} · {selectedIncident.severity}
-                    </p>
-                    <p className="portal-note">
-                      {selectedIncident.coordinates[1].toFixed(4)}, {selectedIncident.coordinates[0].toFixed(4)}
-                    </p>
-                    <p className="portal-note">
-                      Reported {formatDateTime(selectedIncident.reportedAt)}
-                    </p>
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card className="border-border/60 bg-white/90 shadow-sm">
+              <CardHeader><CardTitle className="font-heading text-2xl">Incident detail</CardTitle></CardHeader>
+              <CardContent>
+                {!selectedIncident ? (
+                  <p className="text-sm text-muted-foreground">Pick an incident from the recent list to inspect or resolve it.</p>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-lg font-semibold text-foreground">{selectedIncident.title}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{selectedIncident.incidentType} | {selectedIncident.severity}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{selectedIncident.coordinates[1].toFixed(4)}, {selectedIncident.coordinates[0].toFixed(4)}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">Reported {formatDateTime(selectedIncident.reportedAt)}</p>
+                    </div>
+                    {selectedIncident.resolvedAt ? (
+                      <p className="text-sm text-muted-foreground">Resolved {formatDateTime(selectedIncident.resolvedAt)}</p>
+                    ) : (
+                      <form action={resolveIncidentAction}>
+                        <input name="incidentId" type="hidden" value={selectedIncident.id} />
+                        <Button type="submit">Resolve incident</Button>
+                      </form>
+                    )}
                   </div>
-                  {selectedIncident.resolvedAt ? (
-                    <p className="portal-note">
-                      Resolved {formatDateTime(selectedIncident.resolvedAt)}
-                    </p>
-                  ) : (
-                    <form action={resolveIncidentAction}>
-                      <input name="incidentId" type="hidden" value={selectedIncident.id} />
-                      <button className="portal-button" type="submit">
-                        Resolve incident
-                      </button>
-                    </form>
-                  )}
-                </div>
-              )}
-            </article>
+                )}
+              </CardContent>
+            </Card>
 
-            <article className="portal-panel">
-              <div className="portal-section-head">
-                <h2>Layer detail</h2>
-              </div>
-              {!selectedLayer ? (
-                <p className="portal-note">Pick a layer from the list to inspect it.</p>
-              ) : (
-                <div className="portal-stack">
-                  <div>
-                    <strong>{selectedLayer.name}</strong>
-                    <p className="portal-note">
-                      {selectedLayer.geometryType} · {selectedLayer.status} · class {selectedLayer.classification}
-                    </p>
+            <Card className="border-border/60 bg-white/90 shadow-sm">
+              <CardHeader><CardTitle className="font-heading text-2xl">Layer detail</CardTitle></CardHeader>
+              <CardContent>
+                {!selectedLayer ? (
+                  <p className="text-sm text-muted-foreground">Pick a layer from the list to inspect it.</p>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-lg font-semibold text-foreground">{selectedLayer.name}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{selectedLayer.geometryType} | {selectedLayer.status} | class {selectedLayer.classification}</p>
+                    </div>
+                    {selectedLayer.description ? <p className="text-sm text-muted-foreground">{selectedLayer.description}</p> : null}
+                    {selectedLayer.sourceName ? <p className="text-sm text-muted-foreground">Source: {selectedLayer.sourceName}</p> : null}
+                    {selectedLayer.sourceUrl ? <p className="text-sm text-muted-foreground">{selectedLayer.sourceUrl}</p> : null}
                   </div>
-                  {selectedLayer.description ? (
-                    <p className="portal-note">{selectedLayer.description}</p>
-                  ) : null}
-                  {selectedLayer.sourceName ? (
-                    <p className="portal-note">Source: {selectedLayer.sourceName}</p>
-                  ) : null}
-                  {selectedLayer.sourceUrl ? (
-                    <p className="portal-note">{selectedLayer.sourceUrl}</p>
-                  ) : null}
-                </div>
-              )}
-            </article>
-          </section>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>

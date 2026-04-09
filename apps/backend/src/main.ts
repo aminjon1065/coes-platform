@@ -3,10 +3,13 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { GlobalExceptionFilter } from './infra/filters/global-exception.filter';
+
+const logger = new Logger('Bootstrap');
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -14,7 +17,13 @@ async function bootstrap() {
     new FastifyAdapter({ logger: true }),
   );
 
+  // Graceful shutdown — lets OnModuleDestroy hooks complete (AMQP, DB, etc.)
+  app.enableShutdownHooks();
+
   const config = app.get(ConfigService);
+
+  // Global exception filter — prevents stack traces reaching clients
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Multipart file uploads — required by FilesController
   await app.register(require('@fastify/multipart'), {
@@ -62,7 +71,10 @@ async function bootstrap() {
   const host = config.get<string>('HOST', '0.0.0.0');
 
   await app.listen(port, host);
-  console.log(`CoESCD Backend running on http://${host}:${port}/api`);
+  logger.log(`CoESCD Backend running on http://${host}:${port}/api`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  logger.error('Bootstrap failed', err instanceof Error ? err.stack : String(err));
+  process.exit(1);
+});

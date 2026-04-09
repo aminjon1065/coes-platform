@@ -1,4 +1,16 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { getDocumentDetailData, getPositionOptions } from "@/lib/edms";
 import {
   actOnWorkflowStepAction,
@@ -45,15 +57,33 @@ function formatRecipientsValue(
   recipients: Array<{ name: string; type: "internal" | "external"; positionId: string | null }>,
 ) {
   return recipients
-    .map((recipient) =>
-      [recipient.name, recipient.type, recipient.positionId ?? ""].join("|"),
-    )
+    .map((recipient) => [recipient.name, recipient.type, recipient.positionId ?? ""].join("|"))
     .join("\n");
 }
 
 type DocumentDetailPageProps = {
   params: Promise<{ id: string }>;
 };
+
+function Select({
+  children,
+  defaultValue,
+  name,
+}: {
+  children: ReactNode;
+  defaultValue?: string;
+  name: string;
+}) {
+  return (
+    <select
+      className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+      defaultValue={defaultValue}
+      name={name}
+    >
+      {children}
+    </select>
+  );
+}
 
 export default async function DocumentDetailPage({ params }: DocumentDetailPageProps) {
   const { id } = await params;
@@ -65,64 +95,72 @@ export default async function DocumentDetailPage({ params }: DocumentDetailPageP
   const isDraft = document.status === "draft";
 
   return (
-    <div className="portal-stack">
-      <nav className="portal-note">
-        <Link href="/edms">Documents</Link> / {document.title}
+    <div className="space-y-6">
+      <nav className="text-sm text-muted-foreground">
+        <Link className="transition hover:text-foreground" href="/edms">
+          Documents
+        </Link>{" "}
+        / {document.title}
       </nav>
 
-      <section className="portal-panel">
-        <div className="portal-row">
-          <div>
-            <span className="portal-pill">{document.status}</span>
-            <h2>{document.title}</h2>
-            <p className="portal-note">
-              {document.registrationNumber ?? "Unregistered"} · {document.typeName} ·{" "}
-              {document.direction}
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader className="gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{document.status}</Badge>
+            <Badge variant="secondary">{document.typeName}</Badge>
+            <Badge variant="secondary">{document.direction}</Badge>
+          </div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <CardTitle className="font-heading text-3xl">{document.title}</CardTitle>
+              <CardDescription>
+                {document.registrationNumber ?? "Unregistered"} | class {document.classification}
+              </CardDescription>
+            </div>
+            <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
+              <div className="rounded-2xl border border-border/70 bg-muted/30 px-4 py-3">
+                Updated {formatDateTime(document.updatedAt)}
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/30 px-4 py-3">
+                Created {formatDateTime(document.createdAt)}
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/30 px-4 py-3">
+                Deadline {formatDateTime(document.deadline)}
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {document.body ? <p className="text-sm leading-7 text-foreground">{document.body}</p> : null}
+          <p className="text-sm text-muted-foreground">Created by {document.createdById}</p>
+          {document.retentionReviewDate ? (
+            <p className="text-sm text-muted-foreground">
+              Retention review {formatDateTime(document.retentionReviewDate)}
             </p>
-          </div>
-          <div className="portal-metadata">
-            <span>Class {document.classification}</span>
-            <span>Updated {formatDateTime(document.updatedAt)}</span>
-            <span>Created {formatDateTime(document.createdAt)}</span>
-          </div>
-        </div>
-        {document.body ? <p>{document.body}</p> : null}
-        <p className="portal-note">
-          Created by {document.createdById} · deadline {formatDateTime(document.deadline)}
-        </p>
-        {document.retentionReviewDate ? (
-          <p className="portal-note">
-            Retention review {formatDateTime(document.retentionReviewDate)}
-          </p>
-        ) : null}
-      </section>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {isDraft ? (
-        <section className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Edit draft</h2>
-          </div>
-          <form action={updateDocumentAction} className="portal-form">
-            <input name="documentId" type="hidden" value={document.id} />
-            <div className="portal-columns">
-              <label>
-                Subject
-                <input className="portal-input" defaultValue={document.title} name="subject" required />
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Edit draft</CardTitle>
+            <CardDescription>Update document metadata before registration or workflow start.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={updateDocumentAction} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <input name="documentId" type="hidden" value={document.id} />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Subject</span>
+                <Input defaultValue={document.title} name="subject" required />
               </label>
-              <label>
-                Classification
-                <input
-                  className="portal-input"
-                  defaultValue={document.classification}
-                  max={3}
-                  min={0}
-                  name="classification"
-                  type="number"
-                />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Classification</span>
+                <Input defaultValue={document.classification} max={3} min={0} name="classification" type="number" />
               </label>
-              <label>
-                Sender position
-                <select className="portal-input" defaultValue={document.senderPositionId ?? ""} name="senderPositionId">
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Sender position</span>
+                <Select defaultValue={document.senderPositionId ?? ""} name="senderPositionId">
                   <option value="">Not set</option>
                   {positions.map((position) => (
                     <option key={position.id} value={position.id}>
@@ -130,459 +168,473 @@ export default async function DocumentDetailPage({ params }: DocumentDetailPageP
                       {position.departmentName ? ` (${position.departmentName})` : ""}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
-              <label>
-                Sender name
-                <input className="portal-input" defaultValue={document.senderName ?? ""} name="senderName" />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Sender name</span>
+                <Input defaultValue={document.senderName ?? ""} name="senderName" />
               </label>
-              <label>
-                External ref number
-                <input
-                  className="portal-input"
-                  defaultValue={document.externalRefNumber ?? ""}
-                  name="externalRefNumber"
-                />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>External ref number</span>
+                <Input defaultValue={document.externalRefNumber ?? ""} name="externalRefNumber" />
               </label>
-              <label>
-                Document date
-                <input className="portal-input" defaultValue={document.documentDate ?? ""} name="documentDate" type="date" />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Document date</span>
+                <Input defaultValue={document.documentDate ?? ""} name="documentDate" type="date" />
               </label>
-              <label>
-                Deadline
-                <input className="portal-input" defaultValue={document.deadline ?? ""} name="deadline" type="date" />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Deadline</span>
+                <Input defaultValue={document.deadline ?? ""} name="deadline" type="date" />
               </label>
-              <label>
-                Related document ID
-                <input
-                  className="portal-input"
-                  defaultValue={document.relatedDocumentId ?? ""}
-                  name="relatedDocumentId"
-                />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Related document ID</span>
+                <Input defaultValue={document.relatedDocumentId ?? ""} name="relatedDocumentId" />
               </label>
-            </div>
-            <label>
-              Recipients
-              <textarea
-                className="portal-input"
-                defaultValue={formatRecipientsValue(document.recipients)}
-                name="recipients"
-                rows={5}
-              />
-            </label>
-            <label>
-              Body
-              <textarea className="portal-input" defaultValue={document.body ?? ""} name="body" rows={8} />
-            </label>
-            <label>
-              Change reason
-              <input className="portal-input" name="changeReason" />
-            </label>
-            <div className="portal-actions">
-              <button className="portal-button" type="submit">
-                Save draft
-              </button>
-            </div>
-          </form>
-        </section>
+              <label className="space-y-2 text-sm font-medium text-foreground md:col-span-2 xl:col-span-4">
+                <span>Recipients</span>
+                <Textarea defaultValue={formatRecipientsValue(document.recipients)} name="recipients" rows={5} />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-foreground md:col-span-2 xl:col-span-4">
+                <span>Body</span>
+                <Textarea defaultValue={document.body ?? ""} name="body" rows={8} />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-foreground md:col-span-2 xl:col-span-4">
+                <span>Change reason</span>
+                <Input name="changeReason" />
+              </label>
+              <div className="md:col-span-2 xl:col-span-4">
+                <Button type="submit">Save draft</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       ) : null}
 
-      <section className="portal-columns">
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Registration and status</h2>
-          </div>
-          {document.registrationNumber ? (
-            <p className="portal-note">Registered as {document.registrationNumber}.</p>
-          ) : (
-            <form action={registerDocumentAction} className="portal-form">
-              <input name="documentId" type="hidden" value={document.id} />
-              <label>
-                Registrar position
-                <select className="portal-input" defaultValue="" name="registrarPositionId">
-                  <option value="">Use active position</option>
-                  {positions.map((position) => (
-                    <option key={position.id} value={position.id}>
-                      {position.title}
-                      {position.departmentName ? ` (${position.departmentName})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Document date
-                <input className="portal-input" defaultValue={document.documentDate ?? ""} name="documentDate" type="date" />
-              </label>
-              <button className="portal-button" type="submit">
-                Register document
-              </button>
-            </form>
-          )}
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Registration and status</CardTitle>
+            <CardDescription>Manage registration details and direct status transitions.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {document.registrationNumber ? (
+              <div className="rounded-2xl border border-border/70 bg-muted/30 px-4 py-4 text-sm text-muted-foreground">
+                Registered as {document.registrationNumber}.
+              </div>
+            ) : (
+              <form action={registerDocumentAction} className="grid gap-4">
+                <input name="documentId" type="hidden" value={document.id} />
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Registrar position</span>
+                  <Select defaultValue="" name="registrarPositionId">
+                    <option value="">Use active position</option>
+                    {positions.map((position) => (
+                      <option key={position.id} value={position.id}>
+                        {position.title}
+                        {position.departmentName ? ` (${position.departmentName})` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Document date</span>
+                  <Input defaultValue={document.documentDate ?? ""} name="documentDate" type="date" />
+                </label>
+                <Button type="submit">Register document</Button>
+              </form>
+            )}
 
-          {availableTransitions.length === 0 ? (
-            <p className="portal-note">No direct transitions available.</p>
-          ) : (
-            <form action={transitionDocumentAction} className="portal-form">
-              <input name="documentId" type="hidden" value={document.id} />
-              <label>
-                Target status
-                <select className="portal-input" defaultValue={availableTransitions[0]} name="targetStatus">
-                  {availableTransitions.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Reason
-                <textarea className="portal-input" name="reason" rows={3} />
-              </label>
-              <button className="portal-button" type="submit">
-                Apply transition
-              </button>
-            </form>
-          )}
-        </article>
+            {availableTransitions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                No direct transitions available.
+              </div>
+            ) : (
+              <form action={transitionDocumentAction} className="grid gap-4">
+                <input name="documentId" type="hidden" value={document.id} />
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Target status</span>
+                  <Select defaultValue={availableTransitions[0]} name="targetStatus">
+                    {availableTransitions.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <label className="space-y-2 text-sm font-medium text-foreground">
+                  <span>Reason</span>
+                  <Textarea name="reason" rows={3} />
+                </label>
+                <Button type="submit">Apply transition</Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
 
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Recipients</h2>
-          </div>
-          <ul className="portal-list">
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Recipients</CardTitle>
+            <CardDescription>Internal and external routing for the current document.</CardDescription>
+          </CardHeader>
+          <CardContent>
             {document.recipients.length === 0 ? (
-              <li>No recipients.</li>
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                No recipients.
+              </div>
             ) : (
-              document.recipients.map((recipient, index) => (
-                <li key={`${recipient.name}-${index}`}>
-                  <strong>{recipient.name}</strong>
-                  <p className="portal-note">
-                    {recipient.type}
-                    {recipient.positionLabel ? ` · ${recipient.positionLabel}` : ""}
-                  </p>
-                </li>
-              ))
+              <div className="space-y-3">
+                {document.recipients.map((recipient, index) => (
+                  <div key={`${recipient.name}-${index}`} className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <p className="text-base font-semibold text-foreground">{recipient.name}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {recipient.type}
+                      {recipient.positionLabel ? ` | ${recipient.positionLabel}` : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
             )}
-          </ul>
-        </article>
-      </section>
+          </CardContent>
+        </Card>
+      </div>
 
-      <section className="portal-columns">
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Attachments</h2>
-          </div>
-          <ul className="portal-list">
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Attachments</CardTitle>
+            <CardDescription>Maintain supporting files attached to the document.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
             {document.attachments.length === 0 ? (
-              <li>No attachments.</li>
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                No attachments.
+              </div>
             ) : (
-              document.attachments.map((attachment) => (
-                <li key={attachment.id}>
-                  <strong>{attachment.name}</strong>
-                  <p className="portal-note">
-                    {attachment.role} · {attachment.mimeType ?? "Unknown type"} · class{" "}
-                    {attachment.classification}
-                  </p>
-                  <p className="portal-note">
-                    fileId {attachment.fileId} · added {formatDateTime(attachment.createdAt)}
-                  </p>
-                  <form action={removeAttachmentAction}>
-                    <input name="documentId" type="hidden" value={document.id} />
-                    <input name="attachmentId" type="hidden" value={attachment.id} />
-                    <button className="portal-button secondary" type="submit">
-                      Remove attachment
-                    </button>
-                  </form>
-                </li>
-              ))
+              <div className="space-y-3">
+                {document.attachments.map((attachment) => (
+                  <div key={attachment.id} className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-2">
+                        <p className="text-base font-semibold text-foreground">{attachment.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {attachment.role} | {attachment.mimeType ?? "Unknown type"} | class{" "}
+                          {attachment.classification}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          fileId {attachment.fileId} | added {formatDateTime(attachment.createdAt)}
+                        </p>
+                      </div>
+                      <form action={removeAttachmentAction}>
+                        <input name="documentId" type="hidden" value={document.id} />
+                        <input name="attachmentId" type="hidden" value={attachment.id} />
+                        <Button type="submit" variant="outline">
+                          Remove attachment
+                        </Button>
+                      </form>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
-          </ul>
 
-          <form action={addAttachmentAction} className="portal-form">
-            <input name="documentId" type="hidden" value={document.id} />
-            <label>
-              File ID
-              <input className="portal-input" name="fileId" required />
-            </label>
-            <label>
-              Filename
-              <input className="portal-input" name="filename" required />
-            </label>
-            <div className="portal-columns portal-columns-tight">
-              <label>
-                Role
-                <select className="portal-input" defaultValue="supporting" name="role">
+            <form action={addAttachmentAction} className="grid gap-4 md:grid-cols-2">
+              <input name="documentId" type="hidden" value={document.id} />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>File ID</span>
+                <Input name="fileId" required />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Filename</span>
+                <Input name="filename" required />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Role</span>
+                <Select defaultValue="supporting" name="role">
                   <option value="primary_body">primary_body</option>
                   <option value="annex">annex</option>
                   <option value="supporting">supporting</option>
                   <option value="signature">signature</option>
-                </select>
+                </Select>
               </label>
-              <label>
-                Classification
-                <input className="portal-input" defaultValue={document.classification} max={3} min={0} name="classification" type="number" />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Classification</span>
+                <Input defaultValue={document.classification} max={3} min={0} name="classification" type="number" />
               </label>
-              <label>
-                MIME type
-                <input className="portal-input" name="mimeType" />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>MIME type</span>
+                <Input name="mimeType" />
               </label>
-              <label>
-                Size bytes
-                <input className="portal-input" min={0} name="fileSizeBytes" type="number" />
+              <label className="space-y-2 text-sm font-medium text-foreground">
+                <span>Size bytes</span>
+                <Input min={0} name="fileSizeBytes" type="number" />
               </label>
-            </div>
-            <button className="portal-button" type="submit">
-              Add attachment
-            </button>
-          </form>
-        </article>
+              <div className="md:col-span-2">
+                <Button type="submit">Add attachment</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
 
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Versions</h2>
-          </div>
-          <ul className="portal-list">
+        <Card className="border-border/60 bg-white/90 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading text-2xl">Versions</CardTitle>
+            <CardDescription>Document revisions and change reasons.</CardDescription>
+          </CardHeader>
+          <CardContent>
             {document.versions.length === 0 ? (
-              <li>No versions.</li>
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                No versions.
+              </div>
             ) : (
-              document.versions.map((version) => (
-                <li key={version.id}>
-                  <strong>v{version.versionNumber}</strong>
-                  <p className="portal-note">
-                    {version.authorLabel} · {formatDateTime(version.createdAt)}
-                  </p>
-                  {version.changeReason ? (
-                    <p className="portal-note">{version.changeReason}</p>
-                  ) : null}
-                </li>
-              ))
+              <div className="space-y-3">
+                {document.versions.map((version) => (
+                  <div key={version.id} className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <p className="text-base font-semibold text-foreground">v{version.versionNumber}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {version.authorLabel} | {formatDateTime(version.createdAt)}
+                    </p>
+                    {version.changeReason ? (
+                      <p className="mt-2 text-sm text-foreground">{version.changeReason}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
             )}
-          </ul>
-        </article>
-      </section>
+          </CardContent>
+        </Card>
+      </div>
 
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <h2>Workflow</h2>
-        </div>
-        {!document.workflow ? (
-          <form action={startWorkflowAction} className="portal-form">
-            <input name="documentId" type="hidden" value={document.id} />
-            <p className="portal-note">No active workflow instance for this document.</p>
-            <button className="portal-button" type="submit">
-              Start workflow
-            </button>
-          </form>
-        ) : (
-          <div className="portal-stack">
-            <div className="portal-row">
-              <div>
-                <span className="portal-pill">{document.workflow.status}</span>
-                <p className="portal-note">
-                  Initiated by {document.workflow.initiatedByLabel} ·{" "}
-                  {formatDateTime(document.workflow.createdAt)}
-                </p>
-                {document.workflow.rejectionReason ? (
-                  <p className="portal-note">
-                    Rejection reason: {document.workflow.rejectionReason}
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader>
+          <CardTitle className="font-heading text-2xl">Workflow</CardTitle>
+          <CardDescription>Track active steps, actions, and historical workflow events.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {!document.workflow ? (
+            <form action={startWorkflowAction} className="space-y-4">
+              <input name="documentId" type="hidden" value={document.id} />
+              <p className="text-sm text-muted-foreground">No active workflow instance for this document.</p>
+              <Button type="submit">Start workflow</Button>
+            </form>
+          ) : (
+            <>
+              <div className="flex flex-col gap-4 rounded-3xl border border-border/70 bg-background/80 p-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{document.workflow.status}</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Initiated by {document.workflow.initiatedByLabel} |{" "}
+                    {formatDateTime(document.workflow.createdAt)}
                   </p>
+                  {document.workflow.rejectionReason ? (
+                    <p className="text-sm text-muted-foreground">
+                      Rejection reason: {document.workflow.rejectionReason}
+                    </p>
+                  ) : null}
+                </div>
+                {document.workflow.status === "suspended" ? (
+                  <form action={resumeWorkflowAction}>
+                    <input name="documentId" type="hidden" value={document.id} />
+                    <Button type="submit">Resume workflow</Button>
+                  </form>
                 ) : null}
               </div>
-              {document.workflow.status === "suspended" ? (
-                <form action={resumeWorkflowAction}>
-                  <input name="documentId" type="hidden" value={document.id} />
-                  <button className="portal-button" type="submit">
-                    Resume workflow
-                  </button>
-                </form>
-              ) : null}
-            </div>
 
-            <ul className="portal-list">
               {document.workflow.steps.length === 0 ? (
-                <li>No workflow steps.</li>
+                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                  No workflow steps.
+                </div>
               ) : (
-                document.workflow.steps.map((step) => (
-                  <li key={step.id}>
-                    <div className="portal-stack">
-                      <div className="portal-row">
-                        <div>
-                          <strong>
-                            Step {step.stepOrder}: {step.stepName}
-                          </strong>
-                          <p className="portal-note">
-                            {step.stepType} · {step.status} · {step.positionLabel}
+                <div className="space-y-4">
+                  {document.workflow.steps.map((step) => (
+                    <div key={step.id} className="rounded-3xl border border-border/70 bg-background/80 p-5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-base font-semibold text-foreground">
+                              Step {step.stepOrder}: {step.stepName}
+                            </p>
+                            <Badge variant="outline">{step.status}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {step.stepType} | {step.positionLabel}
                           </p>
-                          <p className="portal-note">
-                            Deadline {formatDateTime(step.deadline)} · actor{" "}
+                          <p className="text-sm text-muted-foreground">
+                            Deadline {formatDateTime(step.deadline)} | actor{" "}
                             {step.actorLabel ?? step.assignedUserLabel ?? "pending"}
                           </p>
                         </div>
-                        <span className="portal-pill">{step.status}</span>
                       </div>
                       {step.status === "active" || step.status === "overdue" ? (
-                        <form action={actOnWorkflowStepAction} className="portal-form">
+                        <form action={actOnWorkflowStepAction} className="mt-4 grid gap-4 md:grid-cols-2">
                           <input name="documentId" type="hidden" value={document.id} />
                           <input name="stepId" type="hidden" value={step.id} />
-                          <label>
-                            Action
-                            <select className="portal-input" defaultValue="reviewed" name="action">
+                          <label className="space-y-2 text-sm font-medium text-foreground">
+                            <span>Action</span>
+                            <Select defaultValue="reviewed" name="action">
                               {WORKFLOW_ACTIONS.map((action) => (
                                 <option key={action} value={action}>
                                   {action}
                                 </option>
                               ))}
-                            </select>
+                            </Select>
                           </label>
-                          <label>
-                            Remarks
-                            <textarea className="portal-input" name="remarks" rows={3} />
+                          <label className="space-y-2 text-sm font-medium text-foreground">
+                            <span>Return to step ID</span>
+                            <Input name="returnToStep" />
                           </label>
-                          <label>
-                            Return to step ID
-                            <input className="portal-input" name="returnToStep" />
+                          <label className="space-y-2 text-sm font-medium text-foreground md:col-span-2">
+                            <span>Remarks</span>
+                            <Textarea name="remarks" rows={3} />
                           </label>
-                          <button className="portal-button" type="submit">
-                            Act on step
-                          </button>
+                          <div className="md:col-span-2">
+                            <Button type="submit">Act on step</Button>
+                          </div>
                         </form>
                       ) : null}
                     </div>
-                  </li>
-                ))
+                  ))}
+                </div>
               )}
-            </ul>
 
-            <div className="portal-section-head">
-              <h2>Workflow history</h2>
-            </div>
-            <ul className="portal-list">
-              {document.workflow.history.length === 0 ? (
-                <li>No workflow history.</li>
-              ) : (
-                document.workflow.history.map((entry) => (
-                  <li key={entry.id}>
-                    <strong>{entry.eventType}</strong>
-                    <p className="portal-note">
-                      {entry.actorLabel ?? "system"} · {formatDateTime(entry.createdAt)}
-                    </p>
-                    {entry.remarks ? <p className="portal-note">{entry.remarks}</p> : null}
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
-        )}
-      </section>
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-foreground">Workflow history</h3>
+                {document.workflow.history.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                    No workflow history.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {document.workflow.history.map((entry) => (
+                      <div key={entry.id} className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                        <p className="text-base font-semibold text-foreground">{entry.eventType}</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {entry.actorLabel ?? "system"} | {formatDateTime(entry.createdAt)}
+                        </p>
+                        {entry.remarks ? (
+                          <p className="mt-2 text-sm text-foreground">{entry.remarks}</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <h2>Resolutions</h2>
-        </div>
-        <ul className="portal-list">
+      <Card className="border-border/60 bg-white/90 shadow-sm">
+        <CardHeader>
+          <CardTitle className="font-heading text-2xl">Resolutions</CardTitle>
+          <CardDescription>Issue executor instructions and track completion reports.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
           {document.resolutions.length === 0 ? (
-            <li>No resolutions issued yet.</li>
+            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+              No resolutions issued yet.
+            </div>
           ) : (
-            document.resolutions.map((resolution) => (
-              <li key={resolution.id}>
-                <div className="portal-stack">
-                  <div className="portal-row">
-                    <div>
-                      <strong>{resolution.priority}</strong>
-                      <p className="portal-note">
-                        {resolution.issuingUserLabel} · {resolution.issuingPositionLabel}
+            <div className="space-y-4">
+              {document.resolutions.map((resolution) => (
+                <div key={resolution.id} className="rounded-3xl border border-border/70 bg-background/80 p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">{resolution.priority}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {resolution.issuingUserLabel} | {resolution.issuingPositionLabel}
                       </p>
-                      <p>{resolution.text}</p>
+                      <p className="text-sm text-foreground">{resolution.text}</p>
                     </div>
-                    <div className="portal-metadata">
-                      <span>{formatDateTime(resolution.createdAt)}</span>
-                      <span>Deadline {formatDateTime(resolution.deadline)}</span>
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <p>{formatDateTime(resolution.createdAt)}</p>
+                      <p>Deadline {formatDateTime(resolution.deadline)}</p>
                     </div>
                   </div>
-                  <ul className="portal-list">
+                  <div className="mt-4 space-y-3">
                     {resolution.assignments.length === 0 ? (
-                      <li>No executor assignments.</li>
+                      <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                        No executor assignments.
+                      </div>
                     ) : (
                       resolution.assignments.map((assignment) => (
-                        <li key={assignment.id}>
-                          <strong>{assignment.positionLabel}</strong>
-                          <p className="portal-note">
-                            {assignment.executorRole} · {assignment.status}
-                            {assignment.assignedUserLabel
-                              ? ` · ${assignment.assignedUserLabel}`
-                              : ""}
+                        <div key={assignment.id} className="rounded-2xl border border-border/70 bg-white/70 p-4">
+                          <p className="text-base font-semibold text-foreground">{assignment.positionLabel}</p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {assignment.executorRole} | {assignment.status}
+                            {assignment.assignedUserLabel ? ` | ${assignment.assignedUserLabel}` : ""}
                           </p>
                           {assignment.instruction ? (
-                            <p className="portal-note">{assignment.instruction}</p>
+                            <p className="mt-2 text-sm text-foreground">{assignment.instruction}</p>
                           ) : null}
                           {assignment.linkedTaskId ? (
-                            <p className="portal-note">Linked task {assignment.linkedTaskId}</p>
+                            <p className="mt-2 text-sm text-muted-foreground">Linked task {assignment.linkedTaskId}</p>
                           ) : null}
                           {assignment.completionReport ? (
-                            <p className="portal-note">
+                            <p className="mt-2 text-sm text-muted-foreground">
                               Completion report: {assignment.completionReport}
                             </p>
                           ) : null}
-                          {assignment.status !== "completed" &&
-                          assignment.status !== "cancelled" ? (
-                            <form action={fileCompletionReportAction} className="portal-form">
+                          {assignment.status !== "completed" && assignment.status !== "cancelled" ? (
+                            <form action={fileCompletionReportAction} className="mt-4 space-y-3">
                               <input name="documentId" type="hidden" value={document.id} />
                               <input name="assignmentId" type="hidden" value={assignment.id} />
-                              <label>
-                                Completion report
-                                <textarea className="portal-input" name="report" rows={3} />
+                              <label className="space-y-2 text-sm font-medium text-foreground">
+                                <span>Completion report</span>
+                                <Textarea name="report" rows={3} />
                               </label>
-                              <button className="portal-button secondary" type="submit">
+                              <Button type="submit" variant="outline">
                                 File completion report
-                              </button>
+                              </Button>
                             </form>
                           ) : null}
-                        </li>
+                        </div>
                       ))
                     )}
-                  </ul>
+                  </div>
                 </div>
-              </li>
-            ))
+              ))}
+            </div>
           )}
-        </ul>
 
-        <form action={issueResolutionAction} className="portal-form">
-          <input name="documentId" type="hidden" value={document.id} />
-          <div className="portal-columns">
-            <label>
-              Priority
-              <select className="portal-input" defaultValue="routine" name="priority">
+          <form action={issueResolutionAction} className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <input name="documentId" type="hidden" value={document.id} />
+            <label className="space-y-2 text-sm font-medium text-foreground">
+              <span>Priority</span>
+              <Select defaultValue="routine" name="priority">
                 <option value="routine">routine</option>
                 <option value="urgent">urgent</option>
                 <option value="emergency">emergency</option>
-              </select>
+              </Select>
             </label>
-            <label>
-              Deadline
-              <input className="portal-input" name="deadline" type="date" />
+            <label className="space-y-2 text-sm font-medium text-foreground">
+              <span>Deadline</span>
+              <Input name="deadline" type="date" />
             </label>
-            <label>
-              Workflow step ID
-              <input className="portal-input" name="workflowStepId" />
+            <label className="space-y-2 text-sm font-medium text-foreground">
+              <span>Workflow step ID</span>
+              <Input name="workflowStepId" />
             </label>
-          </div>
-          <label>
-            Resolution text
-            <textarea className="portal-input" name="text" required rows={4} />
-          </label>
-          <label>
-            Executors
-            <textarea className="portal-input" name="executors" required rows={5} />
-          </label>
-          <p className="portal-note">
-            Executors format: <code>positionId|role|instruction|deadline</code> per line.
-          </p>
-          <button className="portal-button" type="submit">
-            Issue resolution
-          </button>
-        </form>
-      </section>
+            <label className="space-y-2 text-sm font-medium text-foreground md:col-span-2 xl:col-span-3">
+              <span>Resolution text</span>
+              <Textarea name="text" required rows={4} />
+            </label>
+            <label className="space-y-2 text-sm font-medium text-foreground md:col-span-2 xl:col-span-3">
+              <span>Executors</span>
+              <Textarea name="executors" required rows={5} />
+            </label>
+            <p className="md:col-span-2 xl:col-span-3 text-sm text-muted-foreground">
+              Executors format: <code>positionId|role|instruction|deadline</code> per line.
+            </p>
+            <div className="md:col-span-2 xl:col-span-3">
+              <Button type="submit">Issue resolution</Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

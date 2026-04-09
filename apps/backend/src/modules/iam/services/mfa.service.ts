@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  Inject,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -8,7 +9,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { authenticator } from 'otplib';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { generateSecret, generateURI, verify } from 'otplib';
 import * as QRCode from 'qrcode';
 import * as crypto from 'crypto';
 
@@ -33,6 +36,7 @@ export class MfaService {
     private readonly iamService: IamService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
   // ── Status ─────────────────────────────────────────────────────────────────
@@ -48,12 +52,12 @@ export class MfaService {
   // ── Setup ──────────────────────────────────────────────────────────────────
 
   /**
-   * Step 1 of setup: generate a new TOTP secret and return the QR code.
-   * The secret is saved but MFA is NOT enabled yet until confirmed.
-   */
+  * Step 1 of setup: generate a new TOTP secret and return the QR code.
+  * The secret is saved but MFA is NOT enabled yet until confirmed.
+  */
   async initSetup(userId: string, username: string): Promise<{ secret: string; qrCodeDataUri: string; otpauthUri: string }> {
-    const secret = authenticator.generateSecret(20);
-    const otpauthUri = authenticator.keyuri(username, ISSUER, secret);
+    const secret = generateSecret({ length: 20 });
+    const otpauthUri = generateURI({ label: username, issuer: ISSUER, secret });
     const qrCodeDataUri = await QRCode.toDataURL(otpauthUri);
 
     // Upsert — user may re-init setup without confirming
@@ -81,7 +85,8 @@ export class MfaService {
       throw new BadRequestException('MFA is already enabled');
     }
 
-    if (!authenticator.verify({ token, secret: record.secret })) {
+    const isValid = verify({ token, secret: record.secret });
+    if (!isValid) {
       throw new UnauthorizedException('Invalid TOTP token');
     }
 
@@ -106,7 +111,8 @@ export class MfaService {
   async disable(userId: string, token: string): Promise<void> {
     const record = await this.mfaRepo.findOneOrFail({ where: { userId } });
 
-    if (!authenticator.verify({ token, secret: record.secret })) {
+    const isValid = verify({ token, secret: record.secret });
+    if (!isValid) {
       throw new UnauthorizedException('Invalid TOTP token');
     }
 
@@ -153,9 +159,18 @@ export class MfaService {
       throw new BadRequestException('MFA is not enabled for this account');
     }
 
-    if (!authenticator.verify({ token: totpCode, secret: record.secret })) {
+    const isValid = verify({ token: totpCode, secret: record.secret });
+    if (!isValid) {
       throw new UnauthorizedException('Invalid TOTP token');
     }
+
+    // Prevent replay: each TOTP code is valid only once per 30-second window
+    const replayKey = `totp_used:${record.id}:${totpCode}`;
+    const alreadyUsed = await this.cache.get(replayKey);
+    if (alreadyUsed) {
+      throw new UnauthorizedException('TOTP code already used');
+    }
+    await this.cache.set(replayKey, true, 90_000); // 3 windows to handle clock skew
 
     return this.iamService.issueTokensForCredential(payload.sub, ipAddress, userAgent);
   }

@@ -1,6 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
+import { AlertCircle, CheckCircle2, KeyRound, ShieldAlert } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type Props = {
   enabled: boolean;
@@ -27,7 +32,7 @@ export default function MfaSetupPanel({ enabled, hasSetup }: Props) {
     try {
       const res = await fetch("/api/auth/mfa/setup", { method: "POST" });
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json() as { qrCodeDataUri: string; secret: string };
+      const data = (await res.json()) as { qrCodeDataUri: string; secret: string };
       setState({ step: "qr", qrCodeDataUri: data.qrCodeDataUri, secret: data.secret });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Setup failed");
@@ -48,7 +53,7 @@ export default function MfaSetupPanel({ enabled, hasSetup }: Props) {
         body: JSON.stringify({ token: confirmToken }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json() as { backupCodes: string[] };
+      const data = (await res.json()) as { backupCodes: string[] };
       setMfaEnabled(true);
       setState({ step: "backup_codes", codes: data.backupCodes });
       setConfirmToken("");
@@ -78,169 +83,169 @@ export default function MfaSetupPanel({ enabled, hasSetup }: Props) {
     }
   }
 
-  // ── Backup codes view ────────────────────────────────────────────────────
+  function downloadBackupCodes(codes: string[]) {
+    const text = codes.join("\n");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "coescd-backup-codes.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const errorBanner = error ? (
+    <div className="flex items-start gap-3 rounded-2xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+      <p>{error}</p>
+    </div>
+  ) : null;
 
   if (state.step === "backup_codes") {
     return (
-      <div>
-        <p style={{ color: "var(--success, green)", fontWeight: 600 }}>
-          MFA enabled successfully.
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+          <p>MFA enabled successfully.</p>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Save these backup codes in a secure place. Each code can only be used once and will not be shown again.
         </p>
-        <p className="portal-note">
-          Save these backup codes in a secure place. Each code can only be used once.
-          They will not be shown again.
-        </p>
-        <div style={{ fontFamily: "monospace", lineHeight: 2, background: "#f5f5f5", padding: "1rem", borderRadius: "4px" }}>
-          {state.codes.map(code => (
+        <div className="grid gap-2 rounded-3xl border border-border/70 bg-slate-950 p-5 font-mono text-sm text-slate-100 sm:grid-cols-2">
+          {state.codes.map((code) => (
             <div key={code}>{code}</div>
           ))}
         </div>
-        <button
-          className="portal-button"
-          style={{ marginTop: "1rem" }}
-          onClick={() => {
-            const text = state.codes.join("\n");
-            const blob = new Blob([text], { type: "text/plain" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = "coescd-backup-codes.txt";
-            a.click();
-            URL.revokeObjectURL(url);
-          }}
-        >
-          Download backup codes
-        </button>
-        <button
-          className="portal-button secondary"
-          style={{ marginTop: "0.5rem", marginLeft: "0.5rem" }}
-          onClick={() => setState({ step: "idle" })}
-        >
-          Done
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <Button type="button" onClick={() => downloadBackupCodes(state.codes)}>
+            Download backup codes
+          </Button>
+          <Button type="button" variant="outline" onClick={() => setState({ step: "idle" })}>
+            Done
+          </Button>
+        </div>
       </div>
     );
   }
-
-  // ── QR code setup view ───────────────────────────────────────────────────
 
   if (state.step === "qr") {
     return (
-      <div>
-        <p className="portal-note">
-          Scan this QR code with your authenticator app, then enter the 6-digit code below
-          to confirm.
-        </p>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={state.qrCodeDataUri} alt="MFA QR Code" style={{ width: 200, height: 200 }} />
-        <p className="portal-note" style={{ marginTop: "0.5rem" }}>
-          Manual key: <code style={{ userSelect: "all" }}>{state.secret}</code>
-        </p>
-        <label style={{ display: "block", marginTop: "1rem" }}>
-          Confirmation code
-          <input
-            type="text"
-            inputMode="numeric"
-            maxLength={6}
-            placeholder="000000"
-            value={confirmToken}
-            onChange={e => setConfirmToken(e.target.value.replace(/\D/g, ""))}
-            autoComplete="one-time-code"
-            style={{ display: "block", marginTop: "0.25rem" }}
-          />
-        </label>
-        {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
-        <button
-          className="portal-button"
-          style={{ marginTop: "0.75rem" }}
-          onClick={handleConfirmEnable}
-          disabled={confirmToken.length !== 6}
-        >
-          Enable MFA
-        </button>
-        <button
-          className="portal-button secondary"
-          style={{ marginLeft: "0.5rem" }}
-          onClick={() => { setState({ step: "idle" }); setError(null); }}
-        >
-          Cancel
-        </button>
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          <KeyRound className="mt-0.5 size-4 shrink-0" />
+          <p>
+            Scan this QR code with your authenticator app, then enter the 6-digit code below to confirm.
+          </p>
+        </div>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          <div className="overflow-hidden rounded-3xl border border-border/70 bg-white p-4">
+            <Image alt="MFA QR Code" height={200} src={state.qrCodeDataUri} unoptimized width={200} />
+          </div>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border/70 bg-muted/30 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Manual key</p>
+              <code className="mt-2 block text-sm text-foreground">{state.secret}</code>
+            </div>
+            <label className="space-y-2 text-sm font-medium text-foreground">
+              <span>Confirmation code</span>
+              <Input
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="000000"
+                type="text"
+                value={confirmToken}
+                onChange={(e) => setConfirmToken(e.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+            {errorBanner}
+            <div className="flex flex-wrap gap-3">
+              <Button type="button" disabled={confirmToken.length !== 6} onClick={handleConfirmEnable}>
+                Enable MFA
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setState({ step: "idle" });
+                  setError(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
-  // ── Enabled state ─────────────────────────────────────────────────────────
-
   if (mfaEnabled) {
     return (
-      <div>
-        <p style={{ color: "var(--success, green)", fontWeight: 600 }}>
-          MFA is enabled on your account.
-        </p>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+            Enabled
+          </Badge>
+        </div>
+        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+          <p>MFA is enabled on your account.</p>
+        </div>
         {state.step !== "disabling" ? (
-          <button
-            className="portal-button secondary"
-            style={{ marginTop: "0.75rem" }}
-            onClick={() => setState({ step: "disabling" })}
-          >
+          <Button type="button" variant="outline" onClick={() => setState({ step: "disabling" })}>
             Disable MFA
-          </button>
+          </Button>
         ) : (
-          <div style={{ marginTop: "0.75rem" }}>
-            <p className="portal-note">
+          <div className="space-y-4 rounded-3xl border border-border/70 bg-background/80 p-5">
+            <p className="text-sm text-muted-foreground">
               Enter your current authenticator code to confirm.
             </p>
-            <label>
-              Code
-              <input
-                type="text"
+            <label className="space-y-2 text-sm font-medium text-foreground">
+              <span>Code</span>
+              <Input
+                autoComplete="one-time-code"
                 inputMode="numeric"
                 maxLength={6}
                 placeholder="000000"
+                type="text"
                 value={disableToken}
-                onChange={e => setDisableToken(e.target.value.replace(/\D/g, ""))}
-                autoComplete="one-time-code"
-                style={{ display: "block", marginTop: "0.25rem" }}
+                onChange={(e) => setDisableToken(e.target.value.replace(/\D/g, ""))}
               />
             </label>
-            {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
-            <button
-              className="portal-button"
-              style={{ marginTop: "0.75rem", background: "var(--danger)" }}
-              onClick={handleDisable}
-              disabled={disableToken.length !== 6}
-            >
-              Confirm disable
-            </button>
-            <button
-              className="portal-button secondary"
-              style={{ marginLeft: "0.5rem" }}
-              onClick={() => { setState({ step: "idle" }); setError(null); setDisableToken(""); }}
-            >
-              Cancel
-            </button>
+            {errorBanner}
+            <div className="flex flex-wrap gap-3">
+              <Button type="button" disabled={disableToken.length !== 6} onClick={handleDisable}>
+                Confirm disable
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setState({ step: "idle" });
+                  setError(null);
+                  setDisableToken("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         )}
       </div>
     );
   }
 
-  // ── Not enabled ───────────────────────────────────────────────────────────
-
   return (
-    <div>
-      <p style={{ color: "var(--warning, orange)" }}>
-        MFA is not enabled. Your account is protected by password only.
-      </p>
-      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
-      <button
-        className="portal-button"
-        style={{ marginTop: "0.75rem" }}
-        onClick={handleStartSetup}
-        disabled={state.step === "loading"}
-      >
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+        <p>MFA is not enabled. Your account is protected by password only.</p>
+      </div>
+      {errorBanner}
+      <Button type="button" disabled={state.step === "loading"} onClick={handleStartSetup}>
         {state.step === "loading" ? "Loading..." : hasSetup ? "Re-setup MFA" : "Enable MFA"}
-      </button>
+      </Button>
     </div>
   );
 }

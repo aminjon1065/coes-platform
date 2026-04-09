@@ -85,7 +85,7 @@ const envFilePath = [
         synchronize: false, // Always use migrations
         logging: config.get<string>('NODE_ENV') === 'development',
         ssl: config.get<boolean>('database.ssl', false)
-          ? { rejectUnauthorized: false }
+          ? { rejectUnauthorized: true }
           : false,
       }),
     }),
@@ -99,12 +99,12 @@ const envFilePath = [
           host: config.get<string>('redis.host'),
           port: config.get<number>('redis.port'),
           password: config.get<string>('redis.password'),
-          ttl: 300,
+          ttl: 300_000, // cache-manager v5: milliseconds
         });
 
         return {
           store: store as unknown as CacheStore,
-          ttl: 300,
+          ttl: 300_000, // 5 minutes in ms
         };
       },
     }),

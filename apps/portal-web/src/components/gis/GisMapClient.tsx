@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { GisIncidentFeature, GisLayerListData } from "@/lib/gis";
 import { useGisRealtime } from "./useGisRealtime";
 
@@ -62,9 +64,7 @@ export function GisMapClient({ incidents, layers, tileBaseUrl }: GisMapClientPro
         next[index] = incident;
         return next;
       });
-      setSelectedIncident((current) =>
-        current?.id === incident.id ? incident : current,
-      );
+      setSelectedIncident((current) => (current?.id === incident.id ? incident : current));
     },
   });
 
@@ -272,65 +272,106 @@ export function GisMapClient({ incidents, layers, tileBaseUrl }: GisMapClientPro
     }
   }, [showHazards]);
 
+  const liveStatusLabel =
+    status === "live" ? "live" : status === "connecting" ? "connecting" : "offline";
+
   return (
-    <div className="gis-map-panel portal-panel">
-      <div className="gis-map-canvas" ref={containerRef} />
+    <div className="relative overflow-hidden rounded-[2rem] border border-border/60 bg-white/90 shadow-sm">
+      <div className="h-[620px] w-full" ref={containerRef} />
 
-      <div className="gis-floating top-left gis-card">
-        <h3>Visible overlays</h3>
-        <div className="portal-stack">
-          <label className="gis-toggle">
-            <input checked={showBoundaries} onChange={() => setShowBoundaries((value) => !value)} type="checkbox" />
-            <span>Administrative boundaries</span>
-          </label>
-          <label className="gis-toggle">
-            <input checked={showHazards} onChange={() => setShowHazards((value) => !value)} type="checkbox" />
-            <span>Hazard fills</span>
-          </label>
-          <label className="gis-toggle">
-            <input checked={showIncidents} onChange={() => setShowIncidents((value) => !value)} type="checkbox" />
-            <span>Incident markers</span>
-          </label>
-        </div>
-      </div>
-
-      <div className="gis-floating top-right gis-card">
-        <p className="portal-note">Live map slice</p>
-        <strong>{liveIncidents.filter((item) => !item.resolvedAt).length}</strong>
-        <p>{status === "live" ? "live" : status === "connecting" ? "connecting" : "offline"}</p>
-        {lastEventAt ? <p className="portal-note">Last event {formatDateTime(lastEventAt)}</p> : null}
-      </div>
-
-      {selectedIncident ? (
-        <div className="gis-floating bottom-center gis-card" style={{ width: "min(420px, calc(100% - 32px))" }}>
-          <div className="portal-section-head">
-            <div>
-              <p className="portal-note">{selectedIncident.incidentType}</p>
-              <h3>{selectedIncident.title}</h3>
+      <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-auto absolute left-4 top-4 w-[280px] rounded-3xl border border-border/70 bg-white/92 p-5 shadow-lg backdrop-blur">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Visible overlays</p>
+              <p className="text-sm text-muted-foreground">Control which map signals are currently displayed.</p>
             </div>
-            <button className="portal-button secondary" onClick={() => setSelectedIncident(null)} type="button">
-              Close
-            </button>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm text-foreground">
+                <input
+                  checked={showBoundaries}
+                  className="size-4 accent-[var(--primary)]"
+                  onChange={() => setShowBoundaries((value) => !value)}
+                  type="checkbox"
+                />
+                <span>Administrative boundaries</span>
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm text-foreground">
+                <input
+                  checked={showHazards}
+                  className="size-4 accent-[var(--primary)]"
+                  onChange={() => setShowHazards((value) => !value)}
+                  type="checkbox"
+                />
+                <span>Hazard fills</span>
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm text-foreground">
+                <input
+                  checked={showIncidents}
+                  className="size-4 accent-[var(--primary)]"
+                  onChange={() => setShowIncidents((value) => !value)}
+                  type="checkbox"
+                />
+                <span>Incident markers</span>
+              </label>
+            </div>
           </div>
-          <p className="portal-note">
-            {selectedIncident.incidentRef} · severity {selectedIncident.severity}
-          </p>
-          <p className="portal-note">
-            {selectedIncident.coordinates[1].toFixed(4)}, {selectedIncident.coordinates[0].toFixed(4)}
-          </p>
-          <p className="portal-note">Reported {formatDateTime(selectedIncident.reportedAt)}</p>
-          {selectedIncident.administrativeCode ? (
-            <p className="portal-note">Admin code {selectedIncident.administrativeCode}</p>
-          ) : null}
-          {selectedIncident.elevationM != null ? (
-            <p className="portal-note">Elevation {selectedIncident.elevationM} m</p>
-          ) : null}
         </div>
-      ) : null}
 
-      <div style={{ display: "none" }}>
-        {layers.length}
+        <div className="pointer-events-auto absolute right-4 top-4 w-[220px] rounded-3xl border border-border/70 bg-white/92 p-5 shadow-lg backdrop-blur">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Live map slice</Badge>
+              <Badge variant="secondary">{liveStatusLabel}</Badge>
+            </div>
+            <div>
+              <p className="text-3xl font-semibold text-foreground">
+                {liveIncidents.filter((item) => !item.resolvedAt).length}
+              </p>
+              <p className="text-sm text-muted-foreground">open incidents in current feed</p>
+            </div>
+            {lastEventAt ? (
+              <p className="text-sm text-muted-foreground">Last event {formatDateTime(lastEventAt)}</p>
+            ) : null}
+          </div>
+        </div>
+
+        {selectedIncident ? (
+          <div
+            className="pointer-events-auto absolute bottom-4 left-1/2 w-[min(420px,calc(100%-32px))] -translate-x-1/2 rounded-3xl border border-border/70 bg-white/95 p-5 shadow-xl backdrop-blur"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  {selectedIncident.incidentType}
+                </p>
+                <h3 className="text-xl font-semibold text-foreground">{selectedIncident.title}</h3>
+              </div>
+              <Button type="button" variant="outline" onClick={() => setSelectedIncident(null)}>
+                Close
+              </Button>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Badge variant="outline">{selectedIncident.incidentRef}</Badge>
+              <Badge variant="secondary">severity {selectedIncident.severity}</Badge>
+            </div>
+            <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+              <p>
+                {selectedIncident.coordinates[1].toFixed(4)}, {selectedIncident.coordinates[0].toFixed(4)}
+              </p>
+              <p>Reported {formatDateTime(selectedIncident.reportedAt)}</p>
+              {selectedIncident.administrativeCode ? (
+                <p>Admin code {selectedIncident.administrativeCode}</p>
+              ) : null}
+              {selectedIncident.elevationM != null ? (
+                <p>Elevation {selectedIncident.elevationM} m</p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
+
+      <div className="hidden">{layers.length}</div>
     </div>
   );
 }

@@ -13,6 +13,16 @@ import {
   revokeUserRoleAssignmentAction,
   vacateUserPositionAction,
 } from "./actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
 type UsersPageProps = {
   searchParams?: Promise<{ q?: string }>;
@@ -58,265 +68,330 @@ export default async function AdminUsersPage({ searchParams }: UsersPageProps) {
   const departments = flattenDepartments(departmentTree);
 
   return (
-    <div className="portal-stack">
-      <section className="portal-panel">
-        <div className="portal-section-head">
-          <div>
-            <span className="portal-pill">Users</span>
-            <h2>User registry</h2>
-          </div>
-          <p className="portal-note">{users.total} profiles</p>
-        </div>
-        <form className="portal-inline-form" method="get">
-          <input
-            className="portal-input"
-            defaultValue={query}
-            name="q"
-            placeholder="Search by display name or email"
-          />
-          <button className="portal-button" type="submit">
-            Search
-          </button>
-        </form>
+    <div className="space-y-6">
+      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card className="overflow-hidden border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(232,242,252,0.88))]">
+          <CardHeader className="space-y-4">
+            <Badge className="w-fit">Users</Badge>
+            <div className="space-y-3">
+              <CardTitle className="font-display text-4xl leading-tight">User registry</CardTitle>
+              <CardDescription className="max-w-2xl text-base">
+                Search, provision, and manage role and position assignments for portal operators.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form className="flex flex-col gap-3 sm:flex-row" method="get">
+              <Input
+                className="flex-1"
+                defaultValue={query}
+                name="q"
+                placeholder="Search by display name or email"
+              />
+              <Button type="submit">Search</Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(13,27,47,0.94),rgba(19,46,78,0.9))] text-white">
+          <CardHeader>
+            <CardDescription className="text-white/60">Registry summary</CardDescription>
+            <CardTitle className="font-display text-3xl text-white">
+              {users.total} profile{users.total === 1 ? "" : "s"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm text-white/70">
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+              Roles available: {roles.length}
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+              Positions available: {positions.length}
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+              Departments in tree: {departments.length}
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
-      <section className="portal-columns admin-split">
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Create user</h2>
-          </div>
-          <form action={createAdminUserAction} className="portal-form">
-            <div className="portal-columns portal-columns-tight">
-              <label>
-                First name
-                <input className="portal-input" name="firstName" required />
-              </label>
-              <label>
-                Last name
-                <input className="portal-input" name="lastName" required />
-              </label>
-              <label>
-                Middle name
-                <input className="portal-input" name="middleName" />
-              </label>
-              <label>
-                Display name
-                <input className="portal-input" name="displayName" />
-              </label>
-              <label>
-                Username
-                <input className="portal-input" name="username" required />
-              </label>
-              <label>
-                Email
-                <input className="portal-input" name="email" required type="email" />
-              </label>
-              <label>
-                Password
-                <input className="portal-input" minLength={12} name="password" required type="password" />
-              </label>
-              <label>
-                Phone
-                <input className="portal-input" name="phone" />
-              </label>
-              <label>
-                Clearance
-                <select className="portal-input" defaultValue="1" name="clearanceLevel">
-                  <option value="0">Public</option>
-                  <option value="1">Internal</option>
-                  <option value="2">Confidential</option>
-                  <option value="3">Secret</option>
-                </select>
-              </label>
-            </div>
-            <button className="portal-button" type="submit">
-              Create user
-            </button>
-          </form>
-        </article>
+      <section className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-display text-2xl">Create user</CardTitle>
+            <CardDescription>Provision a new operator profile and initial credential.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={createAdminUserAction} className="grid gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  First name
+                  <Input name="firstName" required />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Last name
+                  <Input name="lastName" required />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Middle name
+                  <Input name="middleName" />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Display name
+                  <Input name="displayName" />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Username
+                  <Input name="username" required />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Email
+                  <Input name="email" required type="email" />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Password
+                  <Input minLength={12} name="password" required type="password" />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Phone
+                  <Input name="phone" />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
+                  Clearance
+                  <select
+                    className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+                    defaultValue="1"
+                    name="clearanceLevel"
+                  >
+                    <option value="0">Public</option>
+                    <option value="1">Internal</option>
+                    <option value="2">Confidential</option>
+                    <option value="3">Secret</option>
+                  </select>
+                </label>
+              </div>
+              <Button className="w-fit" type="submit">
+                Create user
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
 
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Profiles, roles, and positions</h2>
-          </div>
-          <ul className="portal-list">
-            {users.items.length === 0 ? (
-              <li>No users found.</li>
-            ) : (
-              users.items.map((user) => {
-                const roleAssignments = user.roleAssignments;
-                const positionAssignments = user.positionAssignments;
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-display text-2xl">Profiles, roles, and positions</CardTitle>
+            <CardDescription>Live registry of effective operator assignments.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-4">
+              {users.items.length === 0 ? (
+                <li className="rounded-2xl border border-dashed border-border bg-background/70 p-4 text-sm text-muted-foreground">
+                  No users found.
+                </li>
+              ) : (
+                users.items.map((user) => {
+                  const roleAssignments = user.roleAssignments;
+                  const positionAssignments = user.positionAssignments;
 
-                return (
-                  <li key={user.id}>
-                    <div className="portal-stack">
-                      <div className="portal-row">
-                        <div>
-                          <strong>{user.displayName}</strong>
-                          <p className="portal-note">
-                            {user.email} В· {clearanceLabel(user.clearanceLevel)} В· {user.status}
-                          </p>
+                  return (
+                    <li className="rounded-[28px] border border-border/70 bg-white/70 p-5" key={user.id}>
+                      <div className="space-y-5">
+                        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                          <div className="space-y-2">
+                            <p className="font-semibold text-foreground">{user.displayName}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {user.email} · {clearanceLabel(user.clearanceLevel)} · {user.status}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Badge variant={user.status === "active" ? "secondary" : "outline"}>
+                              {user.status}
+                            </Badge>
+                            {user.status === "active" ? (
+                              <form action={offboardAdminUserAction}>
+                                <input name="userId" type="hidden" value={user.id} />
+                                <Button type="submit" variant="secondary">
+                                  Offboard
+                                </Button>
+                              </form>
+                            ) : null}
+                          </div>
                         </div>
-                        {user.status === "active" ? (
-                          <form action={offboardAdminUserAction}>
-                            <input name="userId" type="hidden" value={user.id} />
-                            <button className="portal-button secondary" type="submit">
-                              Offboard
-                            </button>
-                          </form>
-                        ) : null}
-                      </div>
 
-                      <div className="portal-columns admin-split">
-                        <div className="portal-stack">
-                          <p className="portal-note">Assigned roles</p>
-                          {roleAssignments.length === 0 ? (
-                            <p className="portal-note">No active role assignments.</p>
-                          ) : (
-                            <ul className="portal-list">
-                              {roleAssignments.map((assignment) => (
-                                <li key={assignment.id}>
-                                  <div className="portal-row">
-                                    <div>
-                                      <strong>{assignment.roleName}</strong>
-                                      <p className="portal-note">
-                                        {assignment.departmentScopeId
-                                          ? `department ${assignment.departmentScopeId}`
-                                          : "global scope"}
-                                        {assignment.expiresAt ? ` В· expires ${assignment.expiresAt}` : ""}
-                                      </p>
-                                    </div>
-                                    <form action={revokeUserRoleAssignmentAction}>
-                                      <input name="credentialId" type="hidden" value={user.credentialId} />
-                                      <input name="assignmentId" type="hidden" value={assignment.id} />
-                                      <button className="portal-button secondary" type="submit">
-                                        Revoke
-                                      </button>
-                                    </form>
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-
-                          <form action={assignUserRoleAction} className="portal-form">
-                            <input name="credentialId" type="hidden" value={user.credentialId} />
-                            <div className="portal-columns portal-columns-tight">
-                              <label>
-                                Role
-                                <select className="portal-input" defaultValue="" name="roleId" required>
-                                  <option value="">Select role</option>
-                                  {roles.map((role) => (
-                                    <option key={role.id} value={role.id}>
-                                      {role.name}
-                                    </option>
+                        <div className="grid gap-5 xl:grid-cols-2">
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-foreground">Assigned roles</p>
+                              {roleAssignments.length === 0 ? (
+                                <p className="rounded-2xl border border-dashed border-border bg-background/70 p-4 text-sm text-muted-foreground">
+                                  No active role assignments.
+                                </p>
+                              ) : (
+                                <ul className="space-y-3">
+                                  {roleAssignments.map((assignment) => (
+                                    <li
+                                      className="flex flex-col gap-4 rounded-3xl border border-border/70 bg-white/70 p-4 md:flex-row md:items-start md:justify-between"
+                                      key={assignment.id}
+                                    >
+                                      <div className="space-y-2">
+                                        <p className="font-semibold text-foreground">{assignment.roleName}</p>
+                                        <p className="text-sm text-muted-foreground">
+                                          {assignment.departmentScopeId
+                                            ? `department ${assignment.departmentScopeId}`
+                                            : "global scope"}
+                                          {assignment.expiresAt ? ` · expires ${assignment.expiresAt}` : ""}
+                                        </p>
+                                      </div>
+                                      <form action={revokeUserRoleAssignmentAction}>
+                                        <input name="credentialId" type="hidden" value={user.credentialId} />
+                                        <input name="assignmentId" type="hidden" value={assignment.id} />
+                                        <Button type="submit" variant="secondary">
+                                          Revoke
+                                        </Button>
+                                      </form>
+                                    </li>
                                   ))}
-                                </select>
-                              </label>
-                              <label>
-                                Department scope
-                                <select className="portal-input" defaultValue="" name="departmentScopeId">
-                                  <option value="">Global scope</option>
-                                  {departments.map((department) => (
-                                    <option key={department.id} value={department.id}>
-                                      {"".padStart(department.depth * 2, " ")}
-                                      {department.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label>
-                                Expires at
-                                <input className="portal-input" name="expiresAt" type="datetime-local" />
-                              </label>
+                                </ul>
+                              )}
                             </div>
-                            <div className="portal-actions">
-                              <button className="portal-button" type="submit">
+
+                            <form action={assignUserRoleAction} className="grid gap-4 rounded-3xl border border-border/70 bg-background/70 p-4">
+                              <input name="credentialId" type="hidden" value={user.credentialId} />
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <label className="grid gap-2 text-sm font-medium text-foreground">
+                                  Role
+                                  <select
+                                    className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+                                    defaultValue=""
+                                    name="roleId"
+                                    required
+                                  >
+                                    <option value="">Select role</option>
+                                    {roles.map((role) => (
+                                      <option key={role.id} value={role.id}>
+                                        {role.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="grid gap-2 text-sm font-medium text-foreground">
+                                  Department scope
+                                  <select
+                                    className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+                                    defaultValue=""
+                                    name="departmentScopeId"
+                                  >
+                                    <option value="">Global scope</option>
+                                    {departments.map((department) => (
+                                      <option key={department.id} value={department.id}>
+                                        {"".padStart(department.depth * 2, " ")}
+                                        {department.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
+                                  Expires at
+                                  <Input name="expiresAt" type="datetime-local" />
+                                </label>
+                              </div>
+                              <Button className="w-fit" type="submit">
                                 Assign role
-                              </button>
-                            </div>
-                          </form>
-                        </div>
+                              </Button>
+                            </form>
+                          </div>
 
-                        <div className="portal-stack">
-                          <p className="portal-note">Position assignments</p>
-                          {positionAssignments.length === 0 ? (
-                            <p className="portal-note">No active position assignments.</p>
-                          ) : (
-                            <ul className="portal-list">
-                              {positionAssignments.map((assignment) => {
-                                return (
-                                  <li key={assignment.id}>
-                                    <div className="portal-row">
-                                      <div>
-                                        <strong>{assignment.positionTitle ?? assignment.positionId}</strong>
-                                        <p className="portal-note">
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-foreground">Position assignments</p>
+                              {positionAssignments.length === 0 ? (
+                                <p className="rounded-2xl border border-dashed border-border bg-background/70 p-4 text-sm text-muted-foreground">
+                                  No active position assignments.
+                                </p>
+                              ) : (
+                                <ul className="space-y-3">
+                                  {positionAssignments.map((assignment) => (
+                                    <li
+                                      className="flex flex-col gap-4 rounded-3xl border border-border/70 bg-white/70 p-4 md:flex-row md:items-start md:justify-between"
+                                      key={assignment.id}
+                                    >
+                                      <div className="space-y-2">
+                                        <p className="font-semibold text-foreground">
+                                          {assignment.positionTitle ?? assignment.positionId}
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
                                           {assignmentTypeLabel(assignment.type)}
-                                          {assignment.departmentName ? ` В· ${assignment.departmentName}` : ""}
-                                          {assignment.notes ? ` В· ${assignment.notes}` : ""}
+                                          {assignment.departmentName ? ` · ${assignment.departmentName}` : ""}
+                                          {assignment.notes ? ` · ${assignment.notes}` : ""}
                                         </p>
                                       </div>
                                       <form action={vacateUserPositionAction}>
                                         <input name="userId" type="hidden" value={user.id} />
                                         <input name="positionId" type="hidden" value={assignment.positionId} />
-                                        <button className="portal-button secondary" type="submit">
+                                        <Button type="submit" variant="secondary">
                                           Vacate
-                                        </button>
+                                        </Button>
                                       </form>
-                                    </div>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-
-                          <form action={assignUserPositionAction} className="portal-form">
-                            <input name="userId" type="hidden" value={user.id} />
-                            <div className="portal-columns portal-columns-tight">
-                              <label>
-                                Position
-                                <select className="portal-input" defaultValue="" name="positionId" required>
-                                  <option value="">Select position</option>
-                                  {positions.map((position) => (
-                                    <option key={position.id} value={position.id}>
-                                      {position.title}
-                                      {position.departmentName ? ` · ${position.departmentName}` : ""}
-                                    </option>
+                                    </li>
                                   ))}
-                                </select>
-                              </label>
-                              <label>
-                                Assignment type
-                                <select className="portal-input" defaultValue="primary" name="type">
-                                  <option value="primary">Primary</option>
-                                  <option value="acting">Acting</option>
-                                  <option value="concurrent">Concurrent</option>
-                                </select>
-                              </label>
-                              <label>
-                                Effective at
-                                <input className="portal-input" name="assignedAt" type="datetime-local" />
-                              </label>
-                              <label>
-                                Notes
-                                <input className="portal-input" name="notes" />
-                              </label>
+                                </ul>
+                              )}
                             </div>
-                            <div className="portal-actions">
-                              <button className="portal-button" type="submit">
+
+                            <form action={assignUserPositionAction} className="grid gap-4 rounded-3xl border border-border/70 bg-background/70 p-4">
+                              <input name="userId" type="hidden" value={user.id} />
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <label className="grid gap-2 text-sm font-medium text-foreground">
+                                  Position
+                                  <select
+                                    className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+                                    defaultValue=""
+                                    name="positionId"
+                                    required
+                                  >
+                                    <option value="">Select position</option>
+                                    {positions.map((position) => (
+                                      <option key={position.id} value={position.id}>
+                                        {position.title}
+                                        {position.departmentName ? ` · ${position.departmentName}` : ""}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="grid gap-2 text-sm font-medium text-foreground">
+                                  Assignment type
+                                  <select
+                                    className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+                                    defaultValue="primary"
+                                    name="type"
+                                  >
+                                    <option value="primary">Primary</option>
+                                    <option value="acting">Acting</option>
+                                    <option value="concurrent">Concurrent</option>
+                                  </select>
+                                </label>
+                                <label className="grid gap-2 text-sm font-medium text-foreground">
+                                  Effective at
+                                  <Input name="assignedAt" type="datetime-local" />
+                                </label>
+                                <label className="grid gap-2 text-sm font-medium text-foreground">
+                                  Notes
+                                  <Input name="notes" />
+                                </label>
+                              </div>
+                              <Button className="w-fit" type="submit">
                                 Assign position
-                              </button>
-                            </div>
-                          </form>
+                              </Button>
+                            </form>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-        </article>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

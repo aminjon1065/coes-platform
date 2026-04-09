@@ -17,7 +17,9 @@ RUN npm config set fetch-retries 5 \
   && npm config set fetch-retry-mintimeout 20000 \
   && npm config set fetch-retry-maxtimeout 120000
 COPY package*.json ./
-RUN npm install --omit=dev --no-audit --no-fund && cp -R node_modules /prod_node_modules
+# Install all deps (needed to build), then produce a separate prod-only copy
+RUN npm install --no-audit --no-fund
+RUN npm prune --omit=dev --no-audit && cp -R node_modules /prod_node_modules
 RUN npm install --no-audit --no-fund
 
 # ─── Build ──────────────────────────────────────────────────────────────────
@@ -43,6 +45,10 @@ RUN chmod +x ./docker-entrypoint.sh
 USER coescd
 
 EXPOSE 4000
+
+# Health check against the /api/health endpoint (added by HealthController)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:4000/api/health || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["./docker-entrypoint.sh"]

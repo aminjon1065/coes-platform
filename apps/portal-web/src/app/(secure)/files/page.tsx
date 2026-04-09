@@ -6,6 +6,17 @@ import {
   deleteFolderAction,
   uploadFileAction,
 } from "./actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type FilesPageProps = {
   searchParams?: Promise<{ folder?: string }>;
@@ -28,142 +39,153 @@ export default async function FilesPage({ searchParams }: FilesPageProps) {
   const contents = await getFolderContents(folderId);
 
   return (
-    <div className="portal-stack">
-      <section className="portal-columns admin-split">
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <div>
-              <span className="portal-pill">Files</span>
-              <h2>Storage view</h2>
+    <div className="space-y-6">
+      <section className="grid gap-4 xl:grid-cols-[1fr_0.85fr]">
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-2">
+              <Badge className="w-fit">Files</Badge>
+              <CardTitle className="font-display text-3xl">Storage view</CardTitle>
+              <CardDescription>Folders and files for the current storage scope.</CardDescription>
             </div>
             {folderId ? (
-              <Link className="portal-button secondary" href="/files">
-                Back to root
-              </Link>
+              <Button asChild size="sm" variant="secondary">
+                <Link href="/files">Back to root</Link>
+              </Button>
             ) : null}
-          </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-foreground">Folders</p>
+              <ul className="space-y-3">
+                {contents.folders.length === 0 ? (
+                  <li className="rounded-2xl border border-dashed border-border bg-background/70 p-4 text-sm text-muted-foreground">
+                    No folders in this scope.
+                  </li>
+                ) : (
+                  contents.folders.map((folder) => (
+                    <li className="flex flex-col gap-4 rounded-3xl border border-border/70 bg-white/70 p-4 md:flex-row md:items-start md:justify-between" key={folder.id}>
+                      <div className="space-y-2">
+                        <Link className="font-semibold text-foreground" href={`/files?folder=${folder.id}`}>
+                          {folder.name}
+                        </Link>
+                        <p className="text-sm text-muted-foreground">
+                          class {folder.classification} · updated {formatDateTime(folder.updatedAt)}
+                        </p>
+                      </div>
+                      <form action={deleteFolderAction}>
+                        <input name="folderId" type="hidden" value={folder.id} />
+                        <Button type="submit" variant="secondary">
+                          Delete
+                        </Button>
+                      </form>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
 
-          <h3>Folders</h3>
-          <ul className="portal-list">
-            {contents.folders.length === 0 ? (
-              <li>No folders in this scope.</li>
-            ) : (
-              contents.folders.map((folder) => (
-                <li key={folder.id}>
-                  <div className="portal-row">
-                    <div>
-                      <Link className="portal-item-link" href={`/files?folder=${folder.id}`}>
-                        {folder.name}
-                      </Link>
-                      <p className="portal-note">
-                        class {folder.classification} · updated {formatDateTime(folder.updatedAt)}
-                      </p>
-                    </div>
-                    <form action={deleteFolderAction}>
-                      <input name="folderId" type="hidden" value={folder.id} />
-                      <button className="portal-button secondary" type="submit">
-                        Delete
-                      </button>
-                    </form>
-                  </div>
-                </li>
-              ))
-            )}
-          </ul>
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-foreground">Files</p>
+              <ul className="space-y-3">
+                {contents.files.length === 0 ? (
+                  <li className="rounded-2xl border border-dashed border-border bg-background/70 p-4 text-sm text-muted-foreground">
+                    No files in this scope.
+                  </li>
+                ) : (
+                  contents.files.map((file) => (
+                    <li className="flex flex-col gap-4 rounded-3xl border border-border/70 bg-white/70 p-4 md:flex-row md:items-start md:justify-between" key={file.id}>
+                      <div className="space-y-2">
+                        <Link className="font-semibold text-foreground" href={`/files/${file.id}`}>
+                          {file.displayName}
+                        </Link>
+                        <p className="text-sm text-muted-foreground">
+                          {formatSize(file.totalSizeBytes)} · {file.scanStatus} · versions {file.versionCount}
+                        </p>
+                      </div>
+                      <form action={deleteFileAction}>
+                        <input name="fileId" type="hidden" value={file.id} />
+                        <Button type="submit" variant="secondary">
+                          Delete
+                        </Button>
+                      </form>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
 
-          <h3>Files</h3>
-          <ul className="portal-list">
-            {contents.files.length === 0 ? (
-              <li>No files in this scope.</li>
-            ) : (
-              contents.files.map((file) => (
-                <li key={file.id}>
-                  <div className="portal-row">
-                    <div>
-                      <Link className="portal-item-link" href={`/files/${file.id}`}>
-                        {file.displayName}
-                      </Link>
-                      <p className="portal-note">
-                        {formatSize(file.totalSizeBytes)} · {file.scanStatus} · versions {file.versionCount}
-                      </p>
-                    </div>
-                    <form action={deleteFileAction}>
-                      <input name="fileId" type="hidden" value={file.id} />
-                      <button className="portal-button secondary" type="submit">
-                        Delete
-                      </button>
-                    </form>
-                  </div>
-                </li>
-              ))
-            )}
-          </ul>
-        </article>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-display text-2xl">Create folder</CardTitle>
+              <CardDescription>Add a new folder inside the current scope.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form action={createFolderAction} className="grid gap-4">
+                <input name="parentId" type="hidden" value={folderId ?? ""} />
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Name
+                  <Input name="name" required />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Classification
+                  <select className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15" defaultValue="1" name="classification">
+                    <option value="0">Public</option>
+                    <option value="1">Internal</option>
+                    <option value="2">Confidential</option>
+                    <option value="3">Secret</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Description
+                  <Textarea name="description" rows={3} />
+                </label>
+                <Button className="w-fit" type="submit">
+                  Create folder
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
 
-        <article className="portal-panel">
-          <div className="portal-section-head">
-            <h2>Create folder</h2>
-          </div>
-          <form action={createFolderAction} className="portal-form">
-            <input name="parentId" type="hidden" value={folderId ?? ""} />
-            <label>
-              Name
-              <input className="portal-input" name="name" required />
-            </label>
-            <label>
-              Classification
-              <select className="portal-input" defaultValue="1" name="classification">
-                <option value="0">Public</option>
-                <option value="1">Internal</option>
-                <option value="2">Confidential</option>
-                <option value="3">Secret</option>
-              </select>
-            </label>
-            <label>
-              Description
-              <textarea className="portal-input" name="description" rows={3} />
-            </label>
-            <button className="portal-button" type="submit">
-              Create folder
-            </button>
-          </form>
-          <div className="portal-section-head">
-            <h2>Upload file</h2>
-          </div>
-          <form
-            action={uploadFileAction}
-            className="portal-form"
-          >
-            <input name="folderId" type="hidden" value={folderId ?? ""} />
-            <label>
-              File
-              <input className="portal-input" name="file" required type="file" />
-            </label>
-            <label>
-              Display name
-              <input className="portal-input" name="displayName" />
-            </label>
-            <label>
-              Classification
-              <select className="portal-input" defaultValue="1" name="classification">
-                <option value="0">Public</option>
-                <option value="1">Internal</option>
-                <option value="2">Confidential</option>
-                <option value="3">Secret</option>
-              </select>
-            </label>
-            <label>
-              Upload note
-              <textarea className="portal-input" name="uploadNote" rows={3} />
-            </label>
-            <button className="portal-button" type="submit">
-              Upload file
-            </button>
-          </form>
-          <p className="portal-note">
-            Uploaded files may stay unavailable for download until virus scan status becomes `clean`.
-          </p>
-        </article>
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-display text-2xl">Upload file</CardTitle>
+              <CardDescription>Files may remain unavailable until the scan status becomes `clean`.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form action={uploadFileAction} className="grid gap-4">
+                <input name="folderId" type="hidden" value={folderId ?? ""} />
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  File
+                  <Input name="file" required type="file" />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Display name
+                  <Input name="displayName" />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Classification
+                  <select className="flex h-12 w-full rounded-2xl border border-border/70 bg-white/70 px-4 py-3 text-sm text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15" defaultValue="1" name="classification">
+                    <option value="0">Public</option>
+                    <option value="1">Internal</option>
+                    <option value="2">Confidential</option>
+                    <option value="3">Secret</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Upload note
+                  <Textarea name="uploadNote" rows={3} />
+                </label>
+                <Button className="w-fit" type="submit">
+                  Upload file
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
       </section>
     </div>
   );
