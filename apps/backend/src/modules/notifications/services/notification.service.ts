@@ -551,17 +551,33 @@ export class NotificationService {
       .take(query.limit ?? 50)
       .getManyAndCount();
 
-    const unreadCount = await this.notifRepo.count({
-      where: { recipientUserId: userId, isRead: false },
-    });
+    const unreadCount = await this.notifRepo
+      .createQueryBuilder('n')
+      .where('(n.recipient_user_id = :userId OR n.recipient_position_id = :positionId)', {
+        userId,
+        positionId,
+      })
+      .andWhere('n.is_read = false')
+      .andWhere('(n.expires_at IS NULL OR n.expires_at > NOW())')
+      .getCount();
 
     return { items, total, unreadCount };
   }
 
-  async markRead(notificationId: string, userId: string): Promise<void> {
+  async markRead(
+    notificationId: string,
+    userId: string,
+    positionId: string,
+  ): Promise<void> {
     const notif = await this.notifRepo.findOne({ where: { id: notificationId } });
     if (!notif) throw new NotFoundException('Notification not found');
-    if (notif.recipientUserId !== userId) throw new ForbiddenException('Not your notification');
+    if (
+      notif.recipientUserId !== userId &&
+      notif.recipientPositionId !== positionId
+    ) {
+      throw new ForbiddenException('Not your notification');
+    }
+    if (notif.expiresAt && notif.expiresAt <= new Date()) return;
     if (notif.isRead) return;
 
     await this.notifRepo.update(notificationId, {
@@ -570,16 +586,21 @@ export class NotificationService {
     });
   }
 
-  async markAllRead(userId: string): Promise<{ updated: number }> {
-    const result = await this.notifRepo
-      .createQueryBuilder()
-      .update(Notification)
-      .set({ isRead: true, readAt: new Date() })
-      .where('recipient_user_id = :userId', { userId })
-      .andWhere('is_read = false')
-      .execute();
+  async markAllRead(userId: string, positionId: string): Promise<{ updated: number }> {
+    const result = await this.dataSource.query<
+      Array<{ id: string }>
+    >(
+      `UPDATE notifications.notifications
+          SET is_read = TRUE,
+              read_at = NOW()
+        WHERE is_read = FALSE
+          AND (recipient_user_id = $1 OR recipient_position_id = $2)
+          AND (expires_at IS NULL OR expires_at > NOW())
+        RETURNING id`,
+      [userId, positionId],
+    );
 
-    return { updated: result.affected ?? 0 };
+    return { updated: result.length };
   }
 
   // ─── Preference CRUD (2.6.5) ──────────────────────────────────────────────────

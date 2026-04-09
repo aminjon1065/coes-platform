@@ -16,6 +16,7 @@ import { HazardZone, HazardClass, HazardSeverity } from '../entities/hazard-zone
 import { IncidentLocation } from '../entities/incident-location.entity';
 import { AdministrativeBoundary } from '../entities/administrative-boundary.entity';
 import { AuditService } from '../../audit/services/audit.service';
+import { GatewayEventsService } from '../../../infra/events/gateway-events.service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,6 +71,7 @@ describe('GisService', () => {
   let dataSource: jest.Mocked<DataSource>;
   let auditService: jest.Mocked<AuditService>;
   let events: jest.Mocked<EventEmitter2>;
+  let gatewayEvents: jest.Mocked<GatewayEventsService>;
 
   beforeEach(async () => {
     layerRepo = mockRepo(SpatialLayer);
@@ -84,6 +86,9 @@ describe('GisService', () => {
 
     auditService = { emit: jest.fn() } as unknown as jest.Mocked<AuditService>;
     events = { emit: jest.fn() } as unknown as jest.Mocked<EventEmitter2>;
+    gatewayEvents = {
+      publishToRoom: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<GatewayEventsService>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -96,6 +101,7 @@ describe('GisService', () => {
         { provide: getDataSourceToken(),                     useValue: dataSource },
         { provide: AuditService,                             useValue: auditService },
         { provide: EventEmitter2,                            useValue: events },
+        { provide: GatewayEventsService,                     useValue: gatewayEvents },
       ],
     }).compile();
 

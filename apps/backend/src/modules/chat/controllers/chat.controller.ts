@@ -132,7 +132,13 @@ export class ChatController {
     @Body('body') body: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.chatService.editMessage(messageId, body, req.user.sub, req.user.clearance ?? 0);
+    return this.chatService.editMessage(
+      messageId,
+      body,
+      req.user.sub,
+      req.user.positionId!,
+      req.user.clearance ?? 0,
+    );
   }
 
   @Delete('messages/:messageId')
@@ -141,7 +147,12 @@ export class ChatController {
     @Param('messageId', ParseUUIDPipe) messageId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.chatService.deleteMessage(messageId, req.user.sub, req.user.clearance ?? 0);
+    return this.chatService.deleteMessage(
+      messageId,
+      req.user.sub,
+      req.user.positionId!,
+      req.user.clearance ?? 0,
+    );
   }
 
   // ─── Read receipts ────────────────────────────────────────────────────────────

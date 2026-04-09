@@ -527,7 +527,11 @@ export class CallsService {
 
   // ── Get session details ────────────────────────────────────────────────────
 
-  async getSession(sessionId: string, actorClearance: number): Promise<CallSession> {
+  async getSession(
+    sessionId: string,
+    actorId: string,
+    actorClearance: number,
+  ): Promise<CallSession> {
     const session = await this.sessionsRepo.findOne({
       where: { id: sessionId },
       relations: ['participants', 'recordings'],
@@ -535,6 +539,12 @@ export class CallsService {
     if (!session) throw new NotFoundException('Call session not found');
     if (actorClearance < session.classification) {
       throw new ForbiddenException('Insufficient clearance');
+    }
+    const participant = await this.participantsRepo.findOne({
+      where: { sessionId, userId: actorId },
+    });
+    if (!participant && session.initiatedById !== actorId) {
+      throw new ForbiddenException('Call session access is limited to participants');
     }
     return session;
   }

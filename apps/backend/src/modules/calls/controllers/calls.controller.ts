@@ -49,7 +49,7 @@ export class CallsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.callsService.getSession(id, req.user.clearance ?? 0);
+    return this.callsService.getSession(id, req.user.sub, req.user.clearance ?? 0);
   }
 
   @Post('sessions/:id/join')

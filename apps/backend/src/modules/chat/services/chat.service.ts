@@ -207,7 +207,7 @@ export class ChatService {
   async getChannel(id: string, actorPositionId: string, actorClearance: number): Promise<Channel> {
     const channel = await this.channelRepo.findOne({ where: { id }, relations: ['members'] });
     if (!channel) throw new NotFoundException(`Channel ${id} not found`);
-    this.assertChannelAccess(channel, actorPositionId, actorClearance);
+    await this.assertChannelAccess(channel, actorPositionId, actorClearance);
     return channel;
   }
 
@@ -279,7 +279,7 @@ export class ChatService {
   ): Promise<Message> {
     const channel = await this.channelRepo.findOne({ where: { id: channelId } });
     if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
-    this.assertChannelAccess(channel, actorPositionId, actorClearance);
+    await this.assertChannelAccess(channel, actorPositionId, actorClearance);
 
     if (channel.status === ChannelStatus.READ_ONLY) {
       throw new BadRequestException('This channel is read-only');
@@ -411,7 +411,7 @@ export class ChatService {
   ): Promise<Message[]> {
     const channel = await this.channelRepo.findOne({ where: { id: channelId } });
     if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
-    this.assertChannelAccess(channel, actorPositionId, actorClearance);
+    await this.assertChannelAccess(channel, actorPositionId, actorClearance);
 
     const qb = this.messageRepo
       .createQueryBuilder('m')
@@ -437,6 +437,7 @@ export class ChatService {
     messageId: string,
     newBody: string,
     actorId: string,
+    actorPositionId: string,
     actorClearance: number,
   ): Promise<Message> {
     const message = await this.messageRepo.findOne({ where: { id: messageId } });
@@ -445,6 +446,8 @@ export class ChatService {
     if (message.senderId !== actorId) throw new ForbiddenException('Only the sender may edit their message');
 
     const channel = await this.channelRepo.findOne({ where: { id: message.channelId } });
+    if (!channel) throw new NotFoundException(`Channel ${message.channelId} not found`);
+    await this.assertChannelAccess(channel, actorPositionId, actorClearance);
     if (channel?.legalHold) throw new BadRequestException('Message cannot be edited under legal hold');
 
     const minutesSinceSend = (Date.now() - message.createdAt.getTime()) / 60_000;
@@ -487,6 +490,7 @@ export class ChatService {
   async deleteMessage(
     messageId: string,
     actorId: string,
+    actorPositionId: string,
     actorClearance: number,
   ): Promise<void> {
     const message = await this.messageRepo.findOne({ where: { id: messageId } });
@@ -495,6 +499,8 @@ export class ChatService {
     if (message.senderId !== actorId) throw new ForbiddenException('Only the sender may delete their message');
 
     const channel = await this.channelRepo.findOne({ where: { id: message.channelId } });
+    if (!channel) throw new NotFoundException(`Channel ${message.channelId} not found`);
+    await this.assertChannelAccess(channel, actorPositionId, actorClearance);
     if (channel?.legalHold) throw new BadRequestException('Message cannot be deleted under legal hold');
 
     // Soft delete: null out content, keep record for audit
@@ -640,9 +646,15 @@ export class ChatService {
     return this.memberRepo.save(member);
   }
 
-  private assertChannelAccess(channel: Channel, positionId: string, clearance: number): void {
+  private async assertChannelAccess(channel: Channel, positionId: string, clearance: number): Promise<void> {
     if (clearance < channel.classification) {
       throw new ForbiddenException(`Clearance level ${clearance} insufficient for channel classification ${channel.classification}`);
+    }
+    const membership = await this.memberRepo.findOne({
+      where: { channelId: channel.id, positionId, status: MemberStatus.ACTIVE },
+    });
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this channel');
     }
   }
 }

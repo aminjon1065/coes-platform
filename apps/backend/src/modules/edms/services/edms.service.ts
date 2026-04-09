@@ -107,12 +107,17 @@ export class EdmsService {
   async listDocuments(
     dto: ListDocumentsDto,
     actorId: string,
+    actorPositionId: string | null,
     userClearance: number,
   ): Promise<{ items: Document[]; total: number }> {
     const qb = this.documentRepo
       .createQueryBuilder('doc')
       .leftJoinAndSelect('doc.type', 'type')
-      .where('doc.classification <= :clearance', { clearance: userClearance });
+      .where('doc.classification <= :clearance', { clearance: userClearance })
+      .andWhere(this.buildDocumentVisibilityWhere('doc', actorPositionId), {
+        actorId,
+        actorPositionId,
+      });
 
     if (dto.status) qb.andWhere('doc.status = :status', { status: dto.status });
     if (dto.direction) qb.andWhere('doc.direction = :direction', { direction: dto.direction });
@@ -137,13 +142,23 @@ export class EdmsService {
     });
   }
 
-  async getDocument(id: string, userClearance: number): Promise<Document> {
+  async getDocument(
+    id: string,
+    actorId: string,
+    actorPositionId: string | null,
+    userClearance: number,
+  ): Promise<Document> {
     const doc = await this.documentRepo.findOne({
       where: { id },
       relations: ['type', 'versions', 'attachments'],
     });
     if (!doc) throw new NotFoundException(`Document ${id} not found`);
     this.assertClearance(userClearance, doc.classification);
+    this.assertDocumentVisibility(doc, actorId, actorPositionId);
+    doc.attachments = (doc.attachments ?? []).filter(
+      (attachment) =>
+        attachment.removedAt === null && attachment.classification <= userClearance,
+    );
     return doc;
   }
 
@@ -155,9 +170,10 @@ export class EdmsService {
     actorId: string,
     userClearance: number,
   ): Promise<Document> {
-    const doc = await this.getDocument(id, userClearance);
+    const doc = await this.getDocument(id, actorId, null, userClearance);
     if (doc.status !== DocumentStatus.DRAFT)
       throw new BadRequestException('Document can only be edited in DRAFT status');
+    this.assertAuthorAccess(doc, actorId);
 
     Object.assign(doc, {
       subject: dto.subject ?? doc.subject,
@@ -214,9 +230,10 @@ export class EdmsService {
     actorId: string,
     userClearance: number,
   ): Promise<Document> {
-    const doc = await this.getDocument(id, userClearance);
+    const doc = await this.getDocument(id, actorId, null, userClearance);
     if (doc.status !== DocumentStatus.DRAFT)
       throw new BadRequestException('Only DRAFT documents can be registered');
+    this.assertAuthorAccess(doc, actorId);
 
     const docType = doc.type;
     const year = new Date().getFullYear();
@@ -280,7 +297,8 @@ export class EdmsService {
     actorId: string,
     userClearance: number,
   ): Promise<Document> {
-    const doc = await this.getDocument(id, userClearance);
+    const doc = await this.getDocument(id, actorId, null, userClearance);
+    this.assertAuthorAccess(doc, actorId);
 
     const allowed = DOCUMENT_TRANSITIONS[doc.status] ?? [];
     if (!allowed.includes(dto.targetStatus))
@@ -334,7 +352,8 @@ export class EdmsService {
     actorId: string,
     userClearance: number,
   ): Promise<DocumentAttachment> {
-    const doc = await this.getDocument(documentId, userClearance);
+    const doc = await this.getDocument(documentId, actorId, null, userClearance);
+    this.assertAuthorAccess(doc, actorId);
 
     // Attachment classification cannot exceed user's clearance
     const attachClassification = dto.classification ?? doc.classification;
@@ -371,7 +390,8 @@ export class EdmsService {
     actorId: string,
     userClearance: number,
   ): Promise<void> {
-    await this.getDocument(documentId, userClearance);
+    const doc = await this.getDocument(documentId, actorId, null, userClearance);
+    this.assertAuthorAccess(doc, actorId);
 
     const attachment = await this.attachmentRepo.findOne({
       where: { id: attachmentId, documentId, removedAt: IsNull() },
@@ -389,8 +409,13 @@ export class EdmsService {
     });
   }
 
-  async getVersions(documentId: string, userClearance: number): Promise<DocumentVersion[]> {
-    await this.getDocument(documentId, userClearance);
+  async getVersions(
+    documentId: string,
+    actorId: string,
+    userClearance: number,
+  ): Promise<DocumentVersion[]> {
+    const doc = await this.getDocument(documentId, actorId, null, userClearance);
+    this.assertAuthorAccess(doc, actorId);
     return this.versionRepo.find({
       where: { documentId },
       order: { versionNumber: 'DESC' },
@@ -483,6 +508,40 @@ export class EdmsService {
       throw new ForbiddenException(
         `Classification level ${resourceClassification} requires clearance >= ${resourceClassification}`,
       );
+  }
+
+  private assertAuthorAccess(doc: Document, actorId: string): void {
+    if (doc.createdById !== actorId) {
+      throw new ForbiddenException('Only the document author may modify this document');
+    }
+  }
+
+  private assertDocumentVisibility(
+    doc: Document,
+    actorId: string,
+    actorPositionId: string | null,
+  ): void {
+    const isRecipient = actorPositionId
+      ? doc.recipients.some((recipient) => recipient.positionId === actorPositionId)
+      : false;
+    const isVisible =
+      doc.createdById === actorId ||
+      (!!actorPositionId &&
+        (doc.createdByPositionId === actorPositionId ||
+          doc.senderPositionId === actorPositionId ||
+          isRecipient));
+
+    if (!isVisible) {
+      throw new ForbiddenException('You do not have access to this document');
+    }
+  }
+
+  private buildDocumentVisibilityWhere(alias: string, actorPositionId: string | null): string {
+    if (!actorPositionId) {
+      return `${alias}.createdById = :actorId`;
+    }
+
+    return `(${alias}.createdById = :actorId OR ${alias}.createdByPositionId = :actorPositionId OR ${alias}.senderPositionId = :actorPositionId OR EXISTS (SELECT 1 FROM jsonb_array_elements(${alias}.recipients) recipient WHERE recipient ->> 'positionId' = :actorPositionId))`;
   }
 
   /** Deterministic 32-bit advisory lock key for (seriesCode, year) */

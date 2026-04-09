@@ -191,14 +191,24 @@ export class WorkflowService {
     return this.instanceRepo.findOne({ where: { id: instance.id }, relations: ['steps'] }) as Promise<WorkflowInstance>;
   }
 
-  async getInstance(documentId: string): Promise<WorkflowInstance | null> {
+  async getInstance(documentId: string, actorClearance: number): Promise<WorkflowInstance | null> {
+    const document = await this.documentRepo.findOne({ where: { id: documentId } });
+    if (!document) throw new NotFoundException(`Document ${documentId} not found`);
+    if (actorClearance < document.classification) {
+      throw new ForbiddenException(`Clearance insufficient for this document's classification`);
+    }
     return this.instanceRepo.findOne({
       where: { documentId, status: WorkflowInstanceStatus.ACTIVE },
       relations: ['steps', 'template'],
     });
   }
 
-  async getInstanceHistory(documentId: string): Promise<WorkflowHistory[]> {
+  async getInstanceHistory(documentId: string, actorClearance: number): Promise<WorkflowHistory[]> {
+    const document = await this.documentRepo.findOne({ where: { id: documentId } });
+    if (!document) throw new NotFoundException(`Document ${documentId} not found`);
+    if (actorClearance < document.classification) {
+      throw new ForbiddenException(`Clearance insufficient for this document's classification`);
+    }
     return this.historyRepo.find({
       where: { documentId },
       order: { createdAt: 'ASC' },
@@ -510,6 +520,7 @@ export class WorkflowService {
     documentId: string,
     actorId: string,
     actorPositionId: string,
+    actorClearance: number,
   ): Promise<WorkflowInstance> {
     const instance = await this.instanceRepo.findOne({
       where: { documentId, status: WorkflowInstanceStatus.SUSPENDED },
@@ -519,6 +530,12 @@ export class WorkflowService {
 
     const document = await this.documentRepo.findOne({ where: { id: documentId } });
     if (!document) throw new NotFoundException(`Document ${documentId} not found`);
+    if (actorClearance < document.classification) {
+      throw new ForbiddenException('Clearance insufficient for this document');
+    }
+    if (document.createdById !== actorId) {
+      throw new ForbiddenException('Only the document author may resume a returned workflow');
+    }
 
     // Find the last returned step and its return target
     const lastReturnedStep = await this.stepRepo.findOne({

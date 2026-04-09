@@ -8,6 +8,7 @@ import * as bcrypt from 'bcrypt';
 import { IamService } from './iam.service';
 import { UserCredential, CredentialStatus } from '../entities/user-credential.entity';
 import { RefreshToken } from '../entities/refresh-token.entity';
+import { MfaCredential } from '../entities/mfa-credential.entity';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ describe('IamService', () => {
   let service: IamService;
   let credRepo: jest.Mocked<Repository<UserCredential>>;
   let rtRepo: jest.Mocked<Repository<RefreshToken>>;
+  let mfaRepo: jest.Mocked<Repository<MfaCredential>>;
   let jwtService: jest.Mocked<JwtService>;
   let configService: jest.Mocked<ConfigService>;
   let events: jest.Mocked<EventEmitter2>;
@@ -79,6 +81,7 @@ describe('IamService', () => {
   beforeEach(() => {
     credRepo     = mockRepo<UserCredential>();
     rtRepo       = mockRepo<RefreshToken>();
+    mfaRepo      = mockRepo<MfaCredential>();
     jwtService   = { sign: jest.fn().mockReturnValue('jwt.access.token') } as any;
     configService = {
       get: jest.fn((key: string, fallback?: unknown) => {
@@ -93,6 +96,7 @@ describe('IamService', () => {
     service = new IamService(
       credRepo as any,
       rtRepo as any,
+      mfaRepo as any,
       jwtService,
       configService,
       events,
@@ -183,6 +187,7 @@ describe('IamService', () => {
         failedAttempts: 5,
       });
       credRepo.findOne.mockResolvedValue(expired);
+      mfaRepo.findOne.mockResolvedValue(null);
       // After reset, password check uses the credential with status=ACTIVE
       jest.spyOn(bcrypt, 'compare' as any).mockResolvedValue(true as any);
       rtRepo.save.mockResolvedValue(makeRefreshToken());
@@ -193,7 +198,10 @@ describe('IamService', () => {
         'cred-1',
         expect.objectContaining({ status: CredentialStatus.ACTIVE, failedAttempts: 0 }),
       );
-      expect(result.accessToken).toBeDefined();
+      expect(result.mfaRequired).toBe(false);
+      if (!result.mfaRequired) {
+        expect(result.accessToken).toBeDefined();
+      }
     });
 
     it('throws ForbiddenException when account is suspended', async () => {
@@ -238,14 +246,18 @@ describe('IamService', () => {
 
     it('returns token pair on successful login and emits iam.user.login', async () => {
       credRepo.findOne.mockResolvedValue(makeCredential());
+      mfaRepo.findOne.mockResolvedValue(null);
       jest.spyOn(bcrypt, 'compare' as any).mockResolvedValue(true as any);
       rtRepo.save.mockResolvedValue(makeRefreshToken());
 
       const tokens = await service.login('analyst01', 'Pass1!', '10.0.0.1', 'Mozilla/5.0');
 
-      expect(tokens.accessToken).toBe('jwt.access.token');
-      expect(tokens.refreshToken).toBeDefined();
-      expect(tokens.expiresIn).toBe(900);  // 15m in seconds
+      expect(tokens.mfaRequired).toBe(false);
+      if (!tokens.mfaRequired) {
+        expect(tokens.accessToken).toBe('jwt.access.token');
+        expect(tokens.refreshToken).toBeDefined();
+        expect(tokens.expiresIn).toBe(900);  // 15m in seconds
+      }
       expect(credRepo.update).toHaveBeenCalledWith(
         'cred-1',
         expect.objectContaining({ failedAttempts: 0, lastLoginAt: expect.any(Date) }),
@@ -321,10 +333,10 @@ describe('IamService', () => {
     it('marks the specific token as revoked', async () => {
       rtRepo.update.mockResolvedValue({ affected: 1 } as any);
 
-      await service.logout('some-raw-token');
+      await service.logout('some-raw-token', 'cred-1');
 
       expect(rtRepo.update).toHaveBeenCalledWith(
-        { tokenHash: expect.any(String) },
+        { tokenHash: expect.any(String), userId: 'cred-1' },
         { revokedAt: expect.any(Date) },
       );
     });

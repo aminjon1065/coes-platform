@@ -196,6 +196,10 @@ export class FilesService {
     const measuringTransform = new Transform({
       transform(chunk, _enc, cb) {
         sizeBytes += chunk.length;
+        if (sizeBytes > MAX_FILE_SIZE_BYTES) {
+          cb(new BadRequestException(`File exceeds maximum size of ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB`));
+          return;
+        }
         hashStream.update(chunk);
         cb(null, chunk);
       },
@@ -558,16 +562,37 @@ export class FilesService {
   async getLinksForEntity(
     linkedEntityId: string,
     linkedEntityType: LinkedEntityType,
+    actorPositionId: string,
     actorClearance: number,
   ): Promise<FileLink[]> {
-    return this.linkRepo
-      .createQueryBuilder('l')
-      .innerJoin('files.file_records', 'f', 'f.id = l.file_id')
-      .where('l.linked_entity_id = :id', { id: linkedEntityId })
-      .andWhere('l.linked_entity_type = :type', { type: linkedEntityType })
-      .andWhere('f.classification <= :clearance', { clearance: actorClearance })
-      .andWhere('f.deleted_at IS NULL')
-      .getMany();
+    const links = await this.linkRepo.find({
+      where: { linkedEntityId, linkedEntityType },
+      relations: ['file'],
+    });
+
+    const accessibleLinks: FileLink[] = [];
+    for (const link of links) {
+      const file = link.file;
+      if (!file || file.deletedAt) {
+        continue;
+      }
+
+      try {
+        await this.assertFileAccess(
+          file,
+          actorPositionId,
+          actorClearance,
+          PermissionAction.READ,
+        );
+        accessibleLinks.push(link);
+      } catch (error) {
+        if (!(error instanceof ForbiddenException)) {
+          throw error;
+        }
+      }
+    }
+
+    return accessibleLinks;
   }
 
   async unlinkFile(

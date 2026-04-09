@@ -181,6 +181,8 @@ describe('NotificationService', () => {
   let pushProvider: jest.Mocked<Pick<PushNotificationProvider, 'isEnabled' | 'send'>>;
   let telegramProvider: jest.Mocked<Pick<TelegramNotificationProvider, 'isEnabled' | 'send'>>;
   let dataSource: { query: jest.Mock };
+  let cacheManager: { get: jest.Mock; set: jest.Mock; del: jest.Mock };
+  let configService: { get: jest.Mock };
 
   beforeEach(() => {
     notifRepo    = mockRepo<Notification>();
@@ -207,6 +209,14 @@ describe('NotificationService', () => {
       send: jest.fn().mockResolvedValue({ success: true, messageId: 'tg-msg-1' }),
     };
     dataSource = { query: jest.fn().mockResolvedValue(undefined) };
+    cacheManager = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn().mockResolvedValue(undefined),
+    };
+    configService = {
+      get: jest.fn().mockImplementation((_key: string, fallback?: unknown) => fallback),
+    };
 
     service = new NotificationService(
       notifRepo    as any,
@@ -220,6 +230,8 @@ describe('NotificationService', () => {
       pushProvider  as any,
       telegramProvider as any,
       dataSource    as unknown as DataSource,
+      cacheManager  as any,
+      configService as any,
     );
   });
 
@@ -737,19 +749,34 @@ describe('NotificationService', () => {
     it('throws NotFoundException when notification does not exist', async () => {
       notifRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.markRead('notif-x', 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(service.markRead('notif-x', 'user-1', 'pos-1')).rejects.toThrow(NotFoundException);
     });
 
     it('throws ForbiddenException when notification belongs to another user', async () => {
-      notifRepo.findOne.mockResolvedValue(makeNotification({ recipientUserId: 'user-2' }));
+      notifRepo.findOne.mockResolvedValue(
+        makeNotification({ recipientUserId: 'user-2', recipientPositionId: 'pos-2' }),
+      );
 
-      await expect(service.markRead('notif-1', 'user-1')).rejects.toThrow(ForbiddenException);
+      await expect(service.markRead('notif-1', 'user-1', 'pos-1')).rejects.toThrow(ForbiddenException);
     });
 
     it('marks notification as read and sets readAt', async () => {
       notifRepo.findOne.mockResolvedValue(makeNotification({ isRead: false }));
 
-      await service.markRead('notif-1', 'user-1');
+      await service.markRead('notif-1', 'user-1', 'pos-1');
+
+      expect(notifRepo.update).toHaveBeenCalledWith(
+        'notif-1',
+        expect.objectContaining({ isRead: true, readAt: expect.any(Date) }),
+      );
+    });
+
+    it('marks a position-scoped notification as read for the active position occupant', async () => {
+      notifRepo.findOne.mockResolvedValue(
+        makeNotification({ recipientUserId: null as any, recipientPositionId: 'pos-1', isRead: false }),
+      );
+
+      await service.markRead('notif-1', 'user-1', 'pos-1');
 
       expect(notifRepo.update).toHaveBeenCalledWith(
         'notif-1',
@@ -760,13 +787,37 @@ describe('NotificationService', () => {
     it('is idempotent — does not update when already read', async () => {
       notifRepo.findOne.mockResolvedValue(makeNotification({ isRead: true }));
 
-      await service.markRead('notif-1', 'user-1');
+      await service.markRead('notif-1', 'user-1', 'pos-1');
 
       expect(notifRepo.update).not.toHaveBeenCalled();
     });
   });
 
   // ── escalateUnreadCritical ─────────────────────────────────────────────────────
+
+  it('does not update expired notifications hidden from inbox', async () => {
+    notifRepo.findOne.mockResolvedValue(
+      makeNotification({ isRead: false, expiresAt: new Date(Date.now() - 60_000) }),
+    );
+
+    await service.markRead('notif-1', 'user-1', 'pos-1');
+
+    expect(notifRepo.update).not.toHaveBeenCalled();
+  });
+
+  describe('markAllRead', () => {
+    it('updates only unread non-expired notifications for user or active position', async () => {
+      dataSource.query.mockResolvedValue([{ id: 'notif-1' }, { id: 'notif-2' }]);
+
+      const result = await service.markAllRead('user-1', 'pos-1');
+
+      expect(dataSource.query).toHaveBeenCalledWith(
+        expect.stringContaining('AND (expires_at IS NULL OR expires_at > NOW())'),
+        ['user-1', 'pos-1'],
+      );
+      expect(result).toEqual({ updated: 2 });
+    });
+  });
 
   describe('escalateUnreadCritical', () => {
     it('re-dispatches Telegram for old CRITICAL unread notifications before SMS fallback', async () => {

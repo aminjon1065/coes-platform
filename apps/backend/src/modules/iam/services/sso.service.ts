@@ -3,6 +3,7 @@ import {
   Logger,
   UnauthorizedException,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,6 +11,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { v4 as uuidv4 } from 'uuid';
+import * as crypto from 'crypto';
 
 import { UserCredential, CredentialStatus } from '../entities/user-credential.entity';
 import { RefreshToken } from '../entities/refresh-token.entity';
@@ -19,10 +21,9 @@ import {
   LdapConfig,
   SamlConfig,
 } from '../entities/sso-configuration.entity';
-import { LdapService, LdapUserAttributes } from './ldap.service';
+import { LdapService } from './ldap.service';
 import { SamlService, SamlUserAttributes } from './saml.service';
 import { TokenPair, JwtPayload } from './iam.service';
-import * as crypto from 'crypto';
 
 @Injectable()
 export class SsoService {
@@ -41,8 +42,6 @@ export class SsoService {
     private readonly config: ConfigService,
     private readonly events: EventEmitter2,
   ) {}
-
-  // ── LDAP ────────────────────────────────────────────────────────────────────
 
   async ldapLogin(
     username: string,
@@ -64,10 +63,7 @@ export class SsoService {
     return this.issueTokenPair(credential, ipAddress);
   }
 
-  // ── SAML ────────────────────────────────────────────────────────────────────
-
   getSamlMetadata(configName?: string): string {
-    // This is synchronous but requires config — load from cache or throw
     throw new NotFoundException(
       'SAML metadata requires a loaded configuration. Use GET /auth/saml/:name/metadata',
     );
@@ -86,7 +82,6 @@ export class SsoService {
     relayState?: string,
     ipAddress?: string,
   ): Promise<TokenPair> {
-    // RelayState may carry the config name
     const configName = relayState ?? undefined;
     const ssoConfig = await this.findSsoConfig(SsoProviderType.SAML, configName);
     const samlConfig = ssoConfig.config as SamlConfig;
@@ -109,13 +104,6 @@ export class SsoService {
     return this.issueTokenPair(credential, ipAddress);
   }
 
-  // ── JIT Provisioning ─────────────────────────────────────────────────────────
-
-  /**
-   * Find or create a UserCredential backed by an SSO provider.
-   * On first login, creates a new credential with no password hash.
-   * On subsequent logins, refreshes SSO attributes.
-   */
   private async provisionOrUpdate(
     provider: SsoProviderType,
     subjectId: string,
@@ -123,7 +111,7 @@ export class SsoService {
       email: string;
       displayName: string;
       groups: string[];
-      rawAttrs: any;
+      rawAttrs: unknown;
     },
   ): Promise<UserCredential> {
     let credential = await this.credentialRepo.findOne({
@@ -131,17 +119,58 @@ export class SsoService {
     });
 
     if (!credential) {
-      // JIT provisioning — first SSO login
-      const username = this.deriveUsername(subjectId, profile.email);
+      const existingByEmail = await this.credentialRepo.findOne({
+        where: { email: profile.email },
+      });
+
+      if (existingByEmail) {
+        if (
+          existingByEmail.ssoProvider &&
+          (existingByEmail.ssoProvider !== provider || existingByEmail.ssoSubjectId !== subjectId)
+        ) {
+          throw new ConflictException('Email is already linked to another SSO identity');
+        }
+
+        if (existingByEmail.status === CredentialStatus.SUSPENDED) {
+          throw new UnauthorizedException('Account has been suspended');
+        }
+
+        existingByEmail.ssoProvider = provider;
+        existingByEmail.ssoSubjectId = subjectId;
+        existingByEmail.ssoAttributes = {
+          displayName: profile.displayName,
+          groups: profile.groups,
+          raw: profile.rawAttrs,
+        };
+        existingByEmail.ssoLinkedAt = existingByEmail.ssoLinkedAt ?? new Date();
+        existingByEmail.lastLoginAt = new Date();
+        credential = await this.credentialRepo.save(existingByEmail);
+
+        this.events.emit('iam.sso.linked', {
+          userId: credential.id,
+          username: credential.username,
+          provider,
+          subjectId,
+          timestamp: new Date(),
+        });
+
+        return credential;
+      }
+
+      const username = await this.resolveUniqueUsername(this.deriveUsername(subjectId, profile.email));
 
       credential = this.credentialRepo.create({
         username,
         email: profile.email,
-        passwordHash: '', // No local password — SSO-only account
+        passwordHash: '',
         status: CredentialStatus.ACTIVE,
         ssoProvider: provider,
         ssoSubjectId: subjectId,
-        ssoAttributes: { displayName: profile.displayName, groups: profile.groups, raw: profile.rawAttrs },
+        ssoAttributes: {
+          displayName: profile.displayName,
+          groups: profile.groups,
+          raw: profile.rawAttrs,
+        },
         ssoLinkedAt: new Date(),
       });
 
@@ -156,28 +185,28 @@ export class SsoService {
       });
 
       this.logger.log(`JIT-provisioned SSO user: ${credential.username} (${provider}/${subjectId})`);
-    } else {
-      // Refresh attributes on each login
-      if (credential.status === CredentialStatus.SUSPENDED) {
-        throw new UnauthorizedException('Account has been suspended');
-      }
-
-      credential.email = profile.email;
-      credential.ssoAttributes = {
-        displayName: profile.displayName,
-        groups: profile.groups,
-        raw: profile.rawAttrs,
-      };
-      credential.lastLoginAt = new Date();
-      await this.credentialRepo.save(credential);
-
-      this.events.emit('iam.sso.login', {
-        userId: credential.id,
-        username: credential.username,
-        provider,
-        timestamp: new Date(),
-      });
+      return credential;
     }
+
+    if (credential.status === CredentialStatus.SUSPENDED) {
+      throw new UnauthorizedException('Account has been suspended');
+    }
+
+    credential.email = profile.email;
+    credential.ssoAttributes = {
+      displayName: profile.displayName,
+      groups: profile.groups,
+      raw: profile.rawAttrs,
+    };
+    credential.lastLoginAt = new Date();
+    await this.credentialRepo.save(credential);
+
+    this.events.emit('iam.sso.login', {
+      userId: credential.id,
+      username: credential.username,
+      provider,
+      timestamp: new Date(),
+    });
 
     return credential;
   }
@@ -186,7 +215,7 @@ export class SsoService {
     provider: SsoProviderType,
     name?: string,
   ): Promise<SsoConfiguration> {
-    const where: any = { provider, enabled: true };
+    const where: Record<string, unknown> = { provider, enabled: true };
     if (name) where.name = name;
 
     const ssoConfig = await this.ssoConfigRepo.findOne({ where });
@@ -240,11 +269,23 @@ export class SsoService {
     };
   }
 
-  /** Derive a local username from SSO subject ID and email */
   private deriveUsername(subjectId: string, email: string): string {
-    // Prefer the local part of email, fallback to subjectId
     const localPart = email.split('@')[0];
     return (localPart ?? subjectId).toLowerCase().replace(/[^a-z0-9._-]/g, '_').slice(0, 100);
+  }
+
+  private async resolveUniqueUsername(baseUsername: string): Promise<string> {
+    const normalizedBase = (baseUsername || 'user').slice(0, 100);
+    let candidate = normalizedBase;
+    let attempt = 1;
+
+    while (await this.credentialRepo.findOne({ where: { username: candidate } })) {
+      attempt += 1;
+      const suffix = `_${attempt}`;
+      candidate = `${normalizedBase.slice(0, 100 - suffix.length)}${suffix}`;
+    }
+
+    return candidate;
   }
 
   private parseExpiry(expiry: string): number {

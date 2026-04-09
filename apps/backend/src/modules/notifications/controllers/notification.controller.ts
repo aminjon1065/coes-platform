@@ -81,13 +81,20 @@ export class NotificationController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.notificationService.markRead(id, this.getCredentialId(req));
+    return this.notificationService.markRead(
+      id,
+      this.getCredentialId(req),
+      req.user.positionId ?? this.getCredentialId(req),
+    );
   }
 
   @Post('read-all')
   @HttpCode(HttpStatus.OK)
   markAllRead(@Req() req: AuthenticatedRequest) {
-    return this.notificationService.markAllRead(this.getCredentialId(req));
+    return this.notificationService.markAllRead(
+      this.getCredentialId(req),
+      req.user.positionId ?? this.getCredentialId(req),
+    );
   }
 
   // ─── Delivery status (2.6.7) ──────────────────────────────────────────────────

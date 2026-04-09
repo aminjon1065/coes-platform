@@ -37,7 +37,12 @@ export class EdmsController {
 
   @Get()
   list(@Query() query: ListDocumentsDto, @Req() req: AuthenticatedRequest) {
-    return this.edmsService.listDocuments(query, req.user.sub, req.user.clearance ?? 0);
+    return this.edmsService.listDocuments(
+      query,
+      req.user.sub,
+      req.user.positionId ?? null,
+      req.user.clearance ?? 0,
+    );
   }
 
   // ─── Create ───────────────────────────────────────────────────────────────────
@@ -55,7 +60,12 @@ export class EdmsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.edmsService.getDocument(id, req.user.clearance ?? 0);
+    return this.edmsService.getDocument(
+      id,
+      req.user.sub,
+      req.user.positionId ?? null,
+      req.user.clearance ?? 0,
+    );
   }
 
   // ─── Update (DRAFT only) ──────────────────────────────────────────────────────
@@ -100,7 +110,7 @@ export class EdmsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.edmsService.getVersions(id, req.user.clearance ?? 0);
+    return this.edmsService.getVersions(id, req.user.sub, req.user.clearance ?? 0);
   }
 
   // ─── Attachments ──────────────────────────────────────────────────────────────

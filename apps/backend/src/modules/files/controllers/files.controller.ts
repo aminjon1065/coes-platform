@@ -250,7 +250,12 @@ export class FilesController {
     @Param('entityId', ParseUUIDPipe) entityId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.filesService.getLinksForEntity(entityId, entityType, req.user.clearance ?? 0);
+    return this.filesService.getLinksForEntity(
+      entityId,
+      entityType,
+      req.user.positionId ?? req.user.sub,
+      req.user.clearance ?? 0,
+    );
   }
 
   @Post(':id/links')

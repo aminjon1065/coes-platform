@@ -599,6 +599,65 @@ describe('TasksService', () => {
 
   // ── TASK_TRANSITIONS state machine ────────────────────────────────────────────
 
+  describe('getComments', () => {
+    it('throws ForbiddenException when actor is neither participant nor supervisor', async () => {
+      taskRepo.findOne.mockResolvedValue(
+        makeTask({ assigningPositionId: 'pos-supervisor', responsiblePositionId: 'pos-executor' }),
+      );
+      assignmentRepo.findOne.mockResolvedValue(null);
+      orgService.isSubordinateTo.mockResolvedValue(false);
+
+      await expect(
+        service.getComments('task-1', 'pos-outsider', 3, true),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('returns comments for a task participant', async () => {
+      taskRepo.findOne.mockResolvedValue(makeTask());
+      assignmentRepo.findOne.mockResolvedValue(makeAssignment({ positionId: 'pos-executor' }));
+      (commentRepo as any)._qb.getMany.mockResolvedValue([
+        { id: 'comment-1', taskId: 'task-1', body: 'Status update', isInternal: false },
+      ]);
+
+      const result = await service.getComments('task-1', 'pos-executor', 3, true);
+
+      expect(result).toHaveLength(1);
+      expect(commentRepo.createQueryBuilder).toHaveBeenCalledWith('c');
+    });
+  });
+
+  describe('removeAttachment', () => {
+    it('throws ForbiddenException when actor is neither participant nor supervisor', async () => {
+      taskRepo.findOne.mockResolvedValue(
+        makeTask({ assigningPositionId: 'pos-supervisor', responsiblePositionId: 'pos-executor' }),
+      );
+      assignmentRepo.findOne.mockResolvedValue(null);
+      orgService.isSubordinateTo.mockResolvedValue(false);
+
+      await expect(
+        service.removeAttachment('task-1', 'attach-1', 'user-1', 'pos-outsider', 3),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('soft-removes attachment for a task participant', async () => {
+      taskRepo.findOne.mockResolvedValue(makeTask());
+      assignmentRepo.findOne.mockResolvedValue(makeAssignment({ positionId: 'pos-executor' }));
+      attachmentRepo.findOne.mockResolvedValue({
+        id: 'attach-1',
+        taskId: 'task-1',
+        fileId: 'file-1',
+        fileName: 'report.pdf',
+        removedAt: null,
+      } as any);
+
+      await service.removeAttachment('task-1', 'attach-1', 'user-1', 'pos-executor', 3);
+
+      expect(attachmentRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ removedAt: expect.any(Date) }),
+      );
+    });
+  });
+
   describe('TASK_TRANSITIONS state machine (invariant check)', () => {
     it('DRAFT → ASSIGNED is a valid transition', () => {
       expect(TASK_TRANSITIONS[TaskStatus.DRAFT]).toContain(TaskStatus.ASSIGNED);

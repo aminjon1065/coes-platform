@@ -67,8 +67,8 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout — revoke current refresh token' })
-  async logout(@Body() dto: RefreshTokenDto) {
-    await this.iamService.logout(dto.refreshToken);
+  async logout(@Body() dto: RefreshTokenDto, @CurrentUser() user: AuthenticatedUser) {
+    await this.iamService.logout(dto.refreshToken, user.id);
   }
 
   @UseGuards(JwtAuthGuard)

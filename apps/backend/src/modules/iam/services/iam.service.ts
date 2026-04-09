@@ -206,10 +206,10 @@ export class IamService {
     return this.issueTokenPair(stored.user, stored.family, ipAddress);
   }
 
-  async logout(rawRefreshToken: string): Promise<void> {
+  async logout(rawRefreshToken: string, userId: string): Promise<void> {
     const tokenHash = this.hashToken(rawRefreshToken);
     await this.refreshTokenRepo.update(
-      { tokenHash },
+      { tokenHash, userId },
       { revokedAt: new Date() },
     );
   }

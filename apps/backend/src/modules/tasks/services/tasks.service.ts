@@ -726,6 +726,8 @@ export class TasksService {
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) throw new NotFoundException(`Task ${taskId} not found`);
     this.assertClearance(actorClearance, task.classification);
+    const hasAccess = await this.isTaskParticipantOrSupervisor(taskId, actorPositionId, task);
+    if (!hasAccess) throw new ForbiddenException('You do not have access to comments on this task');
 
     const qb = this.commentRepo
       .createQueryBuilder('c')
@@ -783,11 +785,14 @@ export class TasksService {
     taskId: string,
     attachmentId: string,
     actorId: string,
+    actorPositionId: string,
     actorClearance: number,
   ): Promise<void> {
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) throw new NotFoundException(`Task ${taskId} not found`);
     this.assertClearance(actorClearance, task.classification);
+    const hasAccess = await this.isTaskParticipantOrSupervisor(taskId, actorPositionId, task);
+    if (!hasAccess) throw new ForbiddenException('You do not have access to remove files from this task');
 
     const attachment = await this.attachmentRepo.findOne({
       where: { id: attachmentId, taskId, removedAt: IsNull() },

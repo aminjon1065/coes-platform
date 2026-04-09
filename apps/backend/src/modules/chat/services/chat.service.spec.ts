@@ -12,6 +12,7 @@ import { ChannelMember, MemberRole, MemberStatus } from '../entities/channel-mem
 import { Message, MessageType } from '../entities/message.entity';
 import { MessageEdit } from '../entities/message-edit.entity';
 import { AuditService } from '../../audit/services/audit.service';
+import { GatewayEventsService } from '../../../infra/events/gateway-events.service';
 
 // ── Mock helpers ───────────────────────────────────────────────────────────────
 
@@ -144,6 +145,7 @@ describe('ChatService', () => {
   let dataSource: ReturnType<typeof makeMockDataSource>;
   let auditService: { emit: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
+  let gatewayEvents: { publishToRoom: jest.Mock };
 
   function rebuildService() {
     service = new ChatService(
@@ -154,6 +156,7 @@ describe('ChatService', () => {
       dataSource as unknown as DataSource,
       auditService as unknown as AuditService,
       eventEmitter as unknown as EventEmitter2,
+      gatewayEvents as unknown as GatewayEventsService,
     );
   }
 
@@ -165,6 +168,7 @@ describe('ChatService', () => {
     dataSource   = makeMockDataSource();
     auditService = { emit: jest.fn().mockResolvedValue(undefined) };
     eventEmitter = { emit: jest.fn() };
+    gatewayEvents = { publishToRoom: jest.fn().mockResolvedValue(undefined) };
     rebuildService();
   });
 
@@ -331,8 +335,18 @@ describe('ChatService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it('throws ForbiddenException when actor is not an active member of the channel', async () => {
+      channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.sendMessage('ch-1', { body: 'Hi' }, 'user-1', 'pos-9', 3),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
     it('throws BadRequestException when channel is READ_ONLY', async () => {
       channelRepo.findOne.mockResolvedValue(makeChannel({ status: ChannelStatus.READ_ONLY }));
+      memberRepo.findOne.mockResolvedValue(makeMember());
 
       await expect(
         service.sendMessage('ch-1', { body: 'Hi' }, 'user-1', 'pos-1', 3),
@@ -341,6 +355,7 @@ describe('ChatService', () => {
 
     it('throws BadRequestException when channel is ARCHIVED', async () => {
       channelRepo.findOne.mockResolvedValue(makeChannel({ status: ChannelStatus.ARCHIVED }));
+      memberRepo.findOne.mockResolvedValue(makeMember());
 
       await expect(
         service.sendMessage('ch-1', { body: 'Hi' }, 'user-1', 'pos-1', 3),
@@ -362,7 +377,9 @@ describe('ChatService', () => {
       channelRepo.findOne.mockResolvedValue(
         makeChannel({ type: ChannelType.EMERGENCY_BROADCAST }),
       );
-      memberRepo.findOne.mockResolvedValue(makeMember({ role: MemberRole.OWNER }));
+      memberRepo.findOne
+        .mockResolvedValueOnce(makeMember({ role: MemberRole.OWNER }))
+        .mockResolvedValueOnce(makeMember({ role: MemberRole.OWNER }));
 
       const result = await service.sendMessage('ch-1', { body: 'Alert!' }, 'user-1', 'pos-1', 3);
 
@@ -372,6 +389,7 @@ describe('ChatService', () => {
 
     it('throws BadRequestException when message has no body and no attachments', async () => {
       channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(makeMember());
 
       await expect(
         service.sendMessage('ch-1', {}, 'user-1', 'pos-1', 3),
@@ -380,6 +398,7 @@ describe('ChatService', () => {
 
     it('throws BadRequestException when body exceeds 8000 characters', async () => {
       channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(makeMember());
 
       await expect(
         service.sendMessage('ch-1', { body: 'a'.repeat(8001) }, 'user-1', 'pos-1', 3),
@@ -389,6 +408,7 @@ describe('ChatService', () => {
     it('returns duplicate when idempotencyKey already exists', async () => {
       const existing = makeMessage({ idempotencyKey: 'idem-key-1' });
       channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(makeMember());
       messageRepo.findOne.mockResolvedValue(existing);
 
       const result = await service.sendMessage(
@@ -405,6 +425,7 @@ describe('ChatService', () => {
 
     it('persists message and emits chat.message_created on success', async () => {
       channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(makeMember());
       messageRepo.findOne.mockResolvedValue(null);
 
       const result = await service.sendMessage(
@@ -425,6 +446,7 @@ describe('ChatService', () => {
 
     it('increments replyCount on parent message when parentMessageId is set', async () => {
       channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(makeMember());
       messageRepo.findOne.mockResolvedValue(null);
 
       // The em.getRepository(Message).save returns the message with parentMessageId set
@@ -457,6 +479,26 @@ describe('ChatService', () => {
         'replyCount',
         1,
       );
+    });
+  });
+
+  describe('getChannel', () => {
+    it('throws ForbiddenException when actor is not a member even with sufficient clearance', async () => {
+      channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.getChannel('ch-1', 'pos-9', 3)).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('listMessages', () => {
+    it('throws ForbiddenException when actor is not a member even with sufficient clearance', async () => {
+      channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.listMessages('ch-1', {}, 'pos-9', 3),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -500,21 +542,31 @@ describe('ChatService', () => {
     it('throws NotFoundException when message not found', async () => {
       messageRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.editMessage('msg-x', 'new body', 'user-1', 3)).rejects.toThrow(NotFoundException);
+      await expect(service.editMessage('msg-x', 'new body', 'user-1', 'pos-1', 3)).rejects.toThrow(NotFoundException);
     });
 
     it('throws ForbiddenException when editor is not the sender', async () => {
       messageRepo.findOne.mockResolvedValue(makeMessage({ senderId: 'user-2' }));
       channelRepo.findOne.mockResolvedValue(makeChannel());
 
-      await expect(service.editMessage('msg-1', 'new body', 'user-1', 3)).rejects.toThrow(ForbiddenException);
+      await expect(service.editMessage('msg-1', 'new body', 'user-1', 'pos-1', 3)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws ForbiddenException when sender no longer has channel membership', async () => {
+      messageRepo.findOne.mockResolvedValue(makeMessage({ senderId: 'user-1' }));
+      channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.editMessage('msg-1', 'new body', 'user-1', 'pos-9', 3)).rejects.toThrow(ForbiddenException);
     });
 
     it('throws BadRequestException when message is under legal hold', async () => {
       messageRepo.findOne.mockResolvedValue(makeMessage({ senderId: 'user-1' }));
       channelRepo.findOne.mockResolvedValue(makeChannel({ legalHold: true }));
 
-      await expect(service.editMessage('msg-1', 'new body', 'user-1', 3)).rejects.toThrow(BadRequestException);
+      memberRepo.findOne.mockResolvedValue(makeMember());
+
+      await expect(service.editMessage('msg-1', 'new body', 'user-1', 'pos-1', 3)).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException when edit window has expired (>60 min)', async () => {
@@ -526,7 +578,9 @@ describe('ChatService', () => {
       );
       channelRepo.findOne.mockResolvedValue(makeChannel());
 
-      await expect(service.editMessage('msg-1', 'new body', 'user-1', 3)).rejects.toThrow(BadRequestException);
+      memberRepo.findOne.mockResolvedValue(makeMember());
+
+      await expect(service.editMessage('msg-1', 'new body', 'user-1', 'pos-1', 3)).rejects.toThrow(BadRequestException);
     });
 
     it('saves edit history and updates body within window', async () => {
@@ -535,7 +589,9 @@ describe('ChatService', () => {
       );
       channelRepo.findOne.mockResolvedValue(makeChannel());
 
-      const result = await service.editMessage('msg-1', 'updated content', 'user-1', 3);
+      memberRepo.findOne.mockResolvedValue(makeMember());
+
+      const result = await service.editMessage('msg-1', 'updated content', 'user-1', 'pos-1', 3);
 
       expect(editRepo.save).toHaveBeenCalledTimes(1);
       expect(result.body).toBe('updated content');
@@ -550,33 +606,43 @@ describe('ChatService', () => {
       messageRepo.findOne.mockResolvedValue(makeMessage({ senderId: 'user-2' }));
       channelRepo.findOne.mockResolvedValue(makeChannel());
 
-      await expect(service.deleteMessage('msg-1', 'user-1', 3)).rejects.toThrow(ForbiddenException);
+      await expect(service.deleteMessage('msg-1', 'user-1', 'pos-1', 3)).rejects.toThrow(ForbiddenException);
     });
 
     it('throws BadRequestException when channel is under legal hold', async () => {
       messageRepo.findOne.mockResolvedValue(makeMessage({ senderId: 'user-1' }));
       channelRepo.findOne.mockResolvedValue(makeChannel({ legalHold: true }));
+      memberRepo.findOne.mockResolvedValue(makeMember());
 
-      await expect(service.deleteMessage('msg-1', 'user-1', 3)).rejects.toThrow(BadRequestException);
+      await expect(service.deleteMessage('msg-1', 'user-1', 'pos-1', 3)).rejects.toThrow(BadRequestException);
     });
 
     it('is idempotent — does not throw when message already deleted', async () => {
       messageRepo.findOne.mockResolvedValue(makeMessage({ senderId: 'user-1', isDeleted: true }));
 
-      await expect(service.deleteMessage('msg-1', 'user-1', 3)).resolves.not.toThrow();
+      await expect(service.deleteMessage('msg-1', 'user-1', 'pos-1', 3)).resolves.not.toThrow();
       expect(messageRepo.save).not.toHaveBeenCalled();
     });
 
     it('soft-deletes message (nulls body, sets isDeleted)', async () => {
       messageRepo.findOne.mockResolvedValue(makeMessage({ senderId: 'user-1', body: 'Secret' }));
       channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(makeMember());
 
-      await service.deleteMessage('msg-1', 'user-1', 3);
+      await service.deleteMessage('msg-1', 'user-1', 'pos-1', 3);
 
       const saved = (messageRepo.save as jest.Mock).mock.calls[0][0] as Message;
       expect(saved.isDeleted).toBe(true);
       expect(saved.body).toBeNull();
       expect(saved.attachments).toEqual([]);
+    });
+
+    it('throws ForbiddenException when sender no longer has channel membership', async () => {
+      messageRepo.findOne.mockResolvedValue(makeMessage({ senderId: 'user-1' }));
+      channelRepo.findOne.mockResolvedValue(makeChannel());
+      memberRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.deleteMessage('msg-1', 'user-1', 'pos-9', 3)).rejects.toThrow(ForbiddenException);
     });
   });
 

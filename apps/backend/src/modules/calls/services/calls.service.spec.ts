@@ -618,20 +618,31 @@ describe('CallsService', () => {
     it('throws NotFoundException when session does not exist', async () => {
       mockSessionsRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.getSession('sess-x', 3)).rejects.toThrow(NotFoundException);
+      await expect(service.getSession('sess-x', 'actor-1', 3)).rejects.toThrow(NotFoundException);
     });
 
     it('throws ForbiddenException when actorClearance < session.classification', async () => {
       mockSessionsRepo.findOne.mockResolvedValue(makeSession({ classification: 3 }));
 
-      await expect(service.getSession('sess-1', 2)).rejects.toThrow(ForbiddenException);
+      await expect(service.getSession('sess-1', 'actor-1', 2)).rejects.toThrow(ForbiddenException);
     });
 
-    it('returns session with relations when clearance is sufficient', async () => {
+    it('throws ForbiddenException when actor is neither participant nor initiator', async () => {
+      const session = makeSession({ classification: 1, initiatedById: 'actor-9' });
+      mockSessionsRepo.findOne.mockResolvedValue(session);
+      mockParticipantsRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.getSession('sess-1', 'actor-1', 2)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('returns session with relations for a participant with sufficient clearance', async () => {
       const session = makeSession({ classification: 1 });
       mockSessionsRepo.findOne.mockResolvedValue(session);
+      mockParticipantsRepo.findOne.mockResolvedValue(
+        makeParticipant({ sessionId: 'sess-1', userId: 'actor-2' }),
+      );
 
-      const result = await service.getSession('sess-1', 2);
+      const result = await service.getSession('sess-1', 'actor-2', 2);
 
       expect(result).toBe(session);
       expect(mockSessionsRepo.findOne).toHaveBeenCalledWith(

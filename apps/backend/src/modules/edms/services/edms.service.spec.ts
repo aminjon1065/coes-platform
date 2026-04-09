@@ -242,10 +242,14 @@ describe('EdmsService', () => {
       qb.getManyAndCount.mockResolvedValue([docs, 1]);
       documentRepo.createQueryBuilder.mockReturnValue(qb);
 
-      const result = await service.listDocuments({} as any, 'user-1', 2);
+      const result = await service.listDocuments({} as any, 'user-1', 'pos-1', 2);
 
       expect(documentRepo.createQueryBuilder).toHaveBeenCalledWith('doc');
       expect(qb.where).toHaveBeenCalledWith('doc.classification <= :clearance', { clearance: 2 });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('doc.createdById = :actorId'),
+        expect.objectContaining({ actorId: 'user-1', actorPositionId: 'pos-1' }),
+      );
       expect(result).toEqual({ items: docs, total: 1 });
     });
 
@@ -257,6 +261,7 @@ describe('EdmsService', () => {
       await service.listDocuments(
         { status: DocumentStatus.REGISTERED, search: 'budget', typeId: 'type-1' } as any,
         'user-1',
+        'pos-1',
         3,
       );
 
@@ -276,7 +281,7 @@ describe('EdmsService', () => {
       const doc = makeDocument({ classification: 1 });
       documentRepo.findOne.mockResolvedValue(doc);
 
-      const result = await service.getDocument('doc-1', 2);
+      const result = await service.getDocument('doc-1', 'user-1', null, 2);
 
       expect(documentRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'doc-1' },
@@ -288,14 +293,53 @@ describe('EdmsService', () => {
     it('should throw NotFoundException when document does not exist', async () => {
       documentRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.getDocument('no-such-id', 3)).rejects.toThrow(NotFoundException);
+      await expect(service.getDocument('no-such-id', 'user-1', null, 3)).rejects.toThrow(NotFoundException);
     });
 
     it('should throw ForbiddenException when userClearance is below document classification', async () => {
       const doc = makeDocument({ classification: 3 });
       documentRepo.findOne.mockResolvedValue(doc);
 
-      await expect(service.getDocument('doc-1', 1)).rejects.toThrow(ForbiddenException);
+      await expect(service.getDocument('doc-1', 'user-1', null, 1)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should exclude removed and over-classified attachments from the response', async () => {
+      const visibleAttachment = makeAttachment({ id: 'att-visible', classification: 2, removedAt: null });
+      const removedAttachment = makeAttachment({ id: 'att-removed', classification: 1, removedAt: new Date('2025-06-02') });
+      const secretAttachment = makeAttachment({ id: 'att-secret', classification: 3, removedAt: null });
+      const doc = makeDocument({
+        classification: 2,
+        attachments: [visibleAttachment, removedAttachment, secretAttachment],
+      });
+      documentRepo.findOne.mockResolvedValue(doc);
+
+      const result = await service.getDocument('doc-1', 'user-1', null, 2);
+
+      expect(result.attachments).toEqual([visibleAttachment]);
+    });
+
+    it('should allow access for recipient position even when actor is not the author', async () => {
+      const doc = makeDocument({
+        createdById: 'user-9',
+        recipients: [{ positionId: 'pos-1', name: 'Reviewer', type: 'internal' }],
+      });
+      documentRepo.findOne.mockResolvedValue(doc);
+
+      const result = await service.getDocument('doc-1', 'user-1', 'pos-1', 2);
+
+      expect(result).toBe(doc);
+    });
+
+    it('should throw ForbiddenException when actor is neither author nor visible participant', async () => {
+      const doc = makeDocument({
+        createdById: 'user-9',
+        createdByPositionId: 'pos-9',
+        senderPositionId: 'pos-8',
+        recipients: [{ positionId: 'pos-7', name: 'Other', type: 'internal' }],
+      });
+      documentRepo.findOne.mockResolvedValue(doc);
+
+      await expect(service.getDocument('doc-1', 'user-1', 'pos-1', 2)).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -364,6 +408,15 @@ describe('EdmsService', () => {
         service.updateDocument('doc-1', {} as any, 'user-1', 1),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('should throw ForbiddenException when actor is not the document author', async () => {
+      const doc = makeDocument({ status: DocumentStatus.DRAFT, createdById: 'user-9' });
+      documentRepo.findOne.mockResolvedValue(doc);
+
+      await expect(
+        service.updateDocument('doc-1', {} as any, 'user-1', 2),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   // ─── registerDocument ───────────────────────────────────────────────────────
@@ -419,6 +472,15 @@ describe('EdmsService', () => {
       await expect(
         service.registerDocument('nonexistent', {} as any, 'user-1', 2),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ForbiddenException when actor is not the document author', async () => {
+      const doc = makeDocument({ status: DocumentStatus.DRAFT, createdById: 'user-9' });
+      documentRepo.findOne.mockResolvedValue(doc);
+
+      await expect(
+        service.registerDocument('doc-1', {} as any, 'user-1', 2),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -491,6 +553,20 @@ describe('EdmsService', () => {
         ),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('should throw ForbiddenException when actor is not the document author', async () => {
+      const doc = makeDocument({ status: DocumentStatus.DRAFT, createdById: 'user-9' });
+      documentRepo.findOne.mockResolvedValue(doc);
+
+      await expect(
+        service.transitionStatus(
+          'doc-1',
+          { targetStatus: DocumentStatus.CANCELLED } as any,
+          'user-1',
+          2,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   // ─── addAttachment ──────────────────────────────────────────────────────────
@@ -542,6 +618,15 @@ describe('EdmsService', () => {
         service.addAttachment('no-doc', {} as any, 'user-1', 2),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('should throw ForbiddenException when actor is not the document author', async () => {
+      const doc = makeDocument({ createdById: 'user-9' });
+      documentRepo.findOne.mockResolvedValue(doc);
+
+      await expect(
+        service.addAttachment('doc-1', { fileId: 'file-1', filename: 'x', role: AttachmentRole.SUPPORTING } as any, 'user-1', 2),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   // ─── removeAttachment ───────────────────────────────────────────────────────
@@ -583,6 +668,15 @@ describe('EdmsService', () => {
         service.removeAttachment('doc-1', 'att-1', 'user-1', 1),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('should throw ForbiddenException when actor is not the document author', async () => {
+      const doc = makeDocument({ createdById: 'user-9' });
+      documentRepo.findOne.mockResolvedValue(doc);
+
+      await expect(
+        service.removeAttachment('doc-1', 'att-1', 'user-1', 2),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   // ─── getVersions ────────────────────────────────────────────────────────────
@@ -594,7 +688,7 @@ describe('EdmsService', () => {
       const versions = [makeVersion({ versionNumber: 2 }), makeVersion({ versionNumber: 1 })];
       versionRepo.find.mockResolvedValue(versions);
 
-      const result = await service.getVersions('doc-1', 2);
+      const result = await service.getVersions('doc-1', 'user-1', 2);
 
       expect(versionRepo.find).toHaveBeenCalledWith({
         where: { documentId: 'doc-1' },
@@ -606,14 +700,21 @@ describe('EdmsService', () => {
     it('should throw NotFoundException when document does not exist', async () => {
       documentRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.getVersions('no-doc', 2)).rejects.toThrow(NotFoundException);
+      await expect(service.getVersions('no-doc', 'user-1', 2)).rejects.toThrow(NotFoundException);
     });
 
     it('should throw ForbiddenException when user lacks clearance', async () => {
       const doc = makeDocument({ classification: 3 });
       documentRepo.findOne.mockResolvedValue(doc);
 
-      await expect(service.getVersions('doc-1', 1)).rejects.toThrow(ForbiddenException);
+      await expect(service.getVersions('doc-1', 'user-1', 1)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw ForbiddenException when actor is not the document author', async () => {
+      const doc = makeDocument({ classification: 2, createdById: 'user-9' });
+      documentRepo.findOne.mockResolvedValue(doc);
+
+      await expect(service.getVersions('doc-1', 'user-1', 2)).rejects.toThrow(ForbiddenException);
     });
   });
 

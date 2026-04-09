@@ -333,6 +333,19 @@ describe('FilesService', () => {
         service.uploadNewVersion('file-1', makeStream(), null, 'user-1', 'pos-low', 1),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('throws BadRequestException when a new version exceeds MAX_FILE_SIZE', async () => {
+      const file = makeFile({ ownerPositionId: 'pos-1' });
+      fileRepo.findOne.mockResolvedValue(file);
+      permissionRepo.find.mockResolvedValue([]);
+
+      const bigBuffer = Buffer.alloc(101 * 1024 * 1024);
+      const bigStream = Readable.from([bigBuffer]);
+
+      await expect(
+        service.uploadNewVersion('file-1', bigStream, null, 'user-1', 'pos-1', 2),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   // ─── getVersions ─────────────────────────────────────────────────────────────
@@ -665,17 +678,49 @@ describe('FilesService', () => {
   // ─── getLinksForEntity ────────────────────────────────────────────────────────
 
   describe('getLinksForEntity', () => {
-    it('returns links for entity respecting classification filter', async () => {
-      const links = [{ id: 'link-1' }];
-      const qb = buildQueryBuilderMock(links);
-      linkRepo.createQueryBuilder.mockReturnValue(qb);
+    it('returns only links to files the actor can read', async () => {
+      const ownedFile = makeFile({ id: 'file-owned', ownerPositionId: 'pos-1' });
+      const deniedFile = makeFile({
+        id: 'file-denied',
+        ownerPositionId: 'pos-owner',
+        classification: 1,
+      });
+      linkRepo.find.mockResolvedValue([
+        {
+          id: 'link-1',
+          fileId: ownedFile.id,
+          linkedEntityId: 'task-1',
+          linkedEntityType: LinkedEntityType.TASK,
+          linkedById: 'user-1',
+          linkedAt: new Date(),
+          file: ownedFile,
+        },
+        {
+          id: 'link-2',
+          fileId: deniedFile.id,
+          linkedEntityId: 'task-1',
+          linkedEntityType: LinkedEntityType.TASK,
+          linkedById: 'user-2',
+          linkedAt: new Date(),
+          file: deniedFile,
+        },
+      ]);
+      permissionRepo.find.mockResolvedValue([]);
 
-      const result = await service.getLinksForEntity('task-1', LinkedEntityType.TASK, 2);
+      const result = await service.getLinksForEntity(
+        'task-1',
+        LinkedEntityType.TASK,
+        'pos-1',
+        2,
+      );
 
       expect(result).toHaveLength(1);
-      expect(qb.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining('classification'),
-        expect.objectContaining({ clearance: 2 }),
+      expect(result[0].id).toBe('link-1');
+      expect(linkRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { linkedEntityId: 'task-1', linkedEntityType: LinkedEntityType.TASK },
+          relations: ['file'],
+        }),
       );
     });
   });

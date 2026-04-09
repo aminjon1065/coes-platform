@@ -49,13 +49,13 @@ export class WorkflowController {
   // ─── Workflow Instance (per document) ─────────────────────────────────────────
 
   @Get('documents/:id/workflow')
-  getInstance(@Param('id', ParseUUIDPipe) id: string) {
-    return this.workflowService.getInstance(id);
+  getInstance(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
+    return this.workflowService.getInstance(id, req.user.clearance ?? 0);
   }
 
   @Get('documents/:id/workflow/history')
-  getHistory(@Param('id', ParseUUIDPipe) id: string) {
-    return this.workflowService.getInstanceHistory(id);
+  getHistory(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
+    return this.workflowService.getInstanceHistory(id, req.user.clearance ?? 0);
   }
 
   /** Manually start a workflow (admin / post-registration hook) */
@@ -69,7 +69,12 @@ export class WorkflowController {
   @Post('documents/:id/workflow/resume')
   @HttpCode(HttpStatus.OK)
   resumeWorkflow(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
-    return this.workflowService.resumeWorkflow(id, req.user.sub, req.user.positionId!);
+    return this.workflowService.resumeWorkflow(
+      id,
+      req.user.sub,
+      req.user.positionId!,
+      req.user.clearance ?? 0,
+    );
   }
 
   // ─── Step Actions ─────────────────────────────────────────────────────────────

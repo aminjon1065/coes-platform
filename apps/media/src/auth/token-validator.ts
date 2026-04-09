@@ -5,14 +5,21 @@ interface JwtPayload {
   username: string;
   positionId?: string;
   clearance?: number;
+  scope?: string;
 }
 
-export function validateAccessToken(token: string): JwtPayload {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error('JWT_SECRET not configured');
+const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET;
 
-  const payload = jwt.verify(token, secret) as JwtPayload;
+export function validateAccessToken(token: string): JwtPayload {
+  if (!ACCESS_SECRET) {
+    throw new Error('JWT_ACCESS_SECRET environment variable is required');
+  }
+
+  const payload = jwt.verify(token, ACCESS_SECRET) as JwtPayload;
   if (!payload.sub) throw new Error('Invalid token: missing sub');
+  if (payload.scope === 'mfa_pending') {
+    throw new Error('MFA verification required');
+  }
   return payload;
 }
 

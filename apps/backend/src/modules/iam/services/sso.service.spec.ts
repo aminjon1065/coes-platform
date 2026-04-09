@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { NotFoundException, UnauthorizedException, ConflictException } from '@nestjs/common';
 
 import { SsoService } from './sso.service';
 import { LdapService } from './ldap.service';
@@ -12,16 +12,14 @@ import { UserCredential, CredentialStatus } from '../entities/user-credential.en
 import { RefreshToken } from '../entities/refresh-token.entity';
 import { SsoConfiguration, SsoProviderType } from '../entities/sso-configuration.entity';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 const uid = () => require('crypto').randomUUID();
 
 function makeRepo<T>(extra: Partial<Record<string, jest.Mock>> = {}) {
   return {
     findOne: jest.fn(),
     find: jest.fn(),
-    create: jest.fn((d: any) => ({ ...d })),
-    save: jest.fn(async (d: any) => ({ id: uid(), ...d })),
+    create: jest.fn((d: T) => ({ ...d })),
+    save: jest.fn(async (d: T) => ({ id: uid(), ...d })),
     update: jest.fn(),
     ...extra,
   };
@@ -88,8 +86,6 @@ const MOCK_CREDENTIAL: UserCredential = {
   updatedAt: new Date(),
 };
 
-// ── Test suite ────────────────────────────────────────────────────────────────
-
 describe('SsoService', () => {
   let service: SsoService;
   let credRepo: ReturnType<typeof makeRepo>;
@@ -139,8 +135,6 @@ describe('SsoService', () => {
     service = module.get(SsoService);
   });
 
-  // ── LDAP login ─────────────────────────────────────────────────────────────
-
   describe('ldapLogin', () => {
     const ldapSsoConfig = {
       id: 'cfg-1',
@@ -153,7 +147,10 @@ describe('SsoService', () => {
     it('authenticates and provisions a new user on first login', async () => {
       ssoConfigRepo.findOne.mockResolvedValue(ldapSsoConfig);
       ldapService.authenticate.mockResolvedValue(LDAP_ATTRS);
-      credRepo.findOne.mockResolvedValue(null); // not provisioned yet
+      credRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
       credRepo.save.mockResolvedValue({ ...MOCK_CREDENTIAL, id: uid() });
 
       const result = await service.ldapLogin('john.doe', 'Password1!', undefined, '10.0.0.1');
@@ -189,6 +186,53 @@ describe('SsoService', () => {
       expect(events.emit).toHaveBeenCalledWith('iam.sso.login', expect.any(Object));
     });
 
+    it('links an existing local account by email instead of creating a duplicate', async () => {
+      const localCredential = {
+        ...MOCK_CREDENTIAL,
+        ssoProvider: null,
+        ssoSubjectId: null,
+        passwordHash: '$2b$12$localhash',
+      };
+
+      ssoConfigRepo.findOne.mockResolvedValue(ldapSsoConfig);
+      ldapService.authenticate.mockResolvedValue(LDAP_ATTRS);
+      credRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(localCredential);
+      credRepo.save.mockResolvedValue({
+        ...localCredential,
+        ssoProvider: SsoProviderType.LDAP,
+        ssoSubjectId: LDAP_ATTRS.username,
+      } as UserCredential);
+
+      await service.ldapLogin('john.doe', 'Password1!');
+
+      expect(credRepo.create).not.toHaveBeenCalled();
+      expect(credRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: localCredential.id,
+          email: LDAP_ATTRS.email,
+          ssoProvider: SsoProviderType.LDAP,
+          ssoSubjectId: LDAP_ATTRS.username,
+        }),
+      );
+      expect(events.emit).toHaveBeenCalledWith('iam.sso.linked', expect.any(Object));
+    });
+
+    it('throws ConflictException when email is already linked to another SSO identity', async () => {
+      ssoConfigRepo.findOne.mockResolvedValue(ldapSsoConfig);
+      ldapService.authenticate.mockResolvedValue(LDAP_ATTRS);
+      credRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          ...MOCK_CREDENTIAL,
+          ssoProvider: SsoProviderType.SAML,
+          ssoSubjectId: 'external-idp-user',
+        });
+
+      await expect(service.ldapLogin('john.doe', 'Password1!')).rejects.toThrow(ConflictException);
+    });
+
     it('throws NotFoundException when no LDAP config found', async () => {
       ssoConfigRepo.findOne.mockResolvedValue(null);
 
@@ -202,7 +246,7 @@ describe('SsoService', () => {
       await expect(service.ldapLogin('user', 'wrong')).rejects.toThrow(UnauthorizedException);
     });
 
-    it('throws ForbiddenException for suspended accounts', async () => {
+    it('throws UnauthorizedException for suspended accounts', async () => {
       ssoConfigRepo.findOne.mockResolvedValue(ldapSsoConfig);
       ldapService.authenticate.mockResolvedValue(LDAP_ATTRS);
       credRepo.findOne.mockResolvedValue({
@@ -243,8 +287,6 @@ describe('SsoService', () => {
     });
   });
 
-  // ── SAML ───────────────────────────────────────────────────────────────────
-
   describe('samlCallback', () => {
     const samlSsoConfig = {
       id: 'cfg-2',
@@ -257,7 +299,10 @@ describe('SsoService', () => {
     it('provisions a new user from SAML assertion', async () => {
       ssoConfigRepo.findOne.mockResolvedValue(samlSsoConfig);
       samlService.validateResponse.mockResolvedValue(SAML_ATTRS);
-      credRepo.findOne.mockResolvedValue(null);
+      credRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
       credRepo.save.mockResolvedValue({ ...MOCK_CREDENTIAL, id: uid() });
 
       const result = await service.samlCallback('RAW_SAML_RESPONSE', undefined, '10.0.0.2');
@@ -295,8 +340,6 @@ describe('SsoService', () => {
     });
   });
 
-  // ── SAML metadata ──────────────────────────────────────────────────────────
-
   describe('getSamlMetadataByName', () => {
     it('returns metadata XML for a valid config', async () => {
       ssoConfigRepo.findOne.mockResolvedValue({
@@ -305,7 +348,7 @@ describe('SsoService', () => {
         enabled: true,
         config: SAML_CONFIG,
       });
-      samlService.generateMetadata.mockReturnValue('<EntityDescriptor>…</EntityDescriptor>');
+      samlService.generateMetadata.mockReturnValue('<EntityDescriptor>...</EntityDescriptor>');
 
       const xml = await service.getSamlMetadataByName('default');
 
@@ -318,8 +361,6 @@ describe('SsoService', () => {
       await expect(service.getSamlMetadataByName('nonexistent')).rejects.toThrow(NotFoundException);
     });
   });
-
-  // ── JIT provisioning edge cases ────────────────────────────────────────────
 
   describe('JIT username derivation', () => {
     it('uses email local part as username', async () => {
@@ -335,7 +376,10 @@ describe('SsoService', () => {
         email: 'fatima.nazarova@coescd.gov.tj',
         username: 'fnazarova',
       });
-      credRepo.findOne.mockResolvedValue(null);
+      credRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
       credRepo.save.mockResolvedValue({ ...MOCK_CREDENTIAL, id: uid() });
 
       await service.ldapLogin('fnazarova', 'Password1!');
@@ -357,14 +401,39 @@ describe('SsoService', () => {
         ...LDAP_ATTRS,
         email: 'user+test@coescd.gov.tj',
       });
-      credRepo.findOne.mockResolvedValue(null);
+      credRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
       credRepo.save.mockResolvedValue({ ...MOCK_CREDENTIAL, id: uid() });
 
       await service.ldapLogin('user', 'pass');
 
-      const createCall = credRepo.create.mock.calls[0][0];
-      // The '+' should be replaced with '_'
+      const createCall = credRepo.create.mock.calls[0][0] as UserCredential;
       expect(createCall.username).toMatch(/^[a-z0-9._\-_]+$/);
+    });
+
+    it('adds a suffix when the derived username already exists', async () => {
+      const ldapSsoConfig = {
+        provider: SsoProviderType.LDAP,
+        name: 'test',
+        enabled: true,
+        config: LDAP_CONFIG,
+      };
+      ssoConfigRepo.findOne.mockResolvedValue(ldapSsoConfig);
+      ldapService.authenticate.mockResolvedValue(LDAP_ATTRS);
+      credRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...MOCK_CREDENTIAL, username: 'john.doe' })
+        .mockResolvedValueOnce(null);
+      credRepo.save.mockResolvedValue({ ...MOCK_CREDENTIAL, id: uid(), username: 'john.doe_2' } as UserCredential);
+
+      await service.ldapLogin('john.doe', 'Password1!');
+
+      expect(credRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'john.doe_2' }),
+      );
     });
   });
 });

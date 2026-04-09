@@ -234,6 +234,7 @@ export class TasksController {
       id,
       attachmentId,
       req.user.sub,
+      req.user.positionId!,
       req.user.clearance ?? 0,
     );
   }
