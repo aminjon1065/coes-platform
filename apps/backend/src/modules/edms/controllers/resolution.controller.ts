@@ -28,7 +28,12 @@ export class ResolutionController {
 
   @Get(':id/resolutions')
   getResolutions(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
-    return this.resolutionService.getResolutions(id, req.user.clearance ?? 0);
+    return this.resolutionService.getResolutions(
+      id,
+      req.user.sub,
+      req.user.positionId ?? null,
+      req.user.clearance ?? 0,
+    );
   }
 
   @Post(':id/resolutions')
@@ -52,7 +57,12 @@ export class ResolutionController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.resolutionService.getExecutorAssignments(id, req.user.clearance ?? 0);
+    return this.resolutionService.getExecutorAssignments(
+      id,
+      req.user.sub,
+      req.user.positionId ?? null,
+      req.user.clearance ?? 0,
+    );
   }
 
   @Post('executor-assignments/:assignmentId/complete')

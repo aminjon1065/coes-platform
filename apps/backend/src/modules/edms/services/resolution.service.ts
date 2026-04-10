@@ -53,11 +53,13 @@ export class ResolutionService {
     actorPositionId: string,
     actorClearance: number,
   ): Promise<Resolution> {
-    const document = await this.documentRepo.findOne({ where: { id: documentId } });
-    if (!document) throw new NotFoundException(`Document ${documentId} not found`);
-    if (actorClearance < document.classification) {
-      throw new ForbiddenException('Clearance insufficient for this document');
-    }
+    const document = await this.getAccessibleDocument(
+      documentId,
+      actorId,
+      actorPositionId,
+      actorClearance,
+    );
+    this.assertDocumentVisibility(document, actorId, actorPositionId);
 
     // Document must be in a workflow state to receive resolutions
     if (document.status === DocumentStatus.DRAFT || document.status === DocumentStatus.CANCELLED || document.status === DocumentStatus.ARCHIVED) {
@@ -161,11 +163,23 @@ export class ResolutionService {
     }) as Promise<Resolution>;
   }
 
-  async getResolutions(documentId: string, actorClearance: number): Promise<Resolution[]> {
-    const document = await this.documentRepo.findOne({ where: { id: documentId } });
-    if (!document) throw new NotFoundException(`Document ${documentId} not found`);
-    if (actorClearance < document.classification) {
-      throw new ForbiddenException('Clearance insufficient');
+  async getResolutions(
+    documentId: string,
+    actorId: string,
+    actorPositionId: string | null,
+    actorClearance: number,
+  ): Promise<Resolution[]> {
+    const document = await this.getAccessibleDocument(
+      documentId,
+      actorId,
+      actorPositionId,
+      actorClearance,
+    );
+    if (actorPositionId && !(await this.canAccessResolutionData(document, actorId, actorPositionId))) {
+      throw new ForbiddenException('You do not have access to this document resolutions');
+    }
+    if (!actorPositionId && document.createdById !== actorId) {
+      throw new ForbiddenException('You do not have access to this document resolutions');
     }
     return this.resolutionRepo.find({
       where: { documentId },
@@ -174,13 +188,108 @@ export class ResolutionService {
     });
   }
 
-  async getExecutorAssignments(documentId: string, actorClearance: number): Promise<ExecutorAssignment[]> {
+  async getExecutorAssignments(
+    documentId: string,
+    actorId: string,
+    actorPositionId: string | null,
+    actorClearance: number,
+  ): Promise<ExecutorAssignment[]> {
+    const document = await this.getAccessibleDocument(
+      documentId,
+      actorId,
+      actorPositionId,
+      actorClearance,
+    );
+    if (actorPositionId && !(await this.canAccessResolutionData(document, actorId, actorPositionId))) {
+      throw new ForbiddenException('You do not have access to this document executor assignments');
+    }
+    if (!actorPositionId && document.createdById !== actorId) {
+      throw new ForbiddenException('You do not have access to this document executor assignments');
+    }
+    return this.assignmentRepo.find({ where: { documentId }, order: { createdAt: 'ASC' } });
+  }
+
+  private async getAccessibleDocument(
+    documentId: string,
+    actorId: string,
+    actorPositionId: string | null,
+    actorClearance: number,
+  ): Promise<Document> {
     const document = await this.documentRepo.findOne({ where: { id: documentId } });
     if (!document) throw new NotFoundException(`Document ${documentId} not found`);
     if (actorClearance < document.classification) {
       throw new ForbiddenException('Clearance insufficient');
     }
-    return this.assignmentRepo.find({ where: { documentId }, order: { createdAt: 'ASC' } });
+    return document;
+  }
+
+  private assertDocumentVisibility(
+    document: Document,
+    actorId: string,
+    actorPositionId: string | null,
+  ): void {
+    if (!this.hasDocumentVisibility(document, actorId, actorPositionId)) {
+      throw new ForbiddenException('You do not have access to this document');
+    }
+  }
+
+  private hasDocumentVisibility(
+    document: Document,
+    actorId: string,
+    actorPositionId: string | null,
+  ): boolean {
+    const isRecipient = actorPositionId
+      ? document.recipients.some((recipient) => recipient.positionId === actorPositionId)
+      : false;
+
+    return (
+      document.createdById === actorId ||
+      (!!actorPositionId &&
+        (document.createdByPositionId === actorPositionId ||
+          document.senderPositionId === actorPositionId ||
+          isRecipient))
+    );
+  }
+
+  private assertDocumentAllowsCompletion(document: Document): void {
+    if (
+      document.status === DocumentStatus.DRAFT ||
+      document.status === DocumentStatus.CANCELLED ||
+      document.status === DocumentStatus.ARCHIVED
+    ) {
+      throw new BadRequestException(
+        `Cannot complete executor assignment for document with status '${document.status}'`,
+      );
+    }
+  }
+
+  private assertAssignmentCanBeCompleted(assignment: ExecutorAssignment): void {
+    if (assignment.status === ExecutorAssignmentStatus.COMPLETED) {
+      throw new BadRequestException('Assignment is already completed');
+    }
+    if (
+      assignment.status === ExecutorAssignmentStatus.CANCELLED ||
+      assignment.status === ExecutorAssignmentStatus.RETURNED
+    ) {
+      throw new BadRequestException(
+        `Cannot complete executor assignment in status '${assignment.status}'`,
+      );
+    }
+  }
+
+  private async canAccessResolutionData(
+    document: Document,
+    actorId: string,
+    actorPositionId: string,
+  ): Promise<boolean> {
+    if (this.hasDocumentVisibility(document, actorId, actorPositionId)) {
+      return true;
+    }
+
+    const assignment = await this.assignmentRepo.findOne({
+      where: { documentId: document.id, positionId: actorPositionId },
+    });
+    return !!assignment;
   }
 
   /**
@@ -200,9 +309,11 @@ export class ResolutionService {
       throw new ForbiddenException('Only the assigned executor may file a completion report');
     }
 
-    if (assignment.status === ExecutorAssignmentStatus.COMPLETED) {
-      throw new BadRequestException('Assignment is already completed');
-    }
+    this.assertAssignmentCanBeCompleted(assignment);
+
+    const document = await this.documentRepo.findOne({ where: { id: assignment.documentId } });
+    if (!document) throw new NotFoundException(`Document ${assignment.documentId} not found`);
+    this.assertDocumentAllowsCompletion(document);
 
     assignment.completionReport = report;
     assignment.status = ExecutorAssignmentStatus.COMPLETED;
@@ -233,6 +344,14 @@ export class ResolutionService {
    * Called by the task.created event listener (Phase 2.2).
    */
   async linkTask(assignmentId: string, taskId: string): Promise<void> {
+    const assignment = await this.assignmentRepo.findOne({ where: { id: assignmentId } });
+    if (!assignment) throw new NotFoundException(`ExecutorAssignment ${assignmentId} not found`);
+    if (assignment.linkedTaskId === taskId) return;
+    if (assignment.linkedTaskId) {
+      throw new BadRequestException(
+        `ExecutorAssignment ${assignmentId} is already linked to task ${assignment.linkedTaskId}`,
+      );
+    }
     await this.assignmentRepo.update(assignmentId, { linkedTaskId: taskId });
   }
 
@@ -242,8 +361,13 @@ export class ResolutionService {
     const assignments = await this.assignmentRepo.find({
       where: { documentId, executorRole: ExecutorRole.PRIMARY },
     });
-    const allComplete = assignments.every(a => a.status === ExecutorAssignmentStatus.COMPLETED);
-    if (allComplete && assignments.length > 0) {
+    const activeAssignments = assignments.filter(
+      (assignment) => assignment.status !== ExecutorAssignmentStatus.CANCELLED,
+    );
+    const allComplete = activeAssignments.every(
+      (assignment) => assignment.status === ExecutorAssignmentStatus.COMPLETED,
+    );
+    if (allComplete && activeAssignments.length > 0) {
       this.eventEmitter.emit('edms.all_assignments_complete', { documentId });
     }
   }

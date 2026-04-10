@@ -63,6 +63,17 @@ export class EdmsTaskSyncListener {
         where: { linkedTaskId: payload.taskId },
       });
       if (!assignment) return;
+      const doc = await this.documentRepo.findOne({ where: { id: payload.sourceDocumentId } });
+      if (!doc || doc.status !== DocumentStatus.IN_WORKFLOW) {
+        return;
+      }
+      if (
+        assignment.status === ExecutorAssignmentStatus.COMPLETED ||
+        assignment.status === ExecutorAssignmentStatus.CANCELLED ||
+        assignment.status === ExecutorAssignmentStatus.RETURNED
+      ) {
+        return;
+      }
 
       assignment.status = ExecutorAssignmentStatus.COMPLETED;
       assignment.completionReport = payload.completionReport ?? null;
@@ -77,21 +88,23 @@ export class EdmsTaskSyncListener {
       const allAssignments = await this.assignmentRepo.find({
         where: { documentId: payload.sourceDocumentId },
       });
-      const allPrimaryComplete = allAssignments
-        .filter(a => a.executorRole === 'primary')
+      const activePrimaryAssignments = allAssignments
+        .filter(
+          (assignment) =>
+            assignment.executorRole === 'primary' &&
+            assignment.status !== ExecutorAssignmentStatus.CANCELLED,
+        );
+      const allPrimaryComplete = activePrimaryAssignments
         .every(a => a.status === ExecutorAssignmentStatus.COMPLETED);
 
-      if (allPrimaryComplete) {
+      if (allPrimaryComplete && activePrimaryAssignments.length > 0) {
         // Transition document to COMPLETED if it's still in workflow
-        const doc = await this.documentRepo.findOne({ where: { id: payload.sourceDocumentId } });
-        if (doc && doc.status === DocumentStatus.IN_WORKFLOW) {
-          await this.documentRepo.update(payload.sourceDocumentId, {
-            status: DocumentStatus.COMPLETED,
-          });
-          this.logger.log(
-            `Document ${payload.sourceDocumentId} auto-completed — all executor assignments done`,
-          );
-        }
+        await this.documentRepo.update(payload.sourceDocumentId, {
+          status: DocumentStatus.COMPLETED,
+        });
+        this.logger.log(
+          `Document ${payload.sourceDocumentId} auto-completed — all executor assignments done`,
+        );
       }
     } catch (err) {
       this.logger.error(
