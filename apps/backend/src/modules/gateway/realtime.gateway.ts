@@ -26,7 +26,7 @@ const INSTANCE_ID = `gw-${Date.now()}`;
 /**
  * Real-time WebSocket gateway (§5 of Chat-AudioVideo-Realtime-Architecture.md).
  *
- * Runs on WS_PORT (default 4001) alongside the Fastify HTTP server on port 4000.
+ * Runs on the same HTTP server as the Nest app via WsAdapter.
  *
  * Responsibilities:
  *  - Authenticate connections (JWT in Upgrade header or first message)
@@ -44,7 +44,6 @@ const INSTANCE_ID = `gw-${Date.now()}`;
  *  Phase 5 — Operational: bi-directional event streaming
  */
 @WebSocketGateway({
-  port: parseInt(process.env.WS_PORT ?? '4001', 10),
   path: '/ws',
   cors: {
     origin: process.env.ALLOWED_ORIGINS?.split(',') ?? ['http://localhost:3000'],
@@ -81,7 +80,7 @@ export class RealtimeGateway
   ) {}
 
   afterInit(server: Server): void {
-    this.logger.log(`WebSocket gateway initialised on port ${process.env.WS_PORT ?? 4001}`);
+    this.logger.log('WebSocket gateway initialised on /ws');
   }
 
   // ─── Connection lifecycle ─────────────────────────────────────────────────────

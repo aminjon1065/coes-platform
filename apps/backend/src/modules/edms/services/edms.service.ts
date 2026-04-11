@@ -117,15 +117,16 @@ export class EdmsService {
       .andWhere(this.buildDocumentVisibilityWhere('doc', actorPositionId), {
         actorId,
         actorPositionId,
+        actorPositionIdText: actorPositionId,
       });
 
     if (dto.status) qb.andWhere('doc.status = :status', { status: dto.status });
     if (dto.direction) qb.andWhere('doc.direction = :direction', { direction: dto.direction });
-    if (dto.typeId) qb.andWhere('doc.typeId = :typeId', { typeId: dto.typeId });
+    if (dto.typeId) qb.andWhere('doc.type_id = :typeId', { typeId: dto.typeId });
     if (dto.search)
       qb.andWhere('doc.subject ILIKE :search', { search: `%${dto.search}%` });
-    if (dto.from) qb.andWhere('doc.createdAt >= :from', { from: dto.from });
-    if (dto.to) qb.andWhere('doc.createdAt <= :to', { to: dto.to });
+    if (dto.from) qb.andWhere('doc.created_at >= :from', { from: dto.from });
+    if (dto.to) qb.andWhere('doc.created_at <= :to', { to: dto.to });
 
     qb.orderBy('doc.createdAt', 'DESC')
       .skip(dto.offset ?? 0)
@@ -538,10 +539,10 @@ export class EdmsService {
 
   private buildDocumentVisibilityWhere(alias: string, actorPositionId: string | null): string {
     if (!actorPositionId) {
-      return `${alias}.createdById = :actorId`;
+      return `${alias}.created_by_id = :actorId`;
     }
 
-    return `(${alias}.createdById = :actorId OR ${alias}.createdByPositionId = :actorPositionId OR ${alias}.senderPositionId = :actorPositionId OR EXISTS (SELECT 1 FROM jsonb_array_elements(${alias}.recipients) recipient WHERE recipient ->> 'positionId' = :actorPositionId))`;
+    return `(${alias}.created_by_id = :actorId OR ${alias}.created_by_position_id = :actorPositionId OR ${alias}.sender_position_id = :actorPositionId OR EXISTS (SELECT 1 FROM jsonb_array_elements(${alias}.recipients) recipient WHERE recipient ->> 'positionId' = :actorPositionIdText))`;
   }
 
   /** Deterministic 32-bit advisory lock key for (seriesCode, year) */

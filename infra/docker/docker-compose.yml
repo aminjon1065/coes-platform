@@ -292,8 +292,9 @@ services:
   # ClamAV — virus scanning for file uploads (referenced by Backend CLAMAV_HOST)
   # ---------------------------------------------------------------------------
   clamav:
-    profiles: [app]
+    profiles: [scan]   # separate profile — no arm64 image; enable only on x86_64 hosts
     image: clamav/clamav:1.4
+    platform: linux/amd64
     container_name: coescd-clamav
     restart: unless-stopped
     logging: *default-logging
@@ -378,6 +379,8 @@ services:
       WEB_PUSH_VAPID_PRIVATE_KEY: ${WEB_PUSH_VAPID_PRIVATE_KEY:-}
       WEB_PUSH_TTL_SECONDS: ${WEB_PUSH_TTL_SECONDS:-300}
       WEB_PUSH_URGENCY: ${WEB_PUSH_URGENCY:-high}
+    ports:
+      - "127.0.0.1:4000:4000"   # expose to host for local Next.js dev
     depends_on:
       postgres:
         condition: service_healthy

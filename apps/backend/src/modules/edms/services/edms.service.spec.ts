@@ -247,7 +247,7 @@ describe('EdmsService', () => {
       expect(documentRepo.createQueryBuilder).toHaveBeenCalledWith('doc');
       expect(qb.where).toHaveBeenCalledWith('doc.classification <= :clearance', { clearance: 2 });
       expect(qb.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining('doc.createdById = :actorId'),
+        expect.stringContaining('doc.created_by_id = :actorId'),
         expect.objectContaining({ actorId: 'user-1', actorPositionId: 'pos-1' }),
       );
       expect(result).toEqual({ items: docs, total: 1 });
