@@ -19,7 +19,7 @@ export class MfaCredential {
   id: string;
 
   @Index({ unique: true })
-  @Column({ name: 'user_id' })
+  @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
   @Column({ type: 'text' })

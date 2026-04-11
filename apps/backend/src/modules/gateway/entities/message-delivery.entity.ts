@@ -25,11 +25,11 @@ export class MessageDelivery {
   id: string;
 
   /** References chat.messages.id */
-  @Column({ name: 'message_id' })
+  @Column({ name: 'message_id', type: 'uuid' })
   messageId: string;
 
   /** References chat.channels.id — denormalised for bulk unread queries */
-  @Column({ name: 'channel_id' })
+  @Column({ name: 'channel_id', type: 'uuid' })
   channelId: string;
 
   /** The user who should receive the message */

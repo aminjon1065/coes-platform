@@ -129,11 +129,13 @@ services:
   # =========================================================================
 
   # ---------------------------------------------------------------------------
-  # PostgreSQL 16 + PostGIS 3.6 — spatial queries for GIS domain
+  # PostgreSQL 16 + PostGIS 3.4 — spatial queries for GIS domain
+  # NOTE: PostGIS 3.5 has no arm64 build yet. Using 16-3.4 (latest arm64-compatible).
+  #       On x86_64 servers you can upgrade to postgis/postgis:16-3.5
   # NOTE: Staying on PG16 major version; upgrade requires pg_upgrade + PostGIS re-pack
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgis/postgis:16-3.6.2
+    image: postgis/postgis:16-3.4
     container_name: coescd-postgres
     restart: unless-stopped
     logging: *default-logging
@@ -239,7 +241,7 @@ services:
   #   Alternatively: quay.io/minio/minio:<RELEASE_TAG>
   # ---------------------------------------------------------------------------
   minio:
-    image: minio/minio:RELEASE.2025-11-07T00-35-20Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: coescd-minio
     restart: unless-stopped
     logging: *default-logging

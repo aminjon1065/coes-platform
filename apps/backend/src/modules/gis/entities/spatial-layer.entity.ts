@@ -150,7 +150,7 @@ export class SpatialLayer {
   sourcePredictionId: string | null;
 
   /** Hazard type of the AI model that produced this layer */
-  @Column({ name: 'ai_hazard_type', length: 50, nullable: true })
+  @Column({ name: 'ai_hazard_type', type: 'varchar', length: 50, nullable: true })
   aiHazardType: string | null;
 
   /** When the AI model ran and produced this layer */

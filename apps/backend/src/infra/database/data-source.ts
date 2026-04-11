@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { existsSync } from 'fs';
 import { DataSource } from 'typeorm';
 import { join } from 'path';
+import { PostgresNamingStrategy } from './postgres-naming.strategy';
 
 // dotenv is loaded here so the TypeORM CLI can read .env.local when invoked
 // directly (outside NestJS bootstrap). Safe to call multiple times.
@@ -38,6 +39,7 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_NAME ?? 'coescd',
   synchronize: false,
   logging: true,
+  namingStrategy: new PostgresNamingStrategy(),
   entities: [join(sourceRoot, '**/*.entity{.ts,.js}')],
   migrations: [join(sourceRoot, 'infra/database/migrations/**/*{.ts,.js}')],
 });
