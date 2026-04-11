@@ -6,6 +6,7 @@ import {
   PresenceStatus,
   PresenceState,
 } from './presence.service';
+import { GatewayEventsService } from '../../../infra/events/gateway-events.service';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -42,11 +43,14 @@ describe('PresenceService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    const mockGatewayEvents = { publishToRoom: jest.fn(), publishToUser: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PresenceService,
         { provide: CACHE_MANAGER, useValue: mockCache },
         { provide: EventEmitter2, useValue: mockEmitter },
+        { provide: GatewayEventsService, useValue: mockGatewayEvents },
       ],
     }).compile();
 

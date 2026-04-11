@@ -13,6 +13,7 @@ import {
 } from '../entities/executor-assignment.entity';
 import { WorkflowHistory } from '../entities/workflow-history.entity';
 import { WorkflowStep } from '../entities/workflow-step.entity';
+import { DeadlineExtensionRequest } from '../entities/deadline-extension-request.entity';
 import { AuditService } from '../../audit/services/audit.service';
 import { OrgService } from '../../org/services/org.service';
 import { UsersService } from '../../users/services/users.service';
@@ -119,6 +120,7 @@ describe('ResolutionService', () => {
         { provide: getRepositoryToken(Document), useValue: documentRepo },
         { provide: getRepositoryToken(Resolution), useValue: resolutionRepo },
         { provide: getRepositoryToken(ExecutorAssignment), useValue: assignmentRepo },
+        { provide: getRepositoryToken(DeadlineExtensionRequest), useValue: mockRepo() },
         { provide: getRepositoryToken(WorkflowHistory), useValue: mockRepo() },
         { provide: getRepositoryToken(WorkflowStep), useValue: mockRepo() },
         { provide: AuditService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },

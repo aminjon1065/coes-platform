@@ -91,13 +91,22 @@ describe('AuthorizationService', () => {
     cacheManager   = { get: jest.fn().mockResolvedValue(null), set: jest.fn() };
     orgService     = { getDescendants: jest.fn().mockResolvedValue([]) } as any;
 
+    const positionRoleRepo = mockRepo<any>();
+    const sodRuleRepo      = mockRepo<any>();
+    const dataSource       = { query: jest.fn().mockResolvedValue([]) } as any;
+    const auditService     = { emit: jest.fn() } as any;
+
     service = new AuthorizationService(
       assignmentRepo as any,
       roleRepo as any,
       permRepo as any,
       delegationRepo as any,
+      positionRoleRepo as any,
+      sodRuleRepo as any,
+      dataSource,
       cacheManager as any,
       orgService as any,
+      auditService,
     );
   });
 

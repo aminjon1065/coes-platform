@@ -658,13 +658,13 @@ export class AnalyticsService {
   }
 
   /**
-   * Download a ready report as JSON or CSV.
-   * Returns { contentType, filename, body } — controller sets headers and writes body.
+   * Download a ready report as JSON, CSV, XLSX, or PDF (HTML print-ready).
+   * Returns { contentType, filename, body } — controller writes body as string or Buffer.
    */
   async downloadReport(
     id: string,
     ctx: RequestContext,
-  ): Promise<{ contentType: string; filename: string; body: string }> {
+  ): Promise<{ contentType: string; filename: string; body: string | Buffer }> {
     const report = await this.getReport(id, ctx);
 
     if (report.status !== 'ready') {
@@ -679,13 +679,31 @@ export class AnalyticsService {
       .replace(/[^a-z0-9]+/g, '_')
       .slice(0, 60);
 
+    const rows = Array.isArray(data)
+      ? (data as Record<string, unknown>[])
+      : [data as Record<string, unknown>];
+
     if (report.format === ReportFormat.CSV) {
-      const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [data as Record<string, unknown>];
-      const body = this.toCsv(rows);
       return {
         contentType: 'text/csv; charset=utf-8',
         filename: `${safeName}.csv`,
-        body,
+        body: this.toCsv(rows),
+      };
+    }
+
+    if (report.format === ReportFormat.XLSX) {
+      return {
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename: `${safeName}.xlsx`,
+        body: this.toXlsx(rows, report.title),
+      };
+    }
+
+    if (report.format === ReportFormat.PDF) {
+      return {
+        contentType: 'text/html; charset=utf-8',
+        filename: `${safeName}.html`,
+        body: this.toPrintHtml(rows, report.title, report.reportType, report.generatedAt),
       };
     }
 
@@ -712,6 +730,298 @@ export class AnalyticsService {
       ...rows.map((r) => headers.map((h) => escape(r[h])).join(',')),
     ];
     return lines.join('\r\n');
+  }
+
+  /**
+   * Builds a valid XLSX (Office Open XML) file in-memory without external libraries.
+   * Constructs a ZIP archive containing the minimal required OOXML parts.
+   */
+  private toXlsx(rows: Record<string, unknown>[], sheetTitle: string): Buffer {
+    const escXml = (v: unknown): string =>
+      (v === null || v === undefined ? '' : String(v))
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+
+    const headers = rows.length ? Object.keys(rows[0]) : [];
+    const colLetter = (idx: number): string => {
+      let s = '';
+      let n = idx + 1;
+      while (n > 0) {
+        const r = (n - 1) % 26;
+        s = String.fromCharCode(65 + r) + s;
+        n = Math.floor((n - 1) / 26);
+      }
+      return s;
+    };
+
+    // Build shared strings table for string deduplication
+    const stringIndex = new Map<string, number>();
+    const strings: string[] = [];
+    const si = (val: string): number => {
+      if (!stringIndex.has(val)) {
+        stringIndex.set(val, strings.length);
+        strings.push(val);
+      }
+      return stringIndex.get(val)!;
+    };
+
+    // Collect all header strings
+    headers.forEach((h) => si(h));
+
+    // Build sheet rows XML, classify cells as number (n) or shared-string (s)
+    const sheetRows: string[] = [];
+
+    // Header row (row 1)
+    const headerCells = headers
+      .map((h, ci) => `<c r="${colLetter(ci)}1" t="s"><v>${si(h)}</v></c>`)
+      .join('');
+    sheetRows.push(`<row r="1">${headerCells}</row>`);
+
+    // Data rows
+    rows.forEach((row, ri) => {
+      const rowNum = ri + 2;
+      const cells = headers
+        .map((h, ci) => {
+          const raw = row[h];
+          const ref = `${colLetter(ci)}${rowNum}`;
+          if (raw === null || raw === undefined) {
+            return `<c r="${ref}" t="s"><v>${si('')}</v></c>`;
+          }
+          if (typeof raw === 'number' || (typeof raw === 'string' && raw !== '' && !isNaN(Number(raw)))) {
+            const num = typeof raw === 'number' ? raw : Number(raw);
+            return `<c r="${ref}"><v>${num}</v></c>`;
+          }
+          return `<c r="${ref}" t="s"><v>${si(escXml(raw))}</v></c>`;
+        })
+        .join('');
+      sheetRows.push(`<row r="${rowNum}">${cells}</row>`);
+    });
+
+    const sheetXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+      `<sheetData>${sheetRows.join('')}</sheetData>` +
+      `</worksheet>`;
+
+    const sharedStringsXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
+      `count="${strings.length}" uniqueCount="${strings.length}">` +
+      strings.map((s) => `<si><t xml:space="preserve">${s}</t></si>`).join('') +
+      `</sst>`;
+
+    const workbookXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
+      `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+      `<sheets><sheet name="${escXml(sheetTitle.slice(0, 31))}" sheetId="1" r:id="rId1"/></sheets>` +
+      `</workbook>`;
+
+    const workbookRels =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>` +
+      `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>` +
+      `</Relationships>`;
+
+    const rootRels =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>` +
+      `</Relationships>`;
+
+    const contentTypes =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+      `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+      `<Default Extension="xml" ContentType="application/xml"/>` +
+      `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
+      `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>` +
+      `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` +
+      `</Types>`;
+
+    const files: { name: string; data: Buffer }[] = [
+      { name: '[Content_Types].xml',          data: Buffer.from(contentTypes,     'utf8') },
+      { name: '_rels/.rels',                   data: Buffer.from(rootRels,         'utf8') },
+      { name: 'xl/workbook.xml',               data: Buffer.from(workbookXml,      'utf8') },
+      { name: 'xl/_rels/workbook.xml.rels',    data: Buffer.from(workbookRels,     'utf8') },
+      { name: 'xl/worksheets/sheet1.xml',      data: Buffer.from(sheetXml,         'utf8') },
+      { name: 'xl/sharedStrings.xml',          data: Buffer.from(sharedStringsXml, 'utf8') },
+    ];
+
+    return this.buildZip(files);
+  }
+
+  /**
+   * Builds a valid ZIP archive from an array of { name, data } entries.
+   * Uses Node.js built-in zlib.deflateRawSync — no external dependencies.
+   */
+  private buildZip(files: { name: string; data: Buffer }[]): Buffer {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const zlib = require('zlib') as typeof import('zlib');
+    const parts: Buffer[] = [];
+    const centralDir: Buffer[] = [];
+    let offset = 0;
+
+    const crc32 = (buf: Buffer): number => {
+      const table = (() => {
+        const t = new Uint32Array(256);
+        for (let i = 0; i < 256; i++) {
+          let c = i;
+          for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+          t[i] = c;
+        }
+        return t;
+      })();
+      let crc = 0xffffffff;
+      for (const byte of buf) crc = table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+      return (crc ^ 0xffffffff) >>> 0;
+    };
+
+    const u16 = (n: number): Buffer => { const b = Buffer.alloc(2); b.writeUInt16LE(n, 0); return b; };
+    const u32 = (n: number): Buffer => { const b = Buffer.alloc(4); b.writeUInt32LE(n >>> 0, 0); return b; };
+
+    for (const { name, data } of files) {
+      const nameBytes   = Buffer.from(name, 'utf8');
+      const compressed  = zlib.deflateRawSync(data, { level: 6 });
+      const crc         = crc32(data);
+      const modTime     = 0x0000;
+      const modDate     = 0x0000;
+
+      // Local file header (signature 0x04034b50)
+      const localHeader = Buffer.concat([
+        Buffer.from([0x50, 0x4b, 0x03, 0x04]), // signature
+        u16(20),            // version needed
+        u16(0),             // general purpose bit flag
+        u16(8),             // compression method: deflate
+        u16(modTime),
+        u16(modDate),
+        u32(crc),
+        u32(compressed.length),
+        u32(data.length),
+        u16(nameBytes.length),
+        u16(0),             // extra field length
+        nameBytes,
+      ]);
+
+      parts.push(localHeader, compressed);
+
+      // Central directory entry (signature 0x02014b50)
+      centralDir.push(Buffer.concat([
+        Buffer.from([0x50, 0x4b, 0x01, 0x02]), // signature
+        u16(20),            // version made by
+        u16(20),            // version needed
+        u16(0),
+        u16(8),
+        u16(modTime),
+        u16(modDate),
+        u32(crc),
+        u32(compressed.length),
+        u32(data.length),
+        u16(nameBytes.length),
+        u16(0),             // extra field length
+        u16(0),             // file comment length
+        u16(0),             // disk number start
+        u16(0),             // internal file attributes
+        u32(0),             // external file attributes
+        u32(offset),        // relative offset of local header
+        nameBytes,
+      ]));
+
+      offset += localHeader.length + compressed.length;
+    }
+
+    const cdBuf     = Buffer.concat(centralDir);
+    const cdSize    = cdBuf.length;
+    const cdOffset  = offset;
+    const count     = files.length;
+
+    // End of central directory record (signature 0x06054b50)
+    const eocd = Buffer.concat([
+      Buffer.from([0x50, 0x4b, 0x05, 0x06]),
+      u16(0),           // disk number
+      u16(0),           // disk with central dir
+      u16(count),
+      u16(count),
+      u32(cdSize),
+      u32(cdOffset),
+      u16(0),           // comment length
+    ]);
+
+    return Buffer.concat([...parts, cdBuf, eocd]);
+  }
+
+  /**
+   * Generates a print-ready HTML report page. Opened in a browser and printed
+   * (Ctrl+P → Save as PDF) to produce the PDF deliverable.
+   */
+  private toPrintHtml(
+    rows: Record<string, unknown>[],
+    title: string,
+    reportType: string,
+    generatedAt: Date | null,
+  ): string {
+    const escHtml = (v: unknown): string =>
+      (v === null || v === undefined ? '—' : String(v))
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    const headers = rows.length ? Object.keys(rows[0]) : [];
+    const formatHeader = (h: string): string =>
+      h.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const thead = `<tr>${headers.map((h) => `<th>${formatHeader(h)}</th>`).join('')}</tr>`;
+    const tbody = rows
+      .map((r) => `<tr>${headers.map((h) => `<td>${escHtml(r[h])}</td>`).join('')}</tr>`)
+      .join('');
+
+    const genStr = generatedAt
+      ? new Date(generatedAt).toLocaleString('en-GB', { timeZone: 'Asia/Dushanbe' })
+      : new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dushanbe' });
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>${escHtml(title)}</title>
+<style>
+  @page { size: A4 landscape; margin: 15mm; }
+  body  { font-family: 'Segoe UI', Arial, sans-serif; font-size: 10pt; color: #1a1a2e; margin: 0; }
+  h1    { font-size: 14pt; margin-bottom: 2px; }
+  .meta { font-size: 8pt; color: #555; margin-bottom: 12px; }
+  table { border-collapse: collapse; width: 100%; page-break-inside: auto; }
+  thead { background: #1a1a2e; color: #fff; }
+  th    { padding: 6px 8px; text-align: left; font-size: 9pt; white-space: nowrap; }
+  td    { padding: 5px 8px; border-bottom: 1px solid #e0e0e0; font-size: 9pt; }
+  tr:nth-child(even) td { background: #f4f6fb; }
+  tr:hover td { background: #e8edf8; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none; }
+  }
+</style>
+</head>
+<body>
+<p class="no-print" style="background:#fffbe6;border:1px solid #f0c040;padding:8px 12px;border-radius:4px;font-size:9pt">
+  To save as PDF: press <strong>Ctrl+P</strong> (or Cmd+P on macOS) → select <em>Save as PDF</em> → print.
+</p>
+<h1>${escHtml(title)}</h1>
+<div class="meta">
+  Report type: ${escHtml(reportType.replace(/_/g, ' '))} &nbsp;|&nbsp;
+  Generated: ${escHtml(genStr)} &nbsp;|&nbsp;
+  Rows: ${rows.length} &nbsp;|&nbsp;
+  CoESCD Unified Digital Platform
+</div>
+<table>
+  <thead>${thead}</thead>
+  <tbody>${tbody}</tbody>
+</table>
+</body>
+</html>`;
   }
 
   async listReports(ctx: RequestContext): Promise<GeneratedReport[]> {

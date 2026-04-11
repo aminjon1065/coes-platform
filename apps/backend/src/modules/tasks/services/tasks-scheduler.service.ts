@@ -47,7 +47,7 @@ export class TasksSchedulerService {
   // Runs every 15 minutes. Marks tasks whose deadline has passed.
   // Critical tasks get checked at the same interval — the interval is already short enough.
 
-  @Cron(CronExpression.EVERY_15_MINUTES)
+  @Cron('*/15 * * * *')
   async runOverdueDetection(): Promise<void> {
     try {
       const now = new Date().toISOString().split('T')[0]; // YYYY-MM-DD

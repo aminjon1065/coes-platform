@@ -266,7 +266,7 @@ export class RealtimeGateway
     const ctx = this.connections.get(client.id);
     if (!ctx) return;
 
-    await this.chatService.markRead(data.channelId, ctx.userId, data.lastReadSequence);
+    await this.chatService.markRead(data.channelId, Number(data.lastReadSequence), ctx.positionId ?? ctx.userId);
 
     // Notify sender(s) of read receipt in DM channels
     this.eventEmitter.emit('chat.read_receipt', {
@@ -428,7 +428,7 @@ export class RealtimeGateway
    */
   private async sendSyncPacket(
     client: WebSocket & { id: string },
-    ctx: { userId: string; positionId: string | null; clearance: number },
+    ctx: { userId: string; positionId: string | null; clearance: number; subscribedChannels: Set<string> },
   ): Promise<void> {
     try {
       const channels = await this.chatService.listChannels(ctx.userId, ctx.clearance);
@@ -439,7 +439,16 @@ export class RealtimeGateway
         await this.registry.subscribeToChannel(ch.id, ctx.userId);
       }
 
-      const unreadCounts = await this.chatService.getUnreadCounts(ctx.userId);
+      // Compute unread counts per channel using the caller's position id
+      const unreadEntries = await Promise.all(
+        channels.map(async (ch) => {
+          const count = ctx.positionId
+            ? await this.chatService.getUnreadCount(ch.id, ctx.positionId).catch(() => 0)
+            : 0;
+          return [ch.id, count] as const;
+        }),
+      );
+      const unreadCounts = Object.fromEntries(unreadEntries);
 
       this.sendToClient(client, {
         event: 'sync',

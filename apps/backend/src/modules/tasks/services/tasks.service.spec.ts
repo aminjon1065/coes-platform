@@ -157,6 +157,8 @@ describe('TasksService', () => {
     eventEmitter   = { emit: jest.fn() };
     outboxService  = { publish: jest.fn().mockResolvedValue({ id: 'outbox-1', status: 'dispatched' }) };
 
+    const extensionRepo = mockRepo<any>();
+
     service = new TasksService(
       taskRepo       as any,
       typeRepo       as any,
@@ -164,6 +166,7 @@ describe('TasksService', () => {
       historyRepo    as any,
       commentRepo    as any,
       attachmentRepo as any,
+      extensionRepo  as any,
       dataSource     as unknown as DataSource,
       auditService   as unknown as AuditService,
       orgService     as unknown as OrgService,

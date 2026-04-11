@@ -1,0 +1,127 @@
+// =============================================================================
+// Grafana Alloy config — CoESCD Platform
+// Replaces Promtail (EOL 2026-03-02) for Docker container log shipping to Loki
+//
+// Migration from promtail.yml:
+//   - Docker service discovery: same labels as Promtail
+//   - Loki push endpoint: http://loki:3100
+//   - Labels preserved: container, service (coescd.service), tier (coescd.tier)
+// =============================================================================
+
+// ── Docker container discovery ───────────────────────────────────────────────
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "status"
+    values = ["running"]
+  }
+}
+
+// ── Relabel rules — map Docker metadata to Loki stream labels ────────────────
+
+discovery.relabel "coescd_containers" {
+  targets = discovery.docker.containers.targets
+
+  // Strip leading slash from container name
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // Map CoESCD-specific labels (set via docker-compose `labels:`)
+  rule {
+    source_labels = ["__meta_docker_container_label_coescd_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_coescd_tier"]
+    target_label  = "tier"
+  }
+
+  // Preserve image name for debugging
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_image"]
+    target_label  = "image"
+  }
+
+  // Drop containers with no coescd.service label (non-platform containers)
+  rule {
+    source_labels = ["__meta_docker_container_label_coescd_service"]
+    regex         = ""
+    action        = "drop"
+  }
+}
+
+// ── Log source — Docker container stdout/stderr ───────────────────────────────
+
+loki.source.docker "coescd_logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.coescd_containers.output
+  forward_to = [loki.process.parse_level.receiver]
+
+  // Re-scrape interval — how often to re-check for new/removed containers
+  refresh_interval = "10s"
+}
+
+// ── Log processing — extract log level from JSON or plain text ───────────────
+
+loki.process "parse_level" {
+  forward_to = [loki.write.loki_endpoint.receiver]
+
+  // Attempt to parse JSON logs (NestJS structured output)
+  stage.json {
+    expressions = {
+      level   = "level",
+      message = "message",
+      context = "context",
+    }
+  }
+
+  // Map NestJS log levels to standard labels
+  stage.replace {
+    expression = "(?i)(verbose|debug)"
+    replace    = "debug"
+    source     = "level"
+  }
+
+  stage.replace {
+    expression = "(?i)(log|info)"
+    replace    = "info"
+    source     = "level"
+  }
+
+  stage.replace {
+    expression = "(?i)(warn|warning)"
+    replace    = "warn"
+    source     = "level"
+  }
+
+  // Attach the extracted level as a Loki label
+  stage.labels {
+    values = {
+      level = "level",
+    }
+  }
+}
+
+// ── Loki write endpoint ───────────────────────────────────────────────────────
+
+loki.write "loki_endpoint" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+
+    // Retry on transient failures
+    min_backoff_period = "500ms"
+    max_backoff_period = "5m"
+    max_backoff_retries = 10
+  }
+
+  // Batch settings
+  external_labels = {
+    job = "coescd-docker",
+  }
+}

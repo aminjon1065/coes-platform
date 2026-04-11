@@ -7,6 +7,8 @@ import { OrgService } from './org.service';
 import { Department } from '../entities/department.entity';
 import { Position, PositionLevel } from '../entities/position.entity';
 import { OrgChangeHistory, OrgChangeType } from '../entities/org-change-history.entity';
+import { UserPositionAssignment } from '../../users/entities/user-position-assignment.entity';
+import { AuditService } from '../../audit/services/audit.service';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -88,6 +90,8 @@ describe('OrgService', () => {
         { provide: getRepositoryToken(Department), useValue: deptRepo },
         { provide: getRepositoryToken(Position), useValue: positionRepo },
         { provide: getRepositoryToken(OrgChangeHistory), useValue: historyRepo },
+        { provide: getRepositoryToken(UserPositionAssignment), useValue: makeMockRepo() },
+        { provide: AuditService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: EventEmitter2, useValue: events },
       ],
     }).compile();

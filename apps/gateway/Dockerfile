@@ -2,7 +2,7 @@
 # CoESCD WebSocket Gateway — Multi-stage Dockerfile
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM node:20-bookworm-slim AS base
+FROM node:22-bookworm-slim AS base
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends dumb-init wget \

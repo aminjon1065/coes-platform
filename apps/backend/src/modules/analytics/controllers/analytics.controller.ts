@@ -289,7 +289,7 @@ export class AnalyticsController {
     return this.analyticsService.getReport(id, toCtx(user));
   }
 
-  @ApiOperation({ summary: 'Download a ready report as JSON or CSV' })
+  @ApiOperation({ summary: 'Download a ready report as JSON, CSV, XLSX, or print-ready HTML (PDF)' })
   @Get('reports/:id/download')
   async downloadReport(
     @Param('id', ParseUUIDPipe) id: string,
@@ -297,10 +297,11 @@ export class AnalyticsController {
     @Res() res: Response,
   ) {
     const { contentType, filename, body } = await this.analyticsService.downloadReport(id, toCtx(user));
+    const bodyBuf = Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8');
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Length', Buffer.byteLength(body, 'utf8'));
-    res.end(body);
+    res.setHeader('Content-Length', bodyBuf.length);
+    res.end(bodyBuf);
   }
 
   @ApiOperation({ summary: 'List your generated reports' })

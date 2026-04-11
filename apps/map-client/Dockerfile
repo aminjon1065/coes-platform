@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — builder
 # ---------------------------------------------------------------------------
-FROM node:20-bookworm-slim AS builder
+FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 RUN npm config set fetch-retries 5 \
@@ -35,7 +35,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2 — production Nginx server
 # ---------------------------------------------------------------------------
-FROM nginx:1.25-alpine AS production
+FROM nginx:1.28.3-alpine AS production
 
 # Remove default Nginx config
 RUN rm /etc/nginx/conf.d/default.conf

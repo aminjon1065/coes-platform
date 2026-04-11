@@ -491,9 +491,12 @@ export class GisService {
 
     const incidentId = result[0].id;
 
-    // Enrich: compute elevation, distances asynchronously (fire-and-forget)
-    this.enrichIncidentLocation(incidentId, locationGeoJson).catch((err) =>
-      this.logger.warn(`Incident ${incidentId} enrichment failed: ${err.message}`),
+    // Enrich: compute elevation, distances asynchronously (fire-and-forget, deferred to next tick
+    // so enrichment queries never interleave with the caller's critical path).
+    setImmediate(() =>
+      this.enrichIncidentLocation(incidentId, locationGeoJson).catch((err) =>
+        this.logger.warn(`Incident ${incidentId} enrichment failed: ${err.message}`),
+      ),
     );
 
     this.auditService.emit({
@@ -901,9 +904,123 @@ export class GisService {
   }
 
   private async enrichIncidentLocation(incidentId: string, locationGeoJson: string): Promise<void> {
-    // Future: DEM lookup for elevation, spatial joins for nearest river/road/settlement
-    // Currently a no-op placeholder — will be wired to GIS data pipeline in Phase 4.2
-    this.logger.debug(`Enrichment queued for incident ${incidentId}`);
+    // 1. Elevation — read elevation_mean_m from the finest-grained admin boundary that
+    //    contains the incident point (jamoat → rayon → oblast → country fallback).
+    const elevRows = await this.dataSource.query<{ elevation_m: string | null }[]>(
+      `SELECT (attributes->>'elevation_mean_m')::FLOAT AS elevation_m
+       FROM gis.administrative_boundaries
+       WHERE ST_Within(ST_GeomFromGeoJSON($1)::geometry, boundary::geometry)
+       ORDER BY
+         CASE admin_level
+           WHEN 'jamoat'  THEN 1
+           WHEN 'rayon'   THEN 2
+           WHEN 'oblast'  THEN 3
+           WHEN 'country' THEN 4
+           ELSE 5
+         END
+       LIMIT 1`,
+      [locationGeoJson],
+    );
+    const elevationM =
+      elevRows[0]?.elevation_m !== null && elevRows[0]?.elevation_m !== undefined
+        ? Math.round(parseFloat(String(elevRows[0].elevation_m)) * 10) / 10
+        : null;
+
+    // 2. Distance to nearest active river / hydro line layer.
+    //    Uses the PostGIS KNN operator (<->) for index-accelerated nearest-neighbour.
+    const riverRows = await this.dataSource.query<{ dist_m: string | null }[]>(
+      `SELECT ST_Distance(
+           ST_GeomFromGeoJSON($1)::geography,
+           sf.geometry::geography
+         ) AS dist_m
+       FROM gis.spatial_features sf
+       JOIN gis.spatial_layers sl ON sl.id = sf.layer_id
+       WHERE sl.status = 'active'
+         AND (
+           sl.name  ILIKE '%river%'
+           OR sl.name  ILIKE '%hydro%'
+           OR sl.name  ILIKE '%stream%'
+           OR sl.keywords @> ARRAY['river']
+           OR sl.keywords @> ARRAY['hydro']
+         )
+       ORDER BY sf.geometry::geography <-> ST_GeomFromGeoJSON($1)::geography
+       LIMIT 1`,
+      [locationGeoJson],
+    );
+    const distanceToRiverM =
+      riverRows[0]?.dist_m !== null && riverRows[0]?.dist_m !== undefined
+        ? Math.round(parseFloat(String(riverRows[0].dist_m)))
+        : null;
+
+    // 3. Distance to nearest active road / transport line layer.
+    const roadRows = await this.dataSource.query<{ dist_m: string | null }[]>(
+      `SELECT ST_Distance(
+           ST_GeomFromGeoJSON($1)::geography,
+           sf.geometry::geography
+         ) AS dist_m
+       FROM gis.spatial_features sf
+       JOIN gis.spatial_layers sl ON sl.id = sf.layer_id
+       WHERE sl.status = 'active'
+         AND (
+           sl.name  ILIKE '%road%'
+           OR sl.name  ILIKE '%highway%'
+           OR sl.name  ILIKE '%transport%'
+           OR sl.keywords @> ARRAY['road']
+           OR sl.keywords @> ARRAY['transport']
+         )
+       ORDER BY sf.geometry::geography <-> ST_GeomFromGeoJSON($1)::geography
+       LIMIT 1`,
+      [locationGeoJson],
+    );
+    const distanceToRoadM =
+      roadRows[0]?.dist_m !== null && roadRows[0]?.dist_m !== undefined
+        ? Math.round(parseFloat(String(roadRows[0].dist_m)))
+        : null;
+
+    // 4. Distance to nearest settlement / populated place layer.
+    const settlementRows = await this.dataSource.query<{ dist_m: string | null }[]>(
+      `SELECT ST_Distance(
+           ST_GeomFromGeoJSON($1)::geography,
+           sf.geometry::geography
+         ) AS dist_m
+       FROM gis.spatial_features sf
+       JOIN gis.spatial_layers sl ON sl.id = sf.layer_id
+       WHERE sl.status = 'active'
+         AND (
+           sl.name  ILIKE '%settlement%'
+           OR sl.name  ILIKE '%village%'
+           OR sl.name  ILIKE '%town%'
+           OR sl.name  ILIKE '%city%'
+           OR sl.name  ILIKE '%populated%'
+           OR sl.keywords @> ARRAY['settlement']
+           OR sl.keywords @> ARRAY['population']
+         )
+       ORDER BY sf.geometry::geography <-> ST_GeomFromGeoJSON($1)::geography
+       LIMIT 1`,
+      [locationGeoJson],
+    );
+    const distanceToSettlementM =
+      settlementRows[0]?.dist_m !== null && settlementRows[0]?.dist_m !== undefined
+        ? Math.round(parseFloat(String(settlementRows[0].dist_m)))
+        : null;
+
+    // 5. Write all enrichment values back to the incident record in one UPDATE.
+    await this.dataSource.query(
+      `UPDATE gis.incident_locations
+         SET elevation_m               = $1,
+             distance_to_river_m       = $2,
+             distance_to_road_m        = $3,
+             distance_to_settlement_m  = $4,
+             updated_at                = now()
+       WHERE id = $5`,
+      [elevationM, distanceToRiverM, distanceToRoadM, distanceToSettlementM, incidentId],
+    );
+
+    this.logger.debug(
+      `Enriched incident ${incidentId}: ` +
+        `elevation=${elevationM}m, river=${distanceToRiverM}m, ` +
+        `road=${distanceToRoadM}m, settlement=${distanceToSettlementM}m`,
+    );
   }
 
   private async refreshLayerExtent(layerId: string): Promise<void> {

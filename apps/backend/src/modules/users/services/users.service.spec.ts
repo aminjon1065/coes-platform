@@ -7,7 +7,10 @@ import { UsersService } from './users.service';
 import { UserProfile, UserStatus } from '../entities/user-profile.entity';
 import { UserPositionAssignment, AssignmentType } from '../entities/user-position-assignment.entity';
 import { UserPreferences, AppLanguage } from '../entities/user-preferences.entity';
+import { UserRoleAssignment } from '../../authorization/entities/user-role-assignment.entity';
+import { Position } from '../../org/entities/position.entity';
 import { OrgService } from '../../org/services/org.service';
+import { AuditService } from '../../audit/services/audit.service';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -100,7 +103,10 @@ describe('UsersService', () => {
         { provide: getRepositoryToken(UserProfile), useValue: profileRepo },
         { provide: getRepositoryToken(UserPositionAssignment), useValue: assignmentRepo },
         { provide: getRepositoryToken(UserPreferences), useValue: prefsRepo },
+        { provide: getRepositoryToken(UserRoleAssignment), useValue: makeRepo() },
+        { provide: getRepositoryToken(Position), useValue: makeRepo() },
         { provide: OrgService, useValue: orgService },
+        { provide: AuditService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: EventEmitter2, useValue: events },
       ],
     }).compile();

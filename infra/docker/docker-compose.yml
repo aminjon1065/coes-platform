@@ -3,28 +3,37 @@
 # Sovereign on-premises deployment (Tajikistan Emergency Management)
 #
 # PROFILES
-#   infra     — PostgreSQL, Redis, RabbitMQ, MinIO       (always included)
-#   app       — Backend API, WebSocket Gateway, Map Client, Nginx
-#   obs       — Prometheus, Grafana, Loki, Promtail, Jaeger
+#   infra     — PostgreSQL+PostGIS, Redis, RabbitMQ, MinIO       (always included)
+#   app       — Backend API, WebSocket Gateway, Map Client, Nginx, ClamAV
+#   obs       — Prometheus, Grafana, Loki, Alloy, Jaeger, exporters
 #   media     — Mediasoup SFU, Coturn TURN/STUN
 #   search    — OpenSearch, OpenSearch Dashboards
 #   analytics — TimescaleDB time-series store
-#   gis       — Martin vector tile server
+#   gis       — Martin vector tile server, GeoServer raster server
 #   pipelines — Airflow scheduler + webserver + metadata DB
 #   ml        — ClickHouse columnar store, MLflow tracking server + model registry
 #
 # USAGE
 #   Start everything:
-#     docker compose --profile app --profile obs up -d
+#     docker compose --profile app --profile obs --profile gis up -d
 #
 #   Infra only (dev):
 #     docker compose up -d
 #
 #   Stop everything:
-#     docker compose --profile app --profile obs down
+#     docker compose --profile app --profile obs --profile gis down
 #
 # REQUIREMENTS
 #   Copy ../../.env.example to ../../.env and fill in all secrets before running.
+#
+# IMAGE VERSION NOTES (updated 2026-04-11)
+#   • Promtail replaced by Grafana Alloy v1.6.1 (Promtail EOL 2026-03-02)
+#   • Jaeger upgraded to v2.17.0 (v1 reached EOL 2025-12-31); badger storage removed
+#   • MinIO Docker Hub archived Feb 2026 — verify tag at https://github.com/minio/minio/releases
+#   • Airflow stays on 2.10.x — v3.x introduces breaking DAG API changes
+#   • OpenSearch stays on 2.x — v3.x requires full cluster re-index
+#   • MLflow stays on 2.x — v3.x has breaking experiment API changes
+#   • Main PostGIS stays on PG16 — major version migration requires pg_upgrade
 # =============================================================================
 
 name: coescd
@@ -57,6 +66,7 @@ volumes:
   redis-data:
   rabbitmq-data:
   minio-data:
+  clamav-db:
   prometheus-data:
   alertmanager-data:
   grafana-data:
@@ -76,7 +86,8 @@ volumes:
 # EXTENSION — Airflow shared config (top-level x- block, not a service)
 # ===========================================================================
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.9.0
+  # Airflow 2.10.x — staying on 2.x LTS (3.x has breaking DAG API changes)
+  image: apache/airflow:2.10.4
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
@@ -118,10 +129,11 @@ services:
   # =========================================================================
 
   # ---------------------------------------------------------------------------
-  # PostgreSQL 16 + PostGIS 3.4 — spatial queries for GIS domain
+  # PostgreSQL 16 + PostGIS 3.6 — spatial queries for GIS domain
+  # NOTE: Staying on PG16 major version; upgrade requires pg_upgrade + PostGIS re-pack
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgis/postgis:16-3.4
+    image: postgis/postgis:16-3.6.2
     container_name: coescd-postgres
     restart: unless-stopped
     logging: *default-logging
@@ -160,10 +172,10 @@ services:
       coescd.tier: infra
 
   # ---------------------------------------------------------------------------
-  # Redis 7
+  # Redis 8 — LTS release (GA April 2025)
   # ---------------------------------------------------------------------------
   redis:
-    image: redis:7-alpine
+    image: redis:8.0-alpine
     container_name: coescd-redis
     restart: unless-stopped
     logging: *default-logging
@@ -191,10 +203,10 @@ services:
       coescd.tier: infra
 
   # ---------------------------------------------------------------------------
-  # RabbitMQ 3.13
+  # RabbitMQ 4.0 — AMQP 0-9-1 backward compatible
   # ---------------------------------------------------------------------------
   rabbitmq:
-    image: rabbitmq:3.13-management-alpine
+    image: rabbitmq:4.0-management-alpine
     container_name: coescd-rabbitmq
     restart: unless-stopped
     logging: *default-logging
@@ -222,9 +234,12 @@ services:
 
   # ---------------------------------------------------------------------------
   # MinIO — S3-compatible sovereign object storage
+  # IMPORTANT: Docker Hub archived Feb 2026.
+  #   Verify/update tag at: https://github.com/minio/minio/releases
+  #   Alternatively: quay.io/minio/minio:<RELEASE_TAG>
   # ---------------------------------------------------------------------------
   minio:
-    image: minio/minio:RELEASE.2024-04-06T05-26-02Z
+    image: minio/minio:RELEASE.2025-11-07T00-35-20Z
     container_name: coescd-minio
     restart: unless-stopped
     logging: *default-logging
@@ -235,12 +250,12 @@ services:
     volumes:
       - minio-data:/data
     ports:
-      - "127.0.0.1:9002:9000"   # S3 API  (host 9002 → container 9000; 9000 taken by php-fpm)
+      - "127.0.0.1:9002:9000"   # S3 API  (host 9002 → container 9000; 9000 taken by ClickHouse native)
       - "127.0.0.1:9003:9001"   # Console UI
     networks:
       - coescd-net
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9000/minio/health/live"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -258,7 +273,7 @@ services:
   # ---------------------------------------------------------------------------
   mailpit:
     profiles: [app, obs]
-    image: axllent/mailpit:v1.18.3
+    image: axllent/mailpit:v1.27.4
     container_name: coescd-mailpit
     restart: unless-stopped
     logging: *default-logging
@@ -270,6 +285,34 @@ services:
     labels:
       coescd.service: mailpit
       coescd.tier: obs
+
+  # ---------------------------------------------------------------------------
+  # ClamAV — virus scanning for file uploads (referenced by Backend CLAMAV_HOST)
+  # ---------------------------------------------------------------------------
+  clamav:
+    profiles: [app]
+    image: clamav/clamav:1.4
+    container_name: coescd-clamav
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # Fresh virus DB updates — set CLAMAV_NO_FRESHCLAMD=true if no internet access
+      CLAMAV_NO_FRESHCLAMD: ${CLAMAV_NO_FRESHCLAMD:-false}
+    volumes:
+      - clamav-db:/var/lib/clamav
+    ports:
+      - "127.0.0.1:3310:3310"
+    networks:
+      - coescd-net
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 120s    # ClamAV loads full virus DB on startup (~2 min)
+    labels:
+      coescd.service: clamav
+      coescd.tier: app
 
   # ---------------------------------------------------------------------------
   # Backend — NestJS Modular Monolith
@@ -395,11 +438,11 @@ services:
       coescd.tier: app
 
   # ---------------------------------------------------------------------------
-  # Nginx — TLS termination, rate limiting, reverse proxy
+  # Nginx 1.28 — TLS termination, rate limiting, reverse proxy
   # ---------------------------------------------------------------------------
   nginx:
     profiles: [app]
-    image: nginx:1.25-alpine
+    image: nginx:1.28.3-alpine
     container_name: coescd-nginx
     restart: unless-stopped
     logging: *default-logging
@@ -409,6 +452,7 @@ services:
       - ./nginx/certs:/etc/nginx/certs:ro
     ports:
       - "80:80"
+      - "443:443"   # TLS — place certs in ./nginx/certs/ and configure conf.d/
     depends_on:
       backend:
         condition: service_healthy
@@ -430,11 +474,11 @@ services:
   # =========================================================================
 
   # ---------------------------------------------------------------------------
-  # Prometheus — metrics collection and alerting
+  # Prometheus 2.53 — metrics collection and alerting (LTS branch)
   # ---------------------------------------------------------------------------
   prometheus:
     profiles: [obs]
-    image: prom/prometheus:v2.51.0
+    image: prom/prometheus:v2.53.5
     container_name: coescd-prometheus
     restart: unless-stopped
     logging: *default-logging
@@ -463,11 +507,11 @@ services:
       coescd.tier: obs
 
   # ---------------------------------------------------------------------------
-  # Alertmanager — routes Prometheus alerts to email / on-call
+  # Alertmanager 0.29 — routes Prometheus alerts to email / on-call
   # ---------------------------------------------------------------------------
   alertmanager:
     profiles: [obs]
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.29.0
     container_name: coescd-alertmanager
     restart: unless-stopped
     logging: *default-logging
@@ -495,11 +539,11 @@ services:
       coescd.tier: obs
 
   # ---------------------------------------------------------------------------
-  # Grafana — dashboards for metrics, logs, and traces
+  # Grafana 13 — dashboards for metrics, logs, and traces
   # ---------------------------------------------------------------------------
   grafana:
     profiles: [obs]
-    image: grafana/grafana:10.4.0
+    image: grafana/grafana:13.0.0
     container_name: coescd-grafana
     restart: unless-stopped
     logging: *default-logging
@@ -534,11 +578,13 @@ services:
       coescd.tier: obs
 
   # ---------------------------------------------------------------------------
-  # Loki — log aggregation
+  # Loki 3.7 — log aggregation
+  # NOTE: Loki 3.x changes the default schema (tsdb). Review loki.yml before
+  #       upgrading an existing 2.x deployment; a fresh volume is recommended.
   # ---------------------------------------------------------------------------
   loki:
     profiles: [obs]
-    image: grafana/loki:2.9.6
+    image: grafana/loki:3.7.0
     container_name: coescd-loki
     restart: unless-stopped
     logging: *default-logging
@@ -561,45 +607,52 @@ services:
       coescd.tier: obs
 
   # ---------------------------------------------------------------------------
-  # Promtail — ships container logs to Loki
+  # Grafana Alloy 1.6 — ships container logs to Loki (replaces Promtail, EOL 2026-03-02)
+  # Config: ./loki/alloy-config.alloy (River format — see file for details)
   # ---------------------------------------------------------------------------
-  promtail:
+  alloy:
     profiles: [obs]
-    image: grafana/promtail:2.9.6
-    container_name: coescd-promtail
+    image: grafana/alloy:v1.6.1
+    container_name: coescd-alloy
     restart: unless-stopped
     logging: *default-logging
-    command: -config.file=/etc/promtail/promtail.yml
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
     volumes:
-      - ./loki/promtail.yml:/etc/promtail/promtail.yml:ro
+      - ./loki/alloy-config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - coescd-net
     depends_on:
       loki:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:12345/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     labels:
-      coescd.service: promtail
+      coescd.service: alloy
       coescd.tier: obs
 
   # ---------------------------------------------------------------------------
-  # Jaeger — distributed tracing (OTLP receiver)
+  # Jaeger 2.17 — distributed tracing (OTLP receiver)
+  # NOTE: Jaeger v2 removed badger storage; uses memory for single-node.
+  #       For production persistence, set SPAN_STORAGE_TYPE=opensearch and
+  #       configure ES_SERVER_URLS=http://opensearch:9200 (search profile).
   # ---------------------------------------------------------------------------
   jaeger:
     profiles: [obs]
-    image: jaegertracing/all-in-one:1.56
+    image: jaegertracing/all-in-one:2.17.0
     container_name: coescd-jaeger
     restart: unless-stopped
     logging: *default-logging
     environment:
-      COLLECTOR_OTLP_ENABLED: "true"
-      SPAN_STORAGE_TYPE:      badger
-      BADGER_EPHEMERAL:       "false"
-      BADGER_DIRECTORY_VALUE: /badger/data
-      BADGER_DIRECTORY_KEY:   /badger/key
-    user: "0:0"
-    volumes:
-      - jaeger-data:/badger
+      SPAN_STORAGE_TYPE:    memory
+      MEMORY_MAX_TRACES:    "50000"
     ports:
       - "127.0.0.1:16686:16686"   # Jaeger UI
       - "127.0.0.1:4317:4317"     # OTLP gRPC
@@ -617,11 +670,11 @@ services:
       coescd.tier: obs
 
   # ---------------------------------------------------------------------------
-  # Node Exporter — host-level metrics for Prometheus
+  # Node Exporter 1.10 — host-level metrics for Prometheus
   # ---------------------------------------------------------------------------
   node-exporter:
     profiles: [obs]
-    image: prom/node-exporter:v1.7.0
+    image: prom/node-exporter:v1.10.2
     container_name: coescd-node-exporter
     restart: unless-stopped
     logging: *default-logging
@@ -637,11 +690,11 @@ services:
       coescd.tier: obs
 
   # ---------------------------------------------------------------------------
-  # Postgres Exporter — PostgreSQL metrics for Prometheus
+  # Postgres Exporter 0.18 — PostgreSQL metrics for Prometheus
   # ---------------------------------------------------------------------------
   postgres-exporter:
     profiles: [obs]
-    image: prometheuscommunity/postgres-exporter:v0.15.0
+    image: prometheuscommunity/postgres-exporter:v0.18.0
     container_name: coescd-postgres-exporter
     restart: unless-stopped
     logging: *default-logging
@@ -654,6 +707,27 @@ services:
       - coescd-net
     labels:
       coescd.service: postgres-exporter
+      coescd.tier: obs
+
+  # ---------------------------------------------------------------------------
+  # Redis Exporter 1.75 — Redis metrics for Prometheus
+  # ---------------------------------------------------------------------------
+  redis-exporter:
+    profiles: [obs]
+    image: oliver006/redis_exporter:v1.75.0
+    container_name: coescd-redis-exporter
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      REDIS_ADDR:     redis://redis:6379
+      REDIS_PASSWORD: ${COESCD_REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - coescd-net
+    labels:
+      coescd.service: redis-exporter
       coescd.tier: obs
 
   # =========================================================================
@@ -707,11 +781,11 @@ services:
       coescd.tier: media
 
   # ---------------------------------------------------------------------------
-  # Coturn — STUN/TURN server for WebRTC NAT traversal
+  # Coturn 4.9 — STUN/TURN server for WebRTC NAT traversal
   # ---------------------------------------------------------------------------
   coturn:
     profiles: [media]
-    image: coturn/coturn:4.6.2-alpine
+    image: coturn/coturn:4.9.0-alpine
     container_name: coescd-coturn
     restart: unless-stopped
     logging: *default-logging
@@ -740,11 +814,12 @@ services:
   # =========================================================================
 
   # ---------------------------------------------------------------------------
-  # OpenSearch — full-text search and analytics engine
+  # OpenSearch 2.19 — full-text search and analytics engine
+  # NOTE: Staying on 2.x; OpenSearch 3.x requires full cluster re-indexing
   # ---------------------------------------------------------------------------
   opensearch:
     profiles: [search]
-    image: opensearchproject/opensearch:2.13.0
+    image: opensearchproject/opensearch:2.19.2
     container_name: coescd-opensearch
     restart: unless-stopped
     logging: *default-logging
@@ -781,11 +856,11 @@ services:
       coescd.tier: search
 
   # ---------------------------------------------------------------------------
-  # OpenSearch Dashboards — visualization for OpenSearch
+  # OpenSearch Dashboards 2.19 — visualization for OpenSearch
   # ---------------------------------------------------------------------------
   opensearch-dashboards:
     profiles: [search]
-    image: opensearchproject/opensearch-dashboards:2.13.0
+    image: opensearchproject/opensearch-dashboards:2.19.2
     container_name: coescd-opensearch-dashboards
     restart: unless-stopped
     logging: *default-logging
@@ -808,13 +883,12 @@ services:
   # =========================================================================
 
   # ---------------------------------------------------------------------------
-  # TimescaleDB — time-series analytical store for emergency analytics
-  # Currently a separate service; analytics schema starts on main postgres and
-  # will be migrated here once data volume grows to warrant separation.
+  # TimescaleDB 2.26 — time-series analytical store for emergency analytics
+  # Pinned to 2.26.0-pg16; do NOT use latest-pg16 (risks silent PG major upgrade)
   # ---------------------------------------------------------------------------
   timescaledb:
     profiles: [analytics]
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.26.0-pg16
     container_name: coescd-timescaledb
     restart: unless-stopped
     logging: *default-logging
@@ -852,10 +926,6 @@ services:
   # MAP CLIENT  (profile: app)
   # React + MapLibre GL JS GIS operational map — served as static build
   # =========================================================================
-
-  # ---------------------------------------------------------------------------
-  # Map Client — Vite build served by Nginx on port 3003
-  # ---------------------------------------------------------------------------
   map-client:
     profiles: [app]
     build:
@@ -887,39 +957,33 @@ services:
   # =========================================================================
 
   # ---------------------------------------------------------------------------
-  # GeoServer — OGC-compliant raster tile serving (WMS/WMTS)
+  # GeoServer 2.28 — OGC-compliant raster tile serving (WMS/WMTS)
   # Handles DEM hillshading, satellite imagery, and complex raster products.
-  # Vector tiles (MVT) are served by Martin; GeoServer handles raster only.
   # ---------------------------------------------------------------------------
   geoserver:
     profiles: [gis]
-    image: kartoza/geoserver:2.24.0
+    image: kartoza/geoserver:2.28.2
     container_name: coescd-geoserver
     restart: unless-stopped
     logging: *default-logging
     environment:
       GEOSERVER_ADMIN_USER:     ${COESCD_GEOSERVER_ADMIN_USER:-geoserver_admin}
       GEOSERVER_ADMIN_PASSWORD: ${COESCD_GEOSERVER_ADMIN_PASSWORD:?Set COESCD_GEOSERVER_ADMIN_PASSWORD in .env}
-      # Connect GeoServer to the main PostGIS instance for PostGIS stores
       POSTGRES_HOST:     postgres
       POSTGRES_PORT:     5432
       POSTGRES_DB:       ${COESCD_POSTGRES_DB:-coescd}
       POSTGRES_USER:     ${COESCD_POSTGRES_USER:-coescd}
       POSTGRES_PASS:     ${COESCD_POSTGRES_PASSWORD}
-      # JVM tuning for raster rendering
       INITIAL_MEMORY:    512m
       MAXIMUM_MEMORY:    1536m
-      # Disable CORS restriction (Nginx handles CORS)
       GEOSERVER_CSRF_DISABLED: "true"
-      # Enable WMS tile caching via GeoWebCache (bundled)
       GEOWEBCACHE_CACHE_DIR: /opt/geoserver/data_dir/gwc
-      # Raster overviews for performance (via GDAL)
       GDAL_DATA: /usr/share/gdal
     volumes:
       - geoserver-data:/opt/geoserver/data_dir
-      - geoserver-rasters:/opt/geoserver/rasters   # mount point for DEM, satellite imagery
+      - geoserver-rasters:/opt/geoserver/rasters
     ports:
-      - "127.0.0.1:8080:8080"   # GeoServer Web UI + OGC endpoints
+      - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -936,11 +1000,12 @@ services:
       coescd.tier: gis
 
   # ---------------------------------------------------------------------------
-  # Martin — Rust-based vector tile server (MVT from PostGIS)
+  # Martin 1.3 — Rust-based vector tile server (MVT from PostGIS)
+  # NOTE: v1.x may have config flag changes from 0.x — verify CLI flags if updating
   # ---------------------------------------------------------------------------
   martin:
     profiles: [gis]
-    image: ghcr.io/maplibre/martin:v0.14.0
+    image: ghcr.io/maplibre/martin:v1.3.1
     container_name: coescd-martin
     restart: unless-stopped
     logging: *default-logging
@@ -953,7 +1018,7 @@ services:
     volumes:
       - martin-cache:/tmp/martin-cache
     ports:
-      - "127.0.0.1:3002:3002"   # MVT tile server
+      - "127.0.0.1:3002:3002"
     depends_on:
       postgres:
         condition: service_healthy
@@ -971,16 +1036,16 @@ services:
 
   # =========================================================================
   # PIPELINES  (profile: pipelines)
-  # Apache Airflow 2.9 — spatial data ingestion and ETL pipeline orchestration
+  # Apache Airflow 2.10 — spatial data ingestion and ETL pipeline orchestration
   # LocalExecutor: no Celery required at current scale
   # =========================================================================
 
   # ---------------------------------------------------------------------------
-  # Airflow metadata database — isolated from main Postgres
+  # Airflow metadata database — isolated from main Postgres (PG17)
   # ---------------------------------------------------------------------------
   airflow-db:
     profiles: [pipelines]
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: coescd-airflow-db
     restart: unless-stopped
     logging: *default-logging
@@ -1022,6 +1087,9 @@ services:
           --lastname Admin \
           --role Admin \
           --email ${COESCD_AIRFLOW_ADMIN_EMAIL:-admin@coescd.local} || true
+    depends_on:
+      airflow-db:
+        condition: service_healthy
     labels:
       coescd.service: airflow-init
       coescd.tier: pipelines
@@ -1083,11 +1151,11 @@ services:
   # =========================================================================
 
   # ---------------------------------------------------------------------------
-  # ClickHouse 24.3 — columnar OLAP store for large-scale feature/prediction data
+  # ClickHouse 25.4 — columnar OLAP store for large-scale feature/prediction data
   # ---------------------------------------------------------------------------
   clickhouse:
     profiles: [ml]
-    image: clickhouse/clickhouse-server:24.3-alpine
+    image: clickhouse/clickhouse-server:25.4-alpine
     container_name: coescd-clickhouse
     restart: unless-stopped
     logging: *default-logging
@@ -1120,11 +1188,11 @@ services:
       coescd.tier: ml
 
   # ---------------------------------------------------------------------------
-  # MLflow metadata DB — Postgres for experiment/run/model registry metadata
+  # MLflow metadata DB — Postgres 17 for experiment/run/model registry metadata
   # ---------------------------------------------------------------------------
   mlflow-db:
     profiles: [ml]
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: coescd-mlflow-db
     restart: unless-stopped
     logging: *default-logging
@@ -1147,22 +1215,23 @@ services:
       coescd.tier: ml
 
   # ---------------------------------------------------------------------------
-  # MLflow Tracking Server — experiment tracking + model registry
+  # MLflow 2.19 — experiment tracking + model registry
   # Artifacts stored in MinIO (s3-compatible), metadata in mlflow-db (Postgres)
+  # NOTE: Staying on 2.x — MLflow 3.x has breaking changes to the experiment API
   # ---------------------------------------------------------------------------
   mlflow:
     profiles: [ml]
-    image: ghcr.io/mlflow/mlflow:v2.13.2
+    image: ghcr.io/mlflow/mlflow:v2.19.0
     container_name: coescd-mlflow
     restart: unless-stopped
     logging: *default-logging
     environment:
-      MLFLOW_TRACKING_URI:              postgresql+psycopg2://${COESCD_MLFLOW_DB_USER:-mlflow}:${COESCD_MLFLOW_DB_PASSWORD}@mlflow-db:5432/${COESCD_MLFLOW_DB_NAME:-mlflow}
-      MLFLOW_S3_ENDPOINT_URL:           http://minio:9000
-      AWS_ACCESS_KEY_ID:                ${COESCD_MINIO_ACCESS_KEY:?Set COESCD_MINIO_ACCESS_KEY in .env}
-      AWS_SECRET_ACCESS_KEY:            ${COESCD_MINIO_SECRET_KEY:?Set COESCD_MINIO_SECRET_KEY in .env}
-      MLFLOW_ARTIFACT_ROOT:             s3://coescd-mlflow/artifacts
-      GUNICORN_CMD_ARGS:                "--workers=2 --timeout=120"
+      MLFLOW_TRACKING_URI:    postgresql+psycopg2://${COESCD_MLFLOW_DB_USER:-mlflow}:${COESCD_MLFLOW_DB_PASSWORD}@mlflow-db:5432/${COESCD_MLFLOW_DB_NAME:-mlflow}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID:      ${COESCD_MINIO_ACCESS_KEY:?Set COESCD_MINIO_ACCESS_KEY in .env}
+      AWS_SECRET_ACCESS_KEY:  ${COESCD_MINIO_SECRET_KEY:?Set COESCD_MINIO_SECRET_KEY in .env}
+      MLFLOW_ARTIFACT_ROOT:   s3://coescd-mlflow/artifacts
+      GUNICORN_CMD_ARGS:      "--workers=2 --timeout=120"
     command: >
       mlflow server
         --backend-store-uri postgresql+psycopg2://${COESCD_MLFLOW_DB_USER:-mlflow}:${COESCD_MLFLOW_DB_PASSWORD}@mlflow-db:5432/${COESCD_MLFLOW_DB_NAME:-mlflow}
@@ -1186,24 +1255,3 @@ services:
     labels:
       coescd.service: mlflow
       coescd.tier: ml
-
-  # ---------------------------------------------------------------------------
-  # Redis Exporter — Redis metrics for Prometheus
-  # ---------------------------------------------------------------------------
-  redis-exporter:
-    profiles: [obs]
-    image: oliver006/redis_exporter:v1.58.0
-    container_name: coescd-redis-exporter
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      REDIS_ADDR:     redis://redis:6379
-      REDIS_PASSWORD: ${COESCD_REDIS_PASSWORD}
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - coescd-net
-    labels:
-      coescd.service: redis-exporter
-      coescd.tier: obs
