@@ -6,6 +6,7 @@ import {
 import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './infra/filters/global-exception.filter';
 
@@ -19,6 +20,9 @@ async function bootstrap() {
 
   // Graceful shutdown — lets OnModuleDestroy hooks complete (AMQP, DB, etc.)
   app.enableShutdownHooks();
+
+  // WebSocket adapter — required for @WebSocketGateway on the ws library
+  app.useWebSocketAdapter(new WsAdapter(app));
 
   const config = app.get(ConfigService);
 

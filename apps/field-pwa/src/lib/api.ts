@@ -40,6 +40,18 @@ async function request<T>(
         createdAt: new Date().toISOString(),
         attempts: 0,
       });
+
+      // Register a BackgroundSync tag so the service worker drains the queue
+      // when connectivity is restored (falls back gracefully if not supported)
+      try {
+        const reg = await navigator.serviceWorker?.ready;
+        if (reg && 'sync' in reg) {
+          await (reg as any).sync.register('incident-sync');
+        }
+      } catch {
+        // BackgroundSync not supported in this browser — sync.ts handles it via 'online' event
+      }
+
       throw new Error('OFFLINE_QUEUED');
     }
     throw err;

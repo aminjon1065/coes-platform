@@ -10,7 +10,7 @@ import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { SpatialLayer, LayerStatus } from '../entities/spatial-layer.entity';
+import { SpatialLayer, LayerStatus, QualityStatus } from '../entities/spatial-layer.entity';
 import { SpatialFeature } from '../entities/spatial-feature.entity';
 import { HazardZone } from '../entities/hazard-zone.entity';
 import { IncidentLocation } from '../entities/incident-location.entity';
@@ -21,6 +21,7 @@ import { GatewayEventsService } from '../../../infra/events/gateway-events.servi
 
 import {
   CreateSpatialLayerDto,
+  UpdateSpatialLayerDto,
   CreateSpatialFeatureDto,
   CreateHazardZoneDto,
   CreateIncidentLocationDto,
@@ -159,6 +160,39 @@ export class GisService {
     return this.layerRepo.save(layer);
   }
 
+  async updateLayer(id: string, dto: UpdateSpatialLayerDto, ctx: RequestContext): Promise<SpatialLayer> {
+    const layer = await this.getLayer(id, ctx);
+
+    if (dto.name !== undefined) layer.name = dto.name;
+    if (dto.description !== undefined) layer.description = dto.description;
+    if (dto.classification !== undefined) {
+      if (dto.classification < layer.classification) {
+        // Downgrading classification requires higher clearance than target level
+        this.assertClassificationAccess(layer.classification, ctx.clearanceLevel, 'layer');
+      }
+      layer.classification = dto.classification;
+    }
+    if (dto.updateCadence !== undefined) layer.updateCadence = dto.updateCadence;
+    if (dto.sourceName !== undefined) layer.sourceName = dto.sourceName;
+    if (dto.sourceUrl !== undefined) layer.sourceUrl = dto.sourceUrl;
+    if (dto.keywords !== undefined) layer.keywords = dto.keywords;
+    if (dto.schemaDefinition !== undefined) layer.schemaDefinition = dto.schemaDefinition;
+    if (dto.symbology !== undefined) layer.symbology = dto.symbology;
+    if (dto.retentionDays !== undefined) layer.retentionDays = dto.retentionDays;
+
+    const saved = await this.layerRepo.save(layer);
+
+    this.auditService.emit({
+      action: 'gis.layer.updated',
+      actorId: ctx.userId,
+      resourceType: 'SpatialLayer',
+      resourceId: id,
+      metadata: { changes: Object.keys(dto) },
+    });
+
+    return saved;
+  }
+
   // ── Feature Management ────────────────────────────────────────────────────
 
   async createFeature(dto: CreateSpatialFeatureDto, ctx: RequestContext): Promise<object> {
@@ -235,6 +269,30 @@ export class GisService {
     const feat = rows[0];
     this.assertClassificationAccess(feat.classification, ctx.clearanceLevel, 'feature');
     return feat;
+  }
+
+  async deleteFeature(featureId: string, ctx: RequestContext): Promise<{ deleted: true }> {
+    const feat = await this.featureRepo.findOne({ where: { id: featureId } });
+    if (!feat) throw new NotFoundException(`Feature ${featureId} not found`);
+    this.assertClassificationAccess(feat.classification, ctx.clearanceLevel, 'feature');
+
+    // Soft-delete: set valid_to = now so temporal queries exclude it
+    await this.dataSource.query(
+      `UPDATE gis.spatial_features SET valid_to = NOW() WHERE id = $1`,
+      [featureId],
+    );
+    await this.layerRepo.decrement({ id: feat.layerId }, 'featureCount', 1);
+    await this.refreshLayerExtent(feat.layerId);
+
+    this.auditService.emit({
+      action: 'gis.feature.deleted',
+      actorId: ctx.userId,
+      resourceType: 'SpatialFeature',
+      resourceId: featureId,
+      metadata: { layerId: feat.layerId },
+    });
+
+    return { deleted: true };
   }
 
   async queryFeaturesByBbox(layerId: string, dto: BboxQueryDto, ctx: RequestContext): Promise<object[]> {
@@ -557,6 +615,33 @@ export class GisService {
     return row;
   }
 
+  async verifyIncident(id: string, ctx: RequestContext): Promise<object> {
+    const incident = await this.incidentRepo.findOne({ where: { id } });
+    if (!incident) throw new NotFoundException(`Incident ${id} not found`);
+    this.assertClassificationAccess(incident.classification, ctx.clearanceLevel, 'incident');
+    if (incident.verifiedAt) throw new ConflictException('Incident already verified');
+
+    incident.verifiedAt = new Date();
+    (incident as any).verifiedById = ctx.userId;
+    await this.incidentRepo.save(incident);
+
+    this.auditService.emit({
+      action: 'gis.incident.verified',
+      actorId: ctx.userId,
+      resourceType: 'IncidentLocation',
+      resourceId: id,
+    });
+    this.events.emit('gis.incident.verified', { incidentId: id, incidentRef: incident.incidentRef, verifiedById: ctx.userId });
+
+    const incidentView = await this.getIncidentAsGeoJson(id, ctx);
+    await this.gatewayEvents.publishToRoom('gis.incidents', {
+      event: 'gis.incident.verified',
+      data: incidentView,
+    });
+
+    return incidentView;
+  }
+
   async resolveIncident(id: string, ctx: RequestContext): Promise<object> {
     const incident = await this.incidentRepo.findOne({ where: { id } });
     if (!incident) throw new NotFoundException(`Incident ${id} not found`);
@@ -581,6 +666,97 @@ export class GisService {
     });
 
     return incidentView;
+  }
+
+  // ── AI Layer Analyst Review (§12.1) ──────────────────────────────────────
+
+  async approveAiLayer(
+    id: string,
+    classificationLevel: number,
+    ctx: RequestContext,
+  ): Promise<SpatialLayer> {
+    const layer = await this.layerRepo.findOne({ where: { id } });
+    if (!layer) throw new NotFoundException(`Layer ${id} not found`);
+    if (!layer.isAiGenerated) throw new ConflictException('Layer is not AI-generated');
+    if (layer.status !== LayerStatus.DRAFT) {
+      throw new ConflictException(`Cannot approve layer in status "${layer.status}"; expected DRAFT`);
+    }
+
+    layer.status = LayerStatus.ACTIVE;
+    layer.qualityStatus = QualityStatus.VALID;
+    layer.aiApprovedById = ctx.userId;
+    layer.aiApprovedAt = new Date();
+    layer.publishedAt = new Date();
+    if (classificationLevel !== undefined) {
+      layer.classification = classificationLevel;
+    }
+
+    const saved = await this.layerRepo.save(layer);
+
+    this.auditService.emit({
+      action: 'gis.ai_layer.approved',
+      actorId: ctx.userId,
+      resourceType: 'SpatialLayer',
+      resourceId: id,
+      metadata: { hazardType: layer.aiHazardType, classification: layer.classification },
+    });
+
+    this.events.emit('gis.ai_layer.approved', {
+      layerId: id,
+      layerName: layer.name,
+      hazardType: layer.aiHazardType,
+      approvedById: ctx.userId,
+      approvedAt: layer.aiApprovedAt.toISOString(),
+    });
+
+    // Notify operational map viewers that a new risk layer is active
+    this.events.emit('alert.spatial_risk_elevated', {
+      source: 'ai_layer_approval',
+      layerId: id,
+      hazardType: layer.aiHazardType,
+      triggeredAt: new Date().toISOString(),
+    });
+
+    return saved;
+  }
+
+  async rejectAiLayer(
+    id: string,
+    reason: string,
+    ctx: RequestContext,
+  ): Promise<SpatialLayer> {
+    const layer = await this.layerRepo.findOne({ where: { id } });
+    if (!layer) throw new NotFoundException(`Layer ${id} not found`);
+    if (!layer.isAiGenerated) throw new ConflictException('Layer is not AI-generated');
+    if (layer.status !== LayerStatus.DRAFT) {
+      throw new ConflictException(`Cannot reject layer in status "${layer.status}"; expected DRAFT`);
+    }
+    if (!reason?.trim()) throw new ConflictException('Rejection reason is required');
+
+    layer.status = LayerStatus.DEPRECATED;
+    layer.qualityStatus = QualityStatus.INVALID;
+    layer.aiRejectionReason = reason.trim();
+    layer.deprecatedAt = new Date();
+
+    const saved = await this.layerRepo.save(layer);
+
+    this.auditService.emit({
+      action: 'gis.ai_layer.rejected',
+      actorId: ctx.userId,
+      resourceType: 'SpatialLayer',
+      resourceId: id,
+      metadata: { hazardType: layer.aiHazardType, reason: layer.aiRejectionReason },
+    });
+
+    this.events.emit('gis.ai_layer.rejected', {
+      layerId: id,
+      layerName: layer.name,
+      hazardType: layer.aiHazardType,
+      rejectedById: ctx.userId,
+      reason: layer.aiRejectionReason,
+    });
+
+    return saved;
   }
 
   // ── Administrative Boundaries ─────────────────────────────────────────────

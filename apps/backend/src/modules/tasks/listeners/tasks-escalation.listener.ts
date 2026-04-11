@@ -32,6 +32,60 @@ export class TasksEscalationListener {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
+  // ─── Tier 1 — Approaching deadline ────────────────────────────────────────────
+
+  @OnEvent('task.deadline_approaching')
+  async onDeadlineApproaching(payload: {
+    taskId: string;
+    taskTitle: string;
+    responsiblePositionId: string;
+    assigningPositionId: string;
+    deadline: string;
+    priority: string;
+    hoursRemaining: number;
+  }): Promise<void> {
+    try {
+      // Notify responsible executor
+      this.eventEmitter.emit('notification.requested', {
+        type: 'TASK_DEADLINE_APPROACHING',
+        recipientPositionId: payload.responsiblePositionId,
+        priority: payload.priority === 'critical' ? 'critical' : 'normal',
+        payload: {
+          taskId: payload.taskId,
+          taskTitle: payload.taskTitle,
+          deadline: payload.deadline,
+          hoursRemaining: payload.hoursRemaining,
+        },
+      });
+
+      // Notify direct supervisor
+      const chain = await this.orgService.getCommandChain(payload.responsiblePositionId);
+      const supervisorPositionId = chain.length > 1 ? chain[1].id : null;
+
+      if (supervisorPositionId) {
+        this.eventEmitter.emit('notification.requested', {
+          type: 'TASK_DEADLINE_APPROACHING_SUPERVISOR',
+          recipientPositionId: supervisorPositionId,
+          priority: 'normal',
+          payload: {
+            taskId: payload.taskId,
+            taskTitle: payload.taskTitle,
+            responsiblePositionId: payload.responsiblePositionId,
+            deadline: payload.deadline,
+            hoursRemaining: payload.hoursRemaining,
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.error(
+        `Deadline-approaching notification failed for task ${payload.taskId}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+  }
+
+  // ─── Tier 2 — First overdue alert ─────────────────────────────────────────────
+
   @OnEvent('task.overdue')
   async onTaskOverdue(payload: {
     taskId: string;

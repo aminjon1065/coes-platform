@@ -13,10 +13,12 @@ import { WorkflowStep } from './entities/workflow-step.entity';
 import { Resolution } from './entities/resolution.entity';
 import { ExecutorAssignment } from './entities/executor-assignment.entity';
 import { WorkflowHistory } from './entities/workflow-history.entity';
+import { DeadlineExtensionRequest } from './entities/deadline-extension-request.entity';
 
 import { EdmsService } from './services/edms.service';
 import { WorkflowService } from './services/workflow.service';
 import { ResolutionService } from './services/resolution.service';
+import { EdmsSchedulerService } from './services/edms-scheduler.service';
 
 import { EdmsController } from './controllers/edms.controller';
 import { DocumentTypesController } from './controllers/document-types.controller';
@@ -44,13 +46,21 @@ import { OrgModule } from '../org/org.module';
       Resolution,
       ExecutorAssignment,
       WorkflowHistory,
+      DeadlineExtensionRequest,
     ]),
     AuditModule,
     UsersModule,
     OrgModule,
   ],
   controllers: [EdmsController, DocumentTypesController, WorkflowController, ResolutionController],
-  providers: [EdmsService, WorkflowService, ResolutionService, EdmsWorkflowListener, EdmsTaskSyncListener],
+  providers: [
+    EdmsService,
+    WorkflowService,
+    ResolutionService,
+    EdmsSchedulerService,
+    EdmsWorkflowListener,
+    EdmsTaskSyncListener,
+  ],
   exports: [EdmsService, WorkflowService, ResolutionService],
 })
 export class EdmsModule {}

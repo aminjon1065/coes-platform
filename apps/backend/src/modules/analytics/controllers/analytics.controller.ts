@@ -9,7 +9,9 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 
 import { AnalyticsService } from '../services/analytics.service';
@@ -285,6 +287,20 @@ export class AnalyticsController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.analyticsService.getReport(id, toCtx(user));
+  }
+
+  @ApiOperation({ summary: 'Download a ready report as JSON or CSV' })
+  @Get('reports/:id/download')
+  async downloadReport(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+    @Res() res: Response,
+  ) {
+    const { contentType, filename, body } = await this.analyticsService.downloadReport(id, toCtx(user));
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', Buffer.byteLength(body, 'utf8'));
+    res.end(body);
   }
 
   @ApiOperation({ summary: 'List your generated reports' })

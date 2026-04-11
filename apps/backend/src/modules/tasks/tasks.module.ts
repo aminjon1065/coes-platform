@@ -7,8 +7,10 @@ import { TaskAssignment } from './entities/task-assignment.entity';
 import { TaskHistory } from './entities/task-history.entity';
 import { TaskComment } from './entities/task-comment.entity';
 import { TaskAttachment } from './entities/task-attachment.entity';
+import { TaskDeadlineExtensionRequest } from './entities/task-deadline-extension-request.entity';
 
 import { TasksService } from './services/tasks.service';
+import { TasksSchedulerService } from './services/tasks-scheduler.service';
 import { TasksController } from './controllers/tasks.controller';
 import { TasksEdmsListener } from './listeners/tasks-edms.listener';
 import { TasksEscalationListener } from './listeners/tasks-escalation.listener';
@@ -25,6 +27,7 @@ import { OrgModule } from '../org/org.module';
       TaskHistory,
       TaskComment,
       TaskAttachment,
+      TaskDeadlineExtensionRequest,
     ]),
     AuditModule,
     OrgModule,
@@ -32,6 +35,7 @@ import { OrgModule } from '../org/org.module';
   controllers: [TasksController],
   providers: [
     TasksService,
+    TasksSchedulerService,
     TasksEdmsListener,
     TasksEscalationListener,
   ],

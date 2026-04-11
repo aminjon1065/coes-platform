@@ -177,6 +177,10 @@ export class Task {
   @Column({ type: 'varchar',  name: 'source_resolution_id', nullable: true })
   sourceResolutionId: string | null;
 
+  /** EDMS executor_assignment.id that generated this task (document-generated tasks only) */
+  @Column({ type: 'varchar', name: 'source_assignment_id', nullable: true })
+  sourceAssignmentId: string | null;
+
   /** Linked discussion channel in Communication domain */
   @Column({ type: 'varchar',  name: 'discussion_channel_id', nullable: true })
   discussionChannelId: string | null;

@@ -657,6 +657,63 @@ export class AnalyticsService {
     return report;
   }
 
+  /**
+   * Download a ready report as JSON or CSV.
+   * Returns { contentType, filename, body } — controller sets headers and writes body.
+   */
+  async downloadReport(
+    id: string,
+    ctx: RequestContext,
+  ): Promise<{ contentType: string; filename: string; body: string }> {
+    const report = await this.getReport(id, ctx);
+
+    if (report.status !== 'ready') {
+      throw new BadRequestException(`Report is not ready (status: ${report.status})`);
+    }
+
+    const params = report.parameters as Record<string, unknown>;
+    const data = params['result'];
+
+    const safeName = report.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .slice(0, 60);
+
+    if (report.format === ReportFormat.CSV) {
+      const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [data as Record<string, unknown>];
+      const body = this.toCsv(rows);
+      return {
+        contentType: 'text/csv; charset=utf-8',
+        filename: `${safeName}.csv`,
+        body,
+      };
+    }
+
+    // Default: JSON
+    return {
+      contentType: 'application/json; charset=utf-8',
+      filename: `${safeName}.json`,
+      body: JSON.stringify(data, null, 2),
+    };
+  }
+
+  private toCsv(rows: Record<string, unknown>[]): string {
+    if (!rows.length) return '';
+    const headers = Object.keys(rows[0]);
+    const escape = (v: unknown): string => {
+      const s = v === null || v === undefined ? '' : String(v);
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const lines = [
+      headers.join(','),
+      ...rows.map((r) => headers.map((h) => escape(r[h])).join(',')),
+    ];
+    return lines.join('\r\n');
+  }
+
   async listReports(ctx: RequestContext): Promise<GeneratedReport[]> {
     return this.reportRepo.find({
       where: { requestedById: ctx.userId },

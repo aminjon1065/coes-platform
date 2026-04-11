@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, In } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, IsNull, In, DataSource } from 'typeorm';
 import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
@@ -8,7 +8,9 @@ import { Inject } from '@nestjs/common';
 import { UserRoleAssignment } from '../entities/user-role-assignment.entity';
 import { Permission } from '../entities/permission.entity';
 import { Role } from '../entities/role.entity';
-import { Delegation } from '../entities/delegation.entity';
+import { Delegation, DelegationStatus } from '../entities/delegation.entity';
+import { PositionRole } from '../entities/position-role.entity';
+import { SodRule } from '../entities/sod-rule.entity';
 import { OrgService } from '../../org/services/org.service';
 import { CreateRoleDto } from '../dto/create-role.dto';
 import { AssignUserRoleDto } from '../dto/assign-user-role.dto';
@@ -28,9 +30,35 @@ export interface AuthzContext {
   userClearance?: number;
 }
 
+/** Section 12.3 — structured explainability for every access decision */
+export type AuthzDeniedLayer = 'CAPABILITY' | 'SCOPE' | 'CLASSIFICATION' | 'POLICY';
+
 export interface AuthzDecision {
   allowed: boolean;
   reason: string;
+  /** Which layer denied the request (only set when allowed === false) */
+  deniedLayer?: AuthzDeniedLayer;
+  /** The role that granted access (only set when allowed === true) */
+  grantedByRole?: string;
+  /** The delegation ID that expanded scope (only set when allowed via delegation) */
+  delegationRef?: string;
+  /** The position from which authority was derived (positional role path) */
+  positionRef?: string;
+}
+
+export interface SodViolation {
+  ruleId: string;
+  conflictingRoleId: string;
+  conflictingRoleName: string;
+  description: string;
+}
+
+export interface PositionRoleSummary {
+  positionId: string;
+  roleId: string;
+  roleName: string;
+  grantedById: string | null;
+  createdAt: Date;
 }
 
 export interface PortalWorkspaceSummary {
@@ -80,6 +108,12 @@ export class AuthorizationService {
     private readonly permRepo: Repository<Permission>,
     @InjectRepository(Delegation)
     private readonly delegationRepo: Repository<Delegation>,
+    @InjectRepository(PositionRole)
+    private readonly positionRoleRepo: Repository<PositionRole>,
+    @InjectRepository(SodRule)
+    private readonly sodRuleRepo: Repository<SodRule>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     @Inject(CACHE_MANAGER)
     private readonly cache: Cache,
     private readonly orgService: OrgService,
@@ -88,17 +122,19 @@ export class AuthorizationService {
 
   /**
    * Primary authorization entry point.
-   * Evaluates all four layers and returns a single allow/deny decision.
+   * Evaluates all four layers and returns a structured allow/deny decision.
    *
-   * Layer 1: RBAC — does the user's role grant this capability?
+   * Layer 1: RBAC — does the user's role (functional or positional) grant this capability?
    * Layer 2: Scope — does the user's positional authority cover this department?
    * Layer 3: Classification — does the user's clearance meet the resource's classification?
    * Layer 4: Context — active delegations, acting assignments, emergency overrides?
+   *
+   * Section 12.3 — every decision carries a reasoning chain for explainability.
    */
   async can(permission: string, context: AuthzContext): Promise<AuthzDecision> {
     const { userId, departmentId, resourceClassification, userClearance } = context;
 
-    // Layer 3: Classification check first (hard ceiling)
+    // Layer 3 first — hard ceiling, no exceptions by role or scope (§3.2 Layer 3)
     if (
       resourceClassification !== undefined &&
       userClearance !== undefined &&
@@ -106,23 +142,82 @@ export class AuthorizationService {
     ) {
       return {
         allowed: false,
-        reason: `User clearance level ${userClearance} insufficient for resource classification ${resourceClassification}`,
+        deniedLayer: 'CLASSIFICATION',
+        reason: `User clearance level ${userClearance} is below resource classification ${resourceClassification}. No role or delegation can override this.`,
       };
     }
 
-    // Layer 1 + 2: RBAC with scope
+    // Layer 1 + 2: RBAC (functional roles) + scope
     const hasDirect = await this.checkRbacWithScope(userId, permission, departmentId);
     if (hasDirect.allowed) return hasDirect;
 
-    // Layer 4: Check active delegations — is user acting on behalf of someone
-    // who has this permission?
+    // Layer 1 + 2: Positional roles (auto-derived from active position occupancies, §6.1)
+    const hasPositional = await this.checkPositionalRoles(userId, permission, departmentId);
+    if (hasPositional.allowed) return hasPositional;
+
+    // Layer 4: Active delegation grants
     const hasDelegated = await this.checkDelegatedPermission(userId, permission, departmentId);
     if (hasDelegated.allowed) return hasDelegated;
 
     return {
       allowed: false,
-      reason: `Permission '${permission}' not granted to user ${userId}`,
+      deniedLayer: hasDirect.deniedLayer ?? 'CAPABILITY',
+      reason: `Permission '${permission}' not granted to user ${userId} via any functional role, positional role, or active delegation.`,
     };
+  }
+
+  /**
+   * Check positional roles: for every active position occupancy of this user,
+   * look up authz.position_roles and evaluate as if those were direct role assignments.
+   * The position's owning department is used as the implicit scope. §6.1
+   */
+  private async checkPositionalRoles(
+    userId: string,
+    permission: string,
+    departmentId?: string,
+  ): Promise<AuthzDecision> {
+    // Fetch active position occupancies from users schema (cross-schema raw query)
+    const occupancies: Array<{ position_id: string; department_id: string | null }> =
+      await this.dataSource.query(
+        `SELECT pa.position_id, p.department_id
+           FROM users.user_position_assignments pa
+           JOIN org.positions p ON p.id = pa.position_id
+          WHERE pa.user_id = $1
+            AND pa.vacated_at IS NULL`,
+        [userId],
+      );
+
+    if (!occupancies.length) {
+      return { allowed: false, reason: 'User holds no active position' };
+    }
+
+    for (const occ of occupancies) {
+      // Scope check: if a departmentId is requested, the position must cover it
+      if (departmentId && occ.department_id) {
+        const inScope = await this.isDepartmentInScope(departmentId, occ.department_id);
+        if (!inScope) continue;
+      }
+
+      // Fetch all roles on this position
+      const posRoles = await this.positionRoleRepo.find({
+        where: { positionId: occ.position_id },
+        relations: ['role', 'role.permissions'],
+      });
+
+      for (const pr of posRoles) {
+        const hasPermission = await this.roleHasPermission(pr.role, permission, new Set());
+        if (hasPermission) {
+          return {
+            allowed: true,
+            grantedByRole: pr.role.name,
+            positionRef: occ.position_id,
+            reason: `Positional role '${pr.role.name}' on position ${occ.position_id} grants '${permission}'`,
+          };
+        }
+      }
+    }
+
+    return { allowed: false, deniedLayer: 'CAPABILITY', reason: 'No positional role grants this permission' };
   }
 
   private async checkRbacWithScope(
@@ -142,33 +237,39 @@ export class AuthorizationService {
     });
 
     const activeAssignments = assignments.filter(
-      (a) =>
-        !a.expiresAt || a.expiresAt > now,
+      (a) => !a.expiresAt || a.expiresAt > now,
     );
 
+    let capabilityFound = false;
+
     for (const assignment of activeAssignments) {
+      // Layer 1: Can this role even do this action? (fast check before scope)
+      const hasCapability = await this.roleHasPermission(assignment.role, permission, new Set());
+      if (!hasCapability) continue;
+      capabilityFound = true;
+
       // Layer 2: Scope check
       if (departmentId && assignment.departmentScopeId) {
-        const inScope = await this.isDepartmentInScope(
-          departmentId,
-          assignment.departmentScopeId,
-        );
+        const inScope = await this.isDepartmentInScope(departmentId, assignment.departmentScopeId);
         if (!inScope) continue;
       }
 
-      // Layer 1: RBAC check — direct + inherited via parent role
-      const hasPermission = await this.roleHasPermission(assignment.role, permission, new Set());
-      if (hasPermission) {
-        const decision: AuthzDecision = {
-          allowed: true,
-          reason: `Role '${assignment.role.name}' grants permission '${permission}'`,
-        };
-        await this.cache.set(cacheKey, decision, AUTHZ_CACHE_TTL);
-        return decision;
-      }
+      const decision: AuthzDecision = {
+        allowed: true,
+        grantedByRole: assignment.role.name,
+        reason: `Role '${assignment.role.name}' grants permission '${permission}'${departmentId ? ` within department scope` : ''}`,
+      };
+      await this.cache.set(cacheKey, decision, AUTHZ_CACHE_TTL);
+      return decision;
     }
 
-    const denied: AuthzDecision = { allowed: false, reason: 'No matching role grants this permission' };
+    const denied: AuthzDecision = {
+      allowed: false,
+      deniedLayer: capabilityFound ? 'SCOPE' : 'CAPABILITY',
+      reason: capabilityFound
+        ? `Role grants '${permission}' but department ${departmentId} is outside assigned scope`
+        : 'No functional role grants this permission',
+    };
     await this.cache.set(cacheKey, denied, AUTHZ_CACHE_TTL);
     return denied;
   }
@@ -213,34 +314,70 @@ export class AuthorizationService {
   ): Promise<AuthzDecision> {
     const now = new Date();
 
+    // Use status field (new) + fallback on revokedAt for backward compatibility
     const delegations = await this.delegationRepo.find({
-      where: { delegateId: userId, revokedAt: IsNull() },
+      where: [
+        { delegateId: userId, status: DelegationStatus.ACTIVE },
+        { delegateId: userId, revokedAt: IsNull() },
+      ],
     });
 
     const active = delegations.filter(
-      (d) => d.startAt <= now && d.endAt >= now,
+      (d) => d.startAt <= now && d.endAt >= now && !d.revokedAt,
     );
 
     for (const delegation of active) {
+      // Delegation is scope expansion only — never clearance elevation (§8.3)
+      // Check if the delegator has this permission
       const principalDecision = await this.checkRbacWithScope(
         delegation.delegatorId,
         permission,
         departmentId,
       );
-      if (principalDecision.allowed) {
-        return {
-          allowed: true,
-          reason: `Delegated permission from user ${delegation.delegatorId} via position ${delegation.positionId}`,
-        };
+      if (!principalDecision.allowed) {
+        // Also check delegator's positional roles
+        const positionalDecision = await this.checkPositionalRoles(
+          delegation.delegatorId,
+          permission,
+          departmentId,
+        );
+        if (!positionalDecision.allowed) continue;
       }
+
+      return {
+        allowed: true,
+        delegationRef: delegation.id,
+        reason: `Delegated authority from user ${delegation.delegatorId} via delegation ${delegation.id} (${delegation.authorityType ?? 'legacy'})`,
+      };
     }
 
-    return { allowed: false, reason: 'No delegation grants this permission' };
+    return { allowed: false, deniedLayer: 'POLICY', reason: 'No active delegation grants this permission' };
   }
 
+  /**
+   * Immediately invalidate all cached authz decisions for a user.
+   * Uses the underlying Redis client's SCAN+DEL to remove all keys matching
+   * the user's prefix — required by §8.6 (delegation revocation must take effect
+   * immediately, not after TTL expiry).
+   */
   async invalidateUserCache(userId: string): Promise<void> {
-    // In production, use cache tag invalidation. For now, we rely on TTL expiry.
-    this.logger.debug(`Cache invalidation requested for user ${userId}`);
+    const pattern = `${CACHE_KEY_PREFIX}${userId}:*`;
+    try {
+      // cache-manager-ioredis-yet exposes the ioredis client on .store.client
+      const redisClient = (this.cache.store as any)?.client;
+      if (redisClient && typeof redisClient.keys === 'function') {
+        const keys: string[] = await redisClient.keys(pattern);
+        if (keys.length > 0) {
+          await redisClient.del(...keys);
+          this.logger.debug(`Invalidated ${keys.length} cache keys for user ${userId}`);
+        }
+      } else {
+        this.logger.debug(`Cache store does not expose Redis client — relying on TTL for user ${userId}`);
+      }
+    } catch (err) {
+      // Cache invalidation failure must never break the operation that triggered it
+      this.logger.warn(`Cache invalidation failed for user ${userId}: ${(err as Error).message}`);
+    }
   }
 
   async listRoles(): Promise<Role[]> {
@@ -358,6 +495,175 @@ export class AuthorizationService {
     }));
   }
 
+  // ── Positional Role Management (§6.1) ────────────────────────────────────
+
+  async assignRoleToPosition(
+    positionId: string,
+    roleId: string,
+    actorId: string,
+  ): Promise<PositionRoleSummary> {
+    const role = await this.roleRepo.findOne({ where: { id: roleId } });
+    if (!role) throw new NotFoundException(`Role ${roleId} not found`);
+
+    const existing = await this.positionRoleRepo.findOne({ where: { positionId, roleId } });
+    if (existing) throw new ConflictException('Position already has this role');
+
+    const saved = await this.positionRoleRepo.save(
+      this.positionRoleRepo.create({ positionId, roleId, grantedById: actorId }),
+    );
+
+    await this.auditService.emit({
+      actorId,
+      eventType: 'admin.position_role.assigned',
+      resourceType: 'position-role',
+      resourceId: saved.id,
+      success: true,
+      severity: AuditSeverity.INFO,
+      metadata: { positionId, roleId, roleName: role.name },
+    });
+
+    return {
+      positionId: saved.positionId,
+      roleId: saved.roleId,
+      roleName: role.name,
+      grantedById: saved.grantedById,
+      createdAt: saved.createdAt,
+    };
+  }
+
+  async revokeRoleFromPosition(
+    positionId: string,
+    roleId: string,
+    actorId: string,
+  ): Promise<void> {
+    const record = await this.positionRoleRepo.findOne({ where: { positionId, roleId } });
+    if (!record) throw new NotFoundException('Position does not have this role');
+
+    await this.positionRoleRepo.delete(record.id);
+
+    // Invalidate all users currently occupying this position
+    const occupants: Array<{ user_id: string }> = await this.dataSource.query(
+      `SELECT DISTINCT user_id FROM users.user_position_assignments
+        WHERE position_id = $1 AND vacated_at IS NULL`,
+      [positionId],
+    );
+    await Promise.all(occupants.map((o) => this.invalidateUserCache(o.user_id)));
+
+    await this.auditService.emit({
+      actorId,
+      eventType: 'admin.position_role.revoked',
+      resourceType: 'position-role',
+      resourceId: record.id,
+      success: true,
+      severity: AuditSeverity.WARNING,
+      metadata: { positionId, roleId },
+    });
+  }
+
+  async listRolesForPosition(positionId: string): Promise<PositionRoleSummary[]> {
+    const records = await this.positionRoleRepo.find({
+      where: { positionId },
+      relations: ['role'],
+      order: { createdAt: 'ASC' },
+    });
+    return records.map((r) => ({
+      positionId: r.positionId,
+      roleId: r.roleId,
+      roleName: r.role.name,
+      grantedById: r.grantedById,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  // ── SoD Rule Management (§9) ──────────────────────────────────────────────
+
+  async createSodRule(
+    roleAId: string,
+    roleBId: string,
+    description: string,
+    actorId: string,
+  ): Promise<SodRule> {
+    const [roleA, roleB] = await Promise.all([
+      this.roleRepo.findOne({ where: { id: roleAId } }),
+      this.roleRepo.findOne({ where: { id: roleBId } }),
+    ]);
+    if (!roleA) throw new NotFoundException(`Role ${roleAId} not found`);
+    if (!roleB) throw new NotFoundException(`Role ${roleBId} not found`);
+    if (roleAId === roleBId) throw new BadRequestException('SoD rule must reference two distinct roles');
+
+    // Normalise order for unique constraint
+    const [normalA, normalB] = [roleAId, roleBId].sort();
+
+    const existing = await this.sodRuleRepo.findOne({ where: { roleAId: normalA, roleBId: normalB } });
+    if (existing) throw new ConflictException('SoD rule for this pair already exists');
+
+    const saved = await this.sodRuleRepo.save(
+      this.sodRuleRepo.create({
+        roleAId: normalA,
+        roleBId: normalB,
+        description,
+        createdById: actorId,
+        active: true,
+      }),
+    );
+
+    await this.auditService.emit({
+      actorId,
+      eventType: 'admin.sod_rule.created',
+      resourceType: 'sod-rule',
+      resourceId: saved.id,
+      success: true,
+      severity: AuditSeverity.WARNING,
+      metadata: { roleAId: normalA, roleBId: normalB, description },
+    });
+
+    return saved;
+  }
+
+  async listSodRules(): Promise<SodRule[]> {
+    return this.sodRuleRepo.find({ where: { active: true }, order: { createdAt: 'ASC' } });
+  }
+
+  /**
+   * Preventive SoD check — called before assignRoleToUser().
+   * Returns a violation record if adding this role to this user would breach any SoD rule.
+   */
+  async checkSodViolation(userId: string, newRoleId: string): Promise<SodViolation | null> {
+    const activeRules = await this.sodRuleRepo.find({ where: { active: true } });
+
+    // Collect the user's currently active role IDs (functional + positional)
+    const now = new Date();
+    const functional = await this.assignmentRepo.find({
+      where: { userId, revokedAt: IsNull() },
+    });
+    const activeRoleIds = new Set(
+      functional
+        .filter((a) => !a.expiresAt || a.expiresAt > now)
+        .map((a) => a.roleId),
+    );
+
+    for (const rule of activeRules) {
+      const otherRoleId =
+        rule.roleAId === newRoleId ? rule.roleBId :
+        rule.roleBId === newRoleId ? rule.roleAId :
+        null;
+
+      if (!otherRoleId) continue;
+
+      if (activeRoleIds.has(otherRoleId)) {
+        const conflictRole = await this.roleRepo.findOne({ where: { id: otherRoleId } });
+        return {
+          ruleId: rule.id,
+          conflictingRoleId: otherRoleId,
+          conflictingRoleName: conflictRole?.name ?? otherRoleId,
+          description: rule.description,
+        };
+      }
+    }
+
+    return null;
+  }
+
   async assignRoleToUser(
     actorId: string,
     userId: string,
@@ -366,6 +672,23 @@ export class AuthorizationService {
     const role = await this.roleRepo.findOne({ where: { id: dto.roleId } });
     if (!role) {
       throw new NotFoundException(`Role ${dto.roleId} not found`);
+    }
+
+    // Preventive SoD check (§9.4) — reject before persisting
+    const sodViolation = await this.checkSodViolation(userId, dto.roleId);
+    if (sodViolation) {
+      await this.auditService.emit({
+        actorId,
+        eventType: 'admin.sod_violation.prevented',
+        resourceType: 'user-role-assignment',
+        resourceId: userId,
+        success: false,
+        severity: AuditSeverity.WARNING,
+        metadata: { userId, newRoleId: dto.roleId, ...sodViolation },
+      });
+      throw new BadRequestException(
+        `Role assignment rejected: SoD violation. Assigning '${role.name}' would conflict with existing role '${sodViolation.conflictingRoleName}'. Rule: ${sodViolation.description}`,
+      );
     }
 
     const existingWhere: {

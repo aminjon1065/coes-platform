@@ -81,6 +81,14 @@ export class ExecutorAssignment {
   @Column({ name: 'deadline', type: 'date', nullable: true })
   deadline: string | null;
 
+  /**
+   * Parent assignment ID — set when this is a sub-assignment (§9.4).
+   * Sub-assignments are created by a PRIMARY executor distributing work to subordinates.
+   * Sub-assignment is one level deep without `document.execution.sub_assign_deep`.
+   */
+  @Column({ name: 'parent_assignment_id', type: 'uuid', nullable: true })
+  parentAssignmentId: string | null;
+
   /** ID of the Task created in TaskManagement domain for this assignment */
   @Column({ type: 'varchar', name: 'linked_task_id', length: 255, nullable: true })
   linkedTaskId: string | null;

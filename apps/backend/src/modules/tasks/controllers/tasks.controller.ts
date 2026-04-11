@@ -23,6 +23,11 @@ import { AddExecutorDto } from '../dto/add-executor.dto';
 import { AddCommentDto } from '../dto/add-comment.dto';
 import { AddAttachmentDto } from '../dto/add-attachment.dto';
 import { UpdateProgressDto } from '../dto/update-progress.dto';
+import { ReassignTaskDto } from '../dto/reassign-task.dto';
+import { RequestDeadlineExtensionDto } from '../dto/request-deadline-extension.dto';
+import { ReviewDeadlineExtensionDto } from '../dto/review-deadline-extension.dto';
+import { CreateTaskTypeDto } from '../dto/create-task-type.dto';
+import { UpdateTaskTypeDto } from '../dto/update-task-type.dto';
 
 interface AuthenticatedRequest extends FastifyRequest {
   user: {
@@ -36,11 +41,25 @@ interface AuthenticatedRequest extends FastifyRequest {
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
-  // ─── Task Types ───────────────────────────────────────────────────────────────
+  // ─── Task Types (§17.1) ───────────────────────────────────────────────────────
 
   @Get('types')
   listTypes() {
     return this.tasksService.listTaskTypes();
+  }
+
+  @Post('types')
+  @HttpCode(HttpStatus.CREATED)
+  createType(@Body() dto: CreateTaskTypeDto) {
+    return this.tasksService.createTaskType(dto);
+  }
+
+  @Patch('types/:id')
+  updateType(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTaskTypeDto,
+  ) {
+    return this.tasksService.updateTaskType(id, dto);
   }
 
   // ─── Supervisor Oversight (2.3.1) ─────────────────────────────────────────────
@@ -113,6 +132,24 @@ export class TasksController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.tasksService.transitionStatus(
+      id,
+      dto,
+      req.user.sub,
+      req.user.positionId!,
+      req.user.clearance ?? 0,
+    );
+  }
+
+  // ─── Reassignment (§6.5) ─────────────────────────────────────────────────────
+
+  @Post(':id/reassign')
+  @HttpCode(HttpStatus.OK)
+  reassign(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReassignTaskDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.tasksService.reassignTask(
       id,
       dto,
       req.user.sub,
@@ -233,6 +270,50 @@ export class TasksController {
     return this.tasksService.removeAttachment(
       id,
       attachmentId,
+      req.user.sub,
+      req.user.positionId!,
+      req.user.clearance ?? 0,
+    );
+  }
+
+  // ─── Deadline Extension Requests (§4.10) ──────────────────────────────────────
+
+  @Get(':id/deadline-extensions')
+  listExtensions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.tasksService.listDeadlineExtensions(id, req.user.clearance ?? 0);
+  }
+
+  @Post(':id/deadline-extensions')
+  @HttpCode(HttpStatus.CREATED)
+  requestExtension(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RequestDeadlineExtensionDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.tasksService.requestDeadlineExtension(
+      id,
+      dto,
+      req.user.sub,
+      req.user.positionId!,
+      req.user.clearance ?? 0,
+    );
+  }
+
+  @Patch(':id/deadline-extensions/:requestId')
+  @HttpCode(HttpStatus.OK)
+  reviewExtension(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() dto: ReviewDeadlineExtensionDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.tasksService.reviewDeadlineExtension(
+      id,
+      requestId,
+      dto,
       req.user.sub,
       req.user.positionId!,
       req.user.clearance ?? 0,

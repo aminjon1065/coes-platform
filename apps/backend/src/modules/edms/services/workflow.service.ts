@@ -602,11 +602,43 @@ export class WorkflowService {
       }
 
       case 'organization_leadership': {
-        // Find highest active position — simplified; real impl queries by level
+        // Resolve the first active, occupied position at the specified authority level.
+        // Levels follow PositionLevel enum ordering (chairman → deputy_chairman → …).
         const level = resolver['level'] as string;
-        // Would query positions by level across org; return null for now to trigger escalation
-        this.logger.warn(`organization_leadership resolver not fully implemented for level: ${level}`);
+        const allPositions = await this.orgService.getAllActivePositions();
+        const atLevel = allPositions.filter(p => p.level === level && p.active);
+        if (!atLevel.length) {
+          this.logger.warn(`organization_leadership: no active positions found at level '${level}'`);
+          return null;
+        }
+        // Return the first occupied position at this level
+        for (const pos of atLevel) {
+          const occupant = await this.usersService.getPositionOccupant(pos.id);
+          if (occupant) return pos.id;
+        }
+        this.logger.warn(`organization_leadership: all positions at level '${level}' are vacant`);
         return null;
+      }
+
+      case 'recipient_head': {
+        // Route to the head of the department of the document's first internal recipient
+        const firstRecipient = document.recipients?.find(r => r.positionId);
+        if (!firstRecipient?.positionId) return null;
+        const pos = await this.orgService.getPositionById(firstRecipient.positionId);
+        if (!pos?.departmentId) return null;
+        const deptPositions = await this.orgService.getPositionsByDepartment(pos.departmentId);
+        const head = deptPositions.find(p => p.level === 'department_head' && p.active);
+        return head?.id ?? null;
+      }
+
+      case 'role_in_department': {
+        // Route to whoever holds a specific role in a department (uses org query)
+        const roleName = resolver['role'] as string;
+        const departmentId = resolver['departmentId'] as string;
+        const deptPositions = await this.orgService.getPositionsByDepartment(departmentId);
+        // Match by level (treating role as level for now; extend if roles differ)
+        const match = deptPositions.find(p => p.level === roleName && p.active);
+        return match?.id ?? null;
       }
 
       default:

@@ -150,6 +150,56 @@ export class MlService {
     });
   }
 
+  /**
+   * Rollback a production model version to STAGING.
+   * The previous STAGING version (if any) is promoted back to PRODUCTION.
+   * Used when a deployed model exhibits unacceptable drift or prediction quality. §10.4
+   */
+  async rollbackVersion(
+    versionId: string,
+    reason: string,
+    actorId: string,
+  ): Promise<MlModelVersion> {
+    const version = await this.versionRepo.findOne({ where: { id: versionId } });
+    if (!version) throw new NotFoundException(`MlModelVersion ${versionId} not found`);
+    if (version.status !== ModelVersionStatus.PRODUCTION) {
+      throw new ConflictException(`Version ${versionId} is not in PRODUCTION status — cannot roll back`);
+    }
+
+    version.status      = ModelVersionStatus.STAGING;
+    version.reviewNotes = `[ROLLBACK] ${reason}`;
+    version.reviewedById = actorId;
+    version.reviewedAt   = new Date();
+    await this.versionRepo.save(version);
+
+    // Promote the most recent STAGING version for same model back to PRODUCTION (if exists)
+    const prevStaging = await this.versionRepo.findOne({
+      where: { modelId: version.modelId, status: ModelVersionStatus.STAGING },
+      order: { createdAt: 'DESC' },
+    });
+
+    let promoted: MlModelVersion | null = null;
+    if (prevStaging && prevStaging.id !== versionId) {
+      prevStaging.status               = ModelVersionStatus.PRODUCTION;
+      prevStaging.promotedToProductionAt = new Date();
+      prevStaging.reviewedById          = actorId;
+      prevStaging.reviewedAt            = new Date();
+      prevStaging.reviewNotes           = `[AUTO-PROMOTED on rollback of ${versionId}]`;
+      promoted = await this.versionRepo.save(prevStaging);
+    }
+
+    this.events.emit('ml.version.rolled_back', {
+      rolledBackVersionId: versionId,
+      modelId: version.modelId,
+      promotedVersionId: promoted?.id ?? null,
+      reason,
+      actorId,
+    });
+
+    this.logger.warn(`Rolled back production version ${versionId} for model ${version.modelId}. Reason: ${reason}`);
+    return version;
+  }
+
   // ── Risk Predictions ────────────────────────────────────────────────────────
 
   async createPrediction(dto: CreateRiskPredictionDto): Promise<RiskPrediction> {
@@ -179,6 +229,51 @@ export class MlService {
       riskTier:     saved.riskTier,
     });
     return saved;
+  }
+
+  /**
+   * Bulk ingest predictions from an external ML pipeline.
+   * All items in the batch must share the same modelVersionId.
+   * Returns the created prediction records.
+   */
+  async batchCreatePredictions(
+    dtos: CreateRiskPredictionDto[],
+  ): Promise<{ created: number; ids: string[] }> {
+    if (!dtos.length) return { created: 0, ids: [] };
+
+    const modelVersionId = dtos[0].modelVersionId;
+    const version = await this.versionRepo.findOne({ where: { id: modelVersionId } });
+    if (!version) throw new NotFoundException(`MlModelVersion ${modelVersionId} not found`);
+
+    const entities = dtos.map((dto) =>
+      this.predictionRepo.create({
+        modelVersionId:     dto.modelVersionId,
+        hazardType:         dto.hazardType,
+        administrativeCode: dto.administrativeCode,
+        administrativeName: dto.administrativeName ?? null,
+        riskScore:          dto.riskScore,
+        riskTier:           dto.riskTier,
+        shapValues:         dto.shapValues ?? {},
+        inputFeatures:      dto.inputFeatures ?? {},
+        confidenceInterval: dto.confidenceInterval ?? null,
+        validFrom:          new Date(dto.validFrom),
+        validUntil:         new Date(dto.validUntil),
+        classification:     dto.classification ?? 1,
+        status:             PredictionStatus.PENDING,
+      }),
+    );
+
+    const saved = await this.predictionRepo.save(entities, { chunk: 500 });
+    const ids = saved.map((p) => p.id);
+
+    this.events.emit('ml.predictions.batch_created', {
+      count: saved.length,
+      modelVersionId,
+      hazardType: dtos[0].hazardType,
+    });
+
+    this.logger.log(`Batch ingested ${saved.length} predictions for model version ${modelVersionId}`);
+    return { created: saved.length, ids };
   }
 
   async getPendingPredictions(
@@ -234,15 +329,41 @@ export class MlService {
   }
 
   async publishApprovedPredictions(): Promise<number> {
-    const result = await this.predictionRepo.update(
-      { status: PredictionStatus.APPROVED },
-      { status: PredictionStatus.PUBLISHED },
-    );
-    const count = result.affected ?? 0;
-    if (count > 0) {
-      this.logger.log(`Published ${count} approved risk predictions to GIS layers`);
-      this.events.emit('ml.predictions.published', { count });
+    // Collect approved predictions before updating so we can pass hazardTypes + batch data
+    const approved = await this.predictionRepo.find({
+      where: { status: PredictionStatus.APPROVED },
+      select: ['id', 'hazardType', 'administrativeCode', 'administrativeName', 'riskScore', 'riskTier', 'shapValues', 'inputFeatures', 'confidenceInterval', 'validFrom', 'validUntil', 'classification'],
+    });
+
+    if (!approved.length) return 0;
+
+    const ids = approved.map((p) => p.id);
+    await this.predictionRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: PredictionStatus.PUBLISHED })
+      .whereInIds(ids)
+      .execute();
+
+    const count = approved.length;
+    const hazardTypes = [...new Set(approved.map((p) => p.hazardType))];
+
+    this.logger.log(`Published ${count} approved risk predictions (hazard types: ${hazardTypes.join(', ')})`);
+
+    // Group predictions by hazardType so GIS can create one draft layer per type
+    const byHazardType: Record<string, typeof approved> = {};
+    for (const p of approved) {
+      (byHazardType[p.hazardType] ??= []).push(p);
     }
+
+    // §12.1: Emit with full prediction data so the GIS listener can create SpatialFeatures
+    this.events.emit('ml.predictions.published', {
+      count,
+      hazardTypes,
+      batchId: `batch-${Date.now()}`,
+      byHazardType,
+    });
+
     return count;
   }
 
@@ -318,8 +439,54 @@ export class MlService {
         driftSeverity,
         snapshotId: saved.id,
       });
+
+      // §10.4 — Auto-rollback recommendation: when drift is HIGH, check if a
+      // fallback STAGING version exists and emit a rollback recommendation event.
+      // Actual rollback requires human confirmation (PATCH /ml/versions/:id/rollback).
+      if (driftSeverity === DriftSeverity.HIGH) {
+        setImmediate(() => this.emitRollbackRecommendation(modelVersionId, maxPsi, saved.id));
+      }
     }
     return saved;
+  }
+
+  private async emitRollbackRecommendation(
+    productionVersionId: string,
+    maxPsi: number,
+    snapshotId: string,
+  ): Promise<void> {
+    try {
+      const productionVersion = await this.versionRepo.findOne({
+        where: { id: productionVersionId },
+      });
+      if (!productionVersion || productionVersion.status !== ModelVersionStatus.PRODUCTION) return;
+
+      // Find the most recent STAGING version for the same model as a rollback candidate
+      const candidate = await this.versionRepo.findOne({
+        where: {
+          modelId: productionVersion.modelId,
+          status: ModelVersionStatus.STAGING,
+        },
+        order: { createdAt: 'DESC' },
+      });
+
+      this.events.emit('ml.rollback.recommended', {
+        productionVersionId,
+        modelId: productionVersion.modelId,
+        maxPsi,
+        snapshotId,
+        candidateVersionId: candidate?.id ?? null,
+        hasFallback: !!candidate,
+        recommendedAt: new Date().toISOString(),
+      });
+
+      this.logger.warn(
+        `Rollback recommendation emitted for production version ${productionVersionId} ` +
+        `(PSI=${maxPsi.toFixed(3)}, candidate=${candidate?.id ?? 'none'})`,
+      );
+    } catch (err) {
+      this.logger.error(`Failed to emit rollback recommendation: ${(err as Error).message}`);
+    }
   }
 
   async getPerformanceHistory(

@@ -5,3 +5,7 @@ export { CreateIncidentLocationDto } from './create-incident-location.dto';
 export { IngestBoundaryDto } from './ingest-boundary.dto';
 export { ListLayersDto } from './list-layers.dto';
 export { BboxQueryDto, RadiusQueryDto, HazardZoneQueryDto, IncidentQueryDto } from './spatial-query.dto';
+export { UpdateSpatialLayerDto } from './update-spatial-layer.dto';
+export { ClusterQueryDto } from './cluster-query.dto';
+export { HeatmapQueryDto } from './heatmap-query.dto';
+export { TimelineQueryDto, TimelineGranularity } from './timeline-query.dto';

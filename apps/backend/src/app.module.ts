@@ -26,6 +26,7 @@ import { MlModule } from './modules/ml/ml.module';
 import { ReportingModule } from './modules/reporting/reporting.module';
 import { OutboxModule } from './modules/outbox/outbox.module';
 import { InboxModule } from './modules/inbox/inbox.module';
+import { GatewayModule } from './modules/gateway/gateway.module';
 import { validateConfig } from './infra/config/config.validation';
 import databaseConfig from './infra/config/database.config';
 import redisConfig from './infra/config/redis.config';
@@ -152,6 +153,7 @@ const envFilePath = [
     AnalyticsModule,
     MlModule,
     ReportingModule,
+    GatewayModule,
   ],
 })
 export class AppModule {}

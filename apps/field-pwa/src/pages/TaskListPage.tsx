@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { getTasks } from '../lib/api';
 import { cacheTasks, getCachedTasks, type CachedTask } from '../lib/offline-db';
 import { OfflineBadge } from '../components/OfflineBadge';
+import { SyncStatus } from '../components/SyncStatus';
 
 const STATUS_COLORS: Record<string, string> = {
   open: 'bg-blue-600',
@@ -84,9 +85,14 @@ export default function TaskListPage() {
         </select>
       </div>
 
+      {/* Sync status bar — shows pending queue count + manual sync button */}
+      <div className="mx-4 mt-1 mb-3">
+        <SyncStatus />
+      </div>
+
       {offline && (
         <div className="mx-4 mb-3 bg-amber-900/40 text-amber-300 text-sm rounded-lg px-3 py-2">
-          Offline — showing cached tasks
+          Offline — showing cached tasks. Reports will be sent when connectivity is restored.
         </div>
       )}
 

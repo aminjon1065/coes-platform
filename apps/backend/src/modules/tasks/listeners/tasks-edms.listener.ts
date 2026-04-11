@@ -79,6 +79,271 @@ export class TasksEdmsListener {
     }
   }
 
+  // ─── EDMS → Tasks: deadline modified ─────────────────────────────────────────
+
+  @OnEvent('edms.assignment_deadline_modified')
+  async onAssignmentDeadlineModified(payload: {
+    assignmentId: string;
+    documentId: string;
+    resolutionId: string;
+    newDeadline: string;
+    modifiedByUserId: string;
+    modifiedByPositionId: string;
+  }): Promise<void> {
+    try {
+      const task = await this.taskRepo.findOne({
+        where: { sourceAssignmentId: payload.assignmentId },
+      });
+      if (!task) return;
+
+      const previous = task.deadline;
+      task.deadline = payload.newDeadline;
+      task.isOverdue = false; // re-evaluate on next scheduler run
+      task.overdueAt = null;
+      await this.taskRepo.save(task);
+
+      const history = this.historyRepo.create({
+        taskId: task.id,
+        eventType: 'deadline_modified_by_edms',
+        actorId: payload.modifiedByUserId,
+        actorPositionId: payload.modifiedByPositionId,
+        previousValue: { deadline: previous },
+        newValue: {
+          deadline: payload.newDeadline,
+          source: 'edms.assignment_deadline_modified',
+          assignmentId: payload.assignmentId,
+        },
+      });
+      await this.historyRepo.save(history);
+
+      await this.auditService.emit({
+        eventType: 'TASK_DEADLINE_MODIFIED_BY_EDMS',
+        resourceType: 'task',
+        resourceId: task.id,
+        actorId: payload.modifiedByUserId,
+        details: { previousDeadline: previous, newDeadline: payload.newDeadline, assignmentId: payload.assignmentId },
+      });
+
+      this.logger.log(
+        `Task ${task.id} deadline updated to ${payload.newDeadline} via EDMS assignment ${payload.assignmentId}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to apply EDMS deadline modification for assignment ${payload.assignmentId}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+  }
+
+  // ─── EDMS → Tasks: assignment cancelled ──────────────────────────────────────
+
+  @OnEvent('edms.assignment_cancelled')
+  async onAssignmentCancelled(payload: {
+    assignmentId: string;
+    documentId: string;
+    resolutionId: string;
+    cancelledByUserId: string;
+    cancelledByPositionId: string;
+    reason: string | null;
+  }): Promise<void> {
+    try {
+      const task = await this.taskRepo.findOne({
+        where: { sourceAssignmentId: payload.assignmentId },
+      });
+      if (!task) return;
+
+      const terminalStatuses = [
+        TaskStatus.COMPLETED,
+        TaskStatus.VERIFIED,
+        TaskStatus.CANCELLED,
+        TaskStatus.CLOSED,
+      ];
+      if (terminalStatuses.includes(task.status)) return;
+
+      task.status = TaskStatus.CANCELLED;
+      task.cancelReason = payload.reason ?? 'EDMS resolution assignment cancelled';
+      task.cancelledAt = new Date();
+      await this.taskRepo.save(task);
+
+      const history = this.historyRepo.create({
+        taskId: task.id,
+        eventType: 'cancelled_by_edms',
+        actorId: payload.cancelledByUserId,
+        actorPositionId: payload.cancelledByPositionId,
+        previousValue: { status: task.status },
+        newValue: {
+          status: TaskStatus.CANCELLED,
+          reason: task.cancelReason,
+          source: 'edms.assignment_cancelled',
+          assignmentId: payload.assignmentId,
+        },
+      });
+      await this.historyRepo.save(history);
+
+      await this.auditService.emit({
+        eventType: 'TASK_CANCELLED_BY_EDMS',
+        resourceType: 'task',
+        resourceId: task.id,
+        actorId: payload.cancelledByUserId,
+        details: { assignmentId: payload.assignmentId, reason: payload.reason },
+      });
+
+      this.eventEmitter.emit('notification.requested', {
+        type: 'TASK_CANCELLED_BY_EDMS',
+        recipientPositionId: task.responsiblePositionId,
+        priority: 'normal',
+        payload: { taskId: task.id, taskTitle: task.title, reason: task.cancelReason },
+      });
+
+      this.logger.log(
+        `Task ${task.id} cancelled via EDMS assignment cancellation ${payload.assignmentId}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to cancel task for EDMS assignment ${payload.assignmentId}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+  }
+
+  // ─── EDMS → Tasks: executor reassigned ───────────────────────────────────────
+
+  @OnEvent('edms.assignment_reassigned')
+  async onAssignmentReassigned(payload: {
+    assignmentId: string;
+    documentId: string;
+    resolutionId: string;
+    newPositionId: string;
+    newUserId: string | null;
+    reassignedByUserId: string;
+    reassignedByPositionId: string;
+    reason: string | null;
+  }): Promise<void> {
+    try {
+      const task = await this.taskRepo.findOne({
+        where: { sourceAssignmentId: payload.assignmentId },
+      });
+      if (!task) return;
+
+      const previousPositionId = task.responsiblePositionId;
+      task.responsiblePositionId = payload.newPositionId;
+      await this.taskRepo.save(task);
+
+      const history = this.historyRepo.create({
+        taskId: task.id,
+        eventType: 'reassigned_by_edms',
+        actorId: payload.reassignedByUserId,
+        actorPositionId: payload.reassignedByPositionId,
+        previousValue: { responsiblePositionId: previousPositionId },
+        newValue: {
+          responsiblePositionId: payload.newPositionId,
+          source: 'edms.assignment_reassigned',
+          assignmentId: payload.assignmentId,
+          reason: payload.reason,
+        },
+      });
+      await this.historyRepo.save(history);
+
+      await this.auditService.emit({
+        eventType: 'TASK_REASSIGNED_BY_EDMS',
+        resourceType: 'task',
+        resourceId: task.id,
+        actorId: payload.reassignedByUserId,
+        details: {
+          previousPositionId,
+          newPositionId: payload.newPositionId,
+          assignmentId: payload.assignmentId,
+          reason: payload.reason,
+        },
+      });
+
+      // Notify new executor
+      this.eventEmitter.emit('notification.requested', {
+        type: 'TASK_REASSIGNED',
+        recipientPositionId: payload.newPositionId,
+        priority: 'normal',
+        payload: {
+          taskId: task.id,
+          taskTitle: task.title,
+          deadline: task.deadline,
+          reason: payload.reason ?? 'EDMS executor reassignment',
+        },
+      });
+
+      // Inform the previous executor
+      this.eventEmitter.emit('notification.requested', {
+        type: 'TASK_REASSIGNED_AWAY',
+        recipientPositionId: previousPositionId,
+        priority: 'normal',
+        payload: {
+          taskId: task.id,
+          taskTitle: task.title,
+          newPositionId: payload.newPositionId,
+          reason: payload.reason,
+        },
+      });
+
+      this.logger.log(
+        `Task ${task.id} reassigned from ${previousPositionId} to ${payload.newPositionId} via EDMS`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to reassign task for EDMS assignment ${payload.assignmentId}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+  }
+
+  // ─── Tasks → EDMS: task overdue ───────────────────────────────────────────────
+
+  @OnEvent('task.overdue')
+  async onTaskOverdueEdmsSync(payload: {
+    taskId: string;
+    responsiblePositionId: string;
+    assigningPositionId: string;
+    deadline: string | null;
+  }): Promise<void> {
+    const task = await this.taskRepo.findOne({ where: { id: payload.taskId } });
+    if (!task || task.source !== TaskSource.DOCUMENT_GENERATED || !task.sourceAssignmentId) return;
+
+    this.eventEmitter.emit('tasks.document_task_overdue', {
+      taskId: task.id,
+      sourceAssignmentId: task.sourceAssignmentId,
+      sourceDocumentId: task.sourceDocumentId,
+      sourceResolutionId: task.sourceResolutionId,
+      responsiblePositionId: task.responsiblePositionId,
+      deadline: task.deadline,
+    });
+  }
+
+  // ─── Tasks → EDMS: cannot execute ────────────────────────────────────────────
+
+  @OnEvent('task.status_changed')
+  async onCannotExecuteEdmsSync(payload: {
+    taskId: string;
+    from: string;
+    to: string;
+    actorId: string;
+    actorPositionId: string;
+  }): Promise<void> {
+    if (payload.to !== TaskStatus.CANNOT_EXECUTE) return;
+
+    const task = await this.taskRepo.findOne({ where: { id: payload.taskId } });
+    if (!task || task.source !== TaskSource.DOCUMENT_GENERATED || !task.sourceAssignmentId) return;
+
+    this.eventEmitter.emit('tasks.document_task_cannot_execute', {
+      taskId: task.id,
+      sourceAssignmentId: task.sourceAssignmentId,
+      sourceDocumentId: task.sourceDocumentId,
+      sourceResolutionId: task.sourceResolutionId,
+      responsiblePositionId: task.responsiblePositionId,
+      reason: task.cannotExecuteReason,
+      actorId: payload.actorId,
+    });
+  }
+
+  // ─── Tasks → EDMS: task completed ────────────────────────────────────────────
+
   @OnEvent('task.status_changed')
   async onTaskStatusChanged(payload: {
     taskId: string;
@@ -136,6 +401,7 @@ export class TasksEdmsListener {
       deadline: assignment.deadline ?? resolution.deadline ?? null,
       sourceDocumentId: resolution.documentId,
       sourceResolutionId: resolution.resolutionId,
+      sourceAssignmentId: assignment.assignmentId,
     });
     await this.taskRepo.save(task);
 

@@ -15,6 +15,10 @@ import { TaskAssignment, AssignmentType, AssignmentStatus } from '../entities/ta
 import { TaskHistory } from '../entities/task-history.entity';
 import { TaskComment } from '../entities/task-comment.entity';
 import { TaskAttachment } from '../entities/task-attachment.entity';
+import {
+  TaskDeadlineExtensionRequest,
+  TaskExtensionStatus,
+} from '../entities/task-deadline-extension-request.entity';
 
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -30,6 +34,7 @@ import { AddExecutorDto } from '../dto/add-executor.dto';
 import { AddCommentDto } from '../dto/add-comment.dto';
 import { AddAttachmentDto } from '../dto/add-attachment.dto';
 import { UpdateProgressDto } from '../dto/update-progress.dto';
+import { ReassignTaskDto } from '../dto/reassign-task.dto';
 
 /** Maximum subtask depth (0-indexed, so 3 = 4 levels total) */
 const MAX_SUBTASK_DEPTH = 3;
@@ -51,6 +56,8 @@ export class TasksService {
     private readonly commentRepo: Repository<TaskComment>,
     @InjectRepository(TaskAttachment)
     private readonly attachmentRepo: Repository<TaskAttachment>,
+    @InjectRepository(TaskDeadlineExtensionRequest)
+    private readonly extensionRepo: Repository<TaskDeadlineExtensionRequest>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
@@ -858,10 +865,330 @@ export class TasksService {
     return activeTasks.length;
   }
 
-  // ─── Task Types (admin) ──────────────────────────────────────────────────────
+  // ─── Reassignment (§6.5) ─────────────────────────────────────────────────────
+
+  /**
+   * Reassign the primary responsible position of a task.
+   * Only the assigning authority or a superior in the command chain may reassign.
+   * A modification record is permanently written to the task history.
+   */
+  async reassignTask(
+    taskId: string,
+    dto: ReassignTaskDto,
+    actorId: string,
+    actorPositionId: string,
+    actorClearance: number,
+  ): Promise<Task> {
+    const task = await this.taskRepo.findOne({ where: { id: taskId } });
+    if (!task) throw new NotFoundException(`Task ${taskId} not found`);
+    this.assertClearance(actorClearance, task.classification);
+
+    const isAssigningAuthority = task.assigningPositionId === actorPositionId;
+    const isSupervisor = await this.orgService.isSubordinateTo(task.responsiblePositionId, actorPositionId);
+    if (!isAssigningAuthority && !isSupervisor) {
+      throw new ForbiddenException('Only the assigning authority or supervisor can reassign this task');
+    }
+
+    // New position must still be within the actor's command chain
+    await this.assertAssignmentAuthority(actorPositionId, dto.newPositionId);
+
+    const previousPositionId = task.responsiblePositionId;
+
+    // Deactivate current primary assignment
+    const currentAssignment = await this.assignmentRepo.findOne({
+      where: {
+        taskId,
+        positionId: previousPositionId,
+        assignmentType: AssignmentType.PRIMARY,
+        status: AssignmentStatus.ACTIVE,
+      },
+    });
+    if (currentAssignment) {
+      currentAssignment.status = AssignmentStatus.REMOVED;
+      currentAssignment.removedAt = new Date();
+      currentAssignment.removeReason = `Reassigned: ${dto.reason}`;
+      await this.assignmentRepo.save(currentAssignment);
+    }
+
+    task.responsiblePositionId = dto.newPositionId;
+    await this.taskRepo.save(task);
+
+    // New primary assignment record
+    await this.createAssignmentRecord(
+      taskId,
+      dto.newPositionId,
+      AssignmentType.PRIMARY,
+      actorPositionId,
+      actorId,
+      task.deadline,
+    );
+
+    await this.recordHistory(taskId, 'task_reassigned', actorId, actorPositionId,
+      { responsiblePositionId: previousPositionId },
+      { responsiblePositionId: dto.newPositionId, reason: dto.reason },
+    );
+
+    await this.auditService.emit({
+      eventType: 'TASK_REASSIGNED',
+      resourceType: 'task',
+      resourceId: taskId,
+      actorId,
+      details: { previousPositionId, newPositionId: dto.newPositionId, reason: dto.reason },
+    });
+
+    this.eventEmitter.emit('notification.requested', {
+      type: 'TASK_REASSIGNED',
+      recipientPositionId: dto.newPositionId,
+      priority: 'normal',
+      payload: { taskId: task.id, taskTitle: task.title, deadline: task.deadline, reason: dto.reason },
+    });
+
+    this.eventEmitter.emit('notification.requested', {
+      type: 'TASK_REASSIGNED_AWAY',
+      recipientPositionId: previousPositionId,
+      priority: 'normal',
+      payload: { taskId: task.id, taskTitle: task.title, newPositionId: dto.newPositionId, reason: dto.reason },
+    });
+
+    this.eventEmitter.emit('task.reassigned', {
+      taskId,
+      previousPositionId,
+      newPositionId: dto.newPositionId,
+      actorId,
+      actorPositionId,
+    });
+
+    return this.taskRepo.findOne({
+      where: { id: taskId },
+      relations: ['assignments', 'type'],
+    }) as Promise<Task>;
+  }
+
+  // ─── Deadline Extension Request (§4.10, §17.3) ────────────────────────────────
+
+  /** File a formal deadline extension request. Only the responsible executor may file. */
+  async requestDeadlineExtension(
+    taskId: string,
+    dto: import('../dto/request-deadline-extension.dto').RequestDeadlineExtensionDto,
+    actorId: string,
+    actorPositionId: string,
+    actorClearance: number,
+  ): Promise<TaskDeadlineExtensionRequest> {
+    const task = await this.taskRepo.findOne({ where: { id: taskId } });
+    if (!task) throw new NotFoundException(`Task ${taskId} not found`);
+    this.assertClearance(actorClearance, task.classification);
+
+    if (task.responsiblePositionId !== actorPositionId) {
+      throw new ForbiddenException('Only the responsible executor may file a deadline extension request');
+    }
+
+    if (!task.deadline) {
+      throw new BadRequestException('Cannot request a deadline extension for a task with no deadline');
+    }
+
+    if (dto.requestedDeadline <= task.deadline) {
+      throw new BadRequestException('Requested deadline must be after the current deadline');
+    }
+
+    // Only one PENDING request allowed at a time
+    const existing = await this.extensionRepo.findOne({
+      where: { taskId, status: TaskExtensionStatus.PENDING },
+    });
+    if (existing) {
+      throw new BadRequestException('A pending deadline extension request already exists for this task');
+    }
+
+    const request = this.extensionRepo.create({
+      taskId,
+      requesterPositionId: actorPositionId,
+      requesterId: actorId,
+      currentDeadline: task.deadline,
+      requestedDeadline: dto.requestedDeadline,
+      justification: dto.justification,
+      status: TaskExtensionStatus.PENDING,
+    });
+    await this.extensionRepo.save(request);
+
+    await this.recordHistory(taskId, 'deadline_extension_requested', actorId, actorPositionId, null, {
+      requestId: request.id,
+      currentDeadline: task.deadline,
+      requestedDeadline: dto.requestedDeadline,
+      justification: dto.justification,
+    });
+
+    await this.auditService.emit({
+      eventType: 'TASK_DEADLINE_EXTENSION_REQUESTED',
+      resourceType: 'task',
+      resourceId: taskId,
+      actorId,
+      details: { requestId: request.id, requestedDeadline: dto.requestedDeadline },
+    });
+
+    // Notify the assigning authority for review
+    this.eventEmitter.emit('notification.requested', {
+      type: 'TASK_DEADLINE_EXTENSION_REQUESTED',
+      recipientPositionId: task.assigningPositionId,
+      priority: 'normal',
+      payload: {
+        taskId: task.id,
+        taskTitle: task.title,
+        requestId: request.id,
+        currentDeadline: task.deadline,
+        requestedDeadline: dto.requestedDeadline,
+        justification: dto.justification,
+      },
+    });
+
+    return request;
+  }
+
+  /** Approve or deny a pending deadline extension request. */
+  async reviewDeadlineExtension(
+    taskId: string,
+    requestId: string,
+    dto: import('../dto/review-deadline-extension.dto').ReviewDeadlineExtensionDto,
+    actorId: string,
+    actorPositionId: string,
+    actorClearance: number,
+  ): Promise<TaskDeadlineExtensionRequest> {
+    const task = await this.taskRepo.findOne({ where: { id: taskId } });
+    if (!task) throw new NotFoundException(`Task ${taskId} not found`);
+    this.assertClearance(actorClearance, task.classification);
+
+    const isAssigningAuthority = task.assigningPositionId === actorPositionId;
+    const isSupervisor = await this.orgService.isSubordinateTo(task.responsiblePositionId, actorPositionId);
+    if (!isAssigningAuthority && !isSupervisor) {
+      throw new ForbiddenException('Only the assigning authority or supervisor can review a deadline extension request');
+    }
+
+    if (dto.decision === TaskExtensionStatus.DENIED && (!dto.remarks || dto.remarks.length < 10)) {
+      throw new BadRequestException('A denial requires remarks explaining why the extension is not granted');
+    }
+
+    const request = await this.extensionRepo.findOne({
+      where: { id: requestId, taskId, status: TaskExtensionStatus.PENDING },
+    });
+    if (!request) throw new NotFoundException(`Pending extension request ${requestId} not found`);
+
+    request.status = dto.decision;
+    request.reviewedByPositionId = actorPositionId;
+    request.reviewedById = actorId;
+    request.reviewRemarks = dto.remarks ?? null;
+    request.reviewedAt = new Date();
+    await this.extensionRepo.save(request);
+
+    if (dto.decision === TaskExtensionStatus.APPROVED) {
+      const previousDeadline = task.deadline;
+      task.deadline = request.requestedDeadline;
+      task.isOverdue = false;
+      task.overdueAt = null;
+      await this.taskRepo.save(task);
+
+      await this.recordHistory(taskId, 'deadline_extended', actorId, actorPositionId,
+        { deadline: previousDeadline },
+        { deadline: request.requestedDeadline, requestId, reason: dto.remarks },
+      );
+    }
+
+    await this.auditService.emit({
+      eventType: dto.decision === TaskExtensionStatus.APPROVED
+        ? 'TASK_DEADLINE_EXTENSION_APPROVED'
+        : 'TASK_DEADLINE_EXTENSION_DENIED',
+      resourceType: 'task',
+      resourceId: taskId,
+      actorId,
+      details: {
+        requestId,
+        decision: dto.decision,
+        requestedDeadline: request.requestedDeadline,
+        remarks: dto.remarks,
+      },
+    });
+
+    // Notify the executor of the decision
+    this.eventEmitter.emit('notification.requested', {
+      type: dto.decision === TaskExtensionStatus.APPROVED
+        ? 'TASK_DEADLINE_EXTENSION_APPROVED'
+        : 'TASK_DEADLINE_EXTENSION_DENIED',
+      recipientPositionId: request.requesterPositionId,
+      priority: 'normal',
+      payload: {
+        taskId: task.id,
+        taskTitle: task.title,
+        requestId,
+        requestedDeadline: request.requestedDeadline,
+        remarks: dto.remarks,
+      },
+    });
+
+    return request;
+  }
+
+  /** List all deadline extension requests for a task. */
+  async listDeadlineExtensions(
+    taskId: string,
+    actorClearance: number,
+  ): Promise<TaskDeadlineExtensionRequest[]> {
+    const task = await this.taskRepo.findOne({ where: { id: taskId } });
+    if (!task) throw new NotFoundException(`Task ${taskId} not found`);
+    this.assertClearance(actorClearance, task.classification);
+
+    return this.extensionRepo.find({
+      where: { taskId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  // ─── Task Types (admin, §17.1) ────────────────────────────────────────────────
 
   async listTaskTypes(): Promise<TaskType[]> {
     return this.typeRepo.find({ where: { active: true } });
+  }
+
+  async createTaskType(
+    dto: import('../dto/create-task-type.dto').CreateTaskTypeDto,
+  ): Promise<TaskType> {
+    const existing = await this.typeRepo.findOne({ where: { name: dto.name } });
+    if (existing) throw new BadRequestException(`TaskType '${dto.name}' already exists`);
+
+    const taskType = this.typeRepo.create({
+      name: dto.name,
+      nameRu: dto.nameRu ?? null,
+      nameTg: dto.nameTg ?? null,
+      description: dto.description ?? null,
+      defaultPriority: dto.defaultPriority ?? 2,
+      defaultDeadlineDays: dto.defaultDeadlineDays ?? null,
+      requiresAcceptance: dto.requiresAcceptance ?? false,
+      requiresVerification: dto.requiresVerification ?? false,
+      supportsCoExecutors: dto.supportsCoExecutors ?? true,
+      supportsSubtasks: dto.supportsSubtasks ?? true,
+      supportsDraft: dto.supportsDraft ?? false,
+      active: true,
+    });
+    return this.typeRepo.save(taskType);
+  }
+
+  async updateTaskType(
+    id: string,
+    dto: import('../dto/update-task-type.dto').UpdateTaskTypeDto,
+  ): Promise<TaskType> {
+    const taskType = await this.typeRepo.findOne({ where: { id } });
+    if (!taskType) throw new NotFoundException(`TaskType ${id} not found`);
+
+    if (dto.name !== undefined) taskType.name = dto.name;
+    if (dto.nameRu !== undefined) taskType.nameRu = dto.nameRu ?? null;
+    if (dto.nameTg !== undefined) taskType.nameTg = dto.nameTg ?? null;
+    if (dto.description !== undefined) taskType.description = dto.description ?? null;
+    if (dto.defaultPriority !== undefined) taskType.defaultPriority = dto.defaultPriority;
+    if (dto.defaultDeadlineDays !== undefined) taskType.defaultDeadlineDays = dto.defaultDeadlineDays ?? null;
+    if (dto.requiresAcceptance !== undefined) taskType.requiresAcceptance = dto.requiresAcceptance;
+    if (dto.requiresVerification !== undefined) taskType.requiresVerification = dto.requiresVerification;
+    if (dto.supportsCoExecutors !== undefined) taskType.supportsCoExecutors = dto.supportsCoExecutors;
+    if (dto.supportsSubtasks !== undefined) taskType.supportsSubtasks = dto.supportsSubtasks;
+    if (dto.supportsDraft !== undefined) taskType.supportsDraft = dto.supportsDraft;
+    if (dto.active !== undefined) taskType.active = dto.active;
+
+    return this.typeRepo.save(taskType);
   }
 
   // ─── Private helpers ─────────────────────────────────────────────────────────

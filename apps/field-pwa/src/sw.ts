@@ -85,6 +85,121 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
+// ── BackgroundSync: drain the IndexedDB incident queue when connectivity returns ──
+
+const SYNC_TAG = 'incident-sync';
+
+self.addEventListener('sync', (event) => {
+  // 'sync' event arrives when the browser detects restored connectivity
+  if ((event as SyncEvent).tag === SYNC_TAG) {
+    event.waitUntil(flushIncidentQueue());
+  }
+});
+
+/**
+ * Drain pending_ops from IndexedDB by replaying each stored request.
+ * Runs in the service worker context — uses fetch() directly.
+ * Successful items are deleted; failed items increment their attempt count
+ * and remain in the queue for the next sync opportunity.
+ */
+async function flushIncidentQueue(): Promise<void> {
+  let db: IDBDatabase;
+
+  try {
+    db = await openFieldPwaDb();
+  } catch {
+    // Can't open DB in this SW context — give up and let the page handle it
+    return;
+  }
+
+  const ops = await getAllPendingOps(db);
+  const MAX_ATTEMPTS = 5;
+
+  for (const op of ops) {
+    if (op.attempts >= MAX_ATTEMPTS) continue; // already given up
+
+    try {
+      const res = await fetch(op.url, {
+        method: op.method,
+        headers: op.headers as Record<string, string>,
+        body: op.body,
+      });
+
+      if (res.ok) {
+        await deletePendingOp(db, op.id);
+      } else {
+        await incrementOpAttempts(db, op.id);
+      }
+    } catch {
+      await incrementOpAttempts(db, op.id);
+    }
+  }
+}
+
+// ── Minimal IndexedDB helpers for the service worker context ──
+// (Cannot import idb library here — use raw IDBDatabase APIs)
+
+interface SwPendingOp {
+  id: number;
+  url: string;
+  method: string;
+  body: string;
+  headers: unknown;
+  attempts: number;
+}
+
+function openFieldPwaDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('coescd-field', 1);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function getAllPendingOps(db: IDBDatabase): Promise<SwPendingOp[]> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pending_ops', 'readonly');
+    const req = tx.objectStore('pending_ops').getAll();
+    req.onsuccess = () => resolve(req.result as SwPendingOp[]);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function deletePendingOp(db: IDBDatabase, id: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pending_ops', 'readwrite');
+    const req = tx.objectStore('pending_ops').delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function incrementOpAttempts(db: IDBDatabase, id: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pending_ops', 'readwrite');
+    const store = tx.objectStore('pending_ops');
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const op = getReq.result as SwPendingOp | undefined;
+      if (op) {
+        op.attempts += 1;
+        const putReq = store.put(op);
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+      } else {
+        resolve();
+      }
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+// Extend the ServiceWorkerGlobalScope type to include the sync event
+interface SyncEvent extends ExtendableEvent {
+  readonly tag: string;
+  readonly lastChance: boolean;
+}
+
 function parsePushPayload(
   event: PushEvent,
 ): {

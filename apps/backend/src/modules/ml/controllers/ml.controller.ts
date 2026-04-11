@@ -71,6 +71,20 @@ export class MlController {
     return this.mlService.promoteVersion(id, dto, ACTOR_ID, USER_CLEARANCE);
   }
 
+  /**
+   * PATCH /api/v1/ml/versions/:id/rollback
+   * Roll back a production version to STAGING and auto-promote the previous STAGING version.
+   * Used after a drift alert or analyst-detected quality degradation. §10.4
+   */
+  @Patch('versions/:id/rollback')
+  @HttpCode(HttpStatus.OK)
+  rollbackVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('reason') reason: string,
+  ) {
+    return this.mlService.rollbackVersion(id, reason ?? 'Manual rollback', ACTOR_ID);
+  }
+
   @Get('versions/:id/performance')
   getPerformanceHistory(
     @Param('id', ParseUUIDPipe) id: string,
@@ -88,6 +102,16 @@ export class MlController {
   @HttpCode(HttpStatus.CREATED)
   createPrediction(@Body() dto: CreateRiskPredictionDto) {
     return this.mlService.createPrediction(dto);
+  }
+
+  /**
+   * POST /api/v1/ml/predictions/batch
+   * Bulk-ingest predictions from the ML pipeline. All items must share the same modelVersionId.
+   */
+  @Post('predictions/batch')
+  @HttpCode(HttpStatus.CREATED)
+  batchCreatePredictions(@Body() dtos: CreateRiskPredictionDto[]) {
+    return this.mlService.batchCreatePredictions(dtos);
   }
 
   @Get('predictions/pending')

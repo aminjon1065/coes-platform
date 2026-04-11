@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   ParseUUIDPipe,
@@ -13,10 +14,14 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 
 import { GisService } from '../services/gis.service';
+import { GisClusteringService } from '../services/gis-clustering.service';
+import { GisHeatmapService } from '../services/gis-heatmap.service';
+import { GisAnalyticsService } from '../services/gis-analytics.service';
 import { CurrentUser } from '../../iam/decorators/current-user.decorator';
 
 import {
   CreateSpatialLayerDto,
+  UpdateSpatialLayerDto,
   CreateSpatialFeatureDto,
   CreateHazardZoneDto,
   CreateIncidentLocationDto,
@@ -26,6 +31,9 @@ import {
   RadiusQueryDto,
   HazardZoneQueryDto,
   IncidentQueryDto,
+  ClusterQueryDto,
+  HeatmapQueryDto,
+  TimelineQueryDto,
 } from '../dto';
 
 interface JwtPayload {
@@ -46,7 +54,12 @@ function toCtx(user: JwtPayload) {
 @ApiBearerAuth()
 @Controller('gis')
 export class GisController {
-  constructor(private readonly gisService: GisService) {}
+  constructor(
+    private readonly gisService: GisService,
+    private readonly clusteringService: GisClusteringService,
+    private readonly heatmapService: GisHeatmapService,
+    private readonly analyticsService: GisAnalyticsService,
+  ) {}
 
   // ── Layers ────────────────────────────────────────────────────────────────
 
@@ -95,6 +108,36 @@ export class GisController {
     return this.gisService.deprecateLayer(id, toCtx(user));
   }
 
+  @ApiOperation({ summary: 'Update metadata of an existing spatial layer' })
+  @Patch('layers/:id')
+  updateLayer(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSpatialLayerDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.gisService.updateLayer(id, dto, toCtx(user));
+  }
+
+  @ApiOperation({ summary: 'Analyst approves an AI-generated draft risk layer (§12.1)' })
+  @Patch('layers/:id/ai-approve')
+  approveAiLayer(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('classificationLevel') classificationLevel: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.gisService.approveAiLayer(id, classificationLevel, toCtx(user));
+  }
+
+  @ApiOperation({ summary: 'Analyst rejects an AI-generated draft risk layer (§12.1)' })
+  @Patch('layers/:id/ai-reject')
+  rejectAiLayer(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('reason') reason: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.gisService.rejectAiLayer(id, reason, toCtx(user));
+  }
+
   // ── Features ──────────────────────────────────────────────────────────────
 
   @ApiOperation({ summary: 'Add a spatial feature to a layer' })
@@ -104,6 +147,16 @@ export class GisController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.gisService.createFeature(dto, toCtx(user));
+  }
+
+  @ApiOperation({ summary: 'Soft-delete a spatial feature (sets valid_to = now)' })
+  @Delete('features/:id')
+  @HttpCode(HttpStatus.OK)
+  deleteFeature(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.gisService.deleteFeature(id, toCtx(user));
   }
 
   @ApiOperation({ summary: 'Get a single feature as GeoJSON' })
@@ -184,6 +237,15 @@ export class GisController {
     return this.gisService.getIncidentAsGeoJson(id, toCtx(user));
   }
 
+  @ApiOperation({ summary: 'Mark an incident as verified by a GIS analyst' })
+  @Patch('incidents/:id/verify')
+  verifyIncident(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.gisService.verifyIncident(id, toCtx(user));
+  }
+
   @ApiOperation({ summary: 'Mark an incident as resolved' })
   @Patch('incidents/:id/resolve')
   resolveIncident(
@@ -234,5 +296,40 @@ export class GisController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async refreshSummary(@CurrentUser() user: JwtPayload) {
     await this.gisService.refreshIncidentSummary();
+  }
+
+  // ── Advanced Analytics ────────────────────────────────────────────────────
+
+  @ApiOperation({
+    summary: 'Cluster incident locations within a bounding box (GeoJSON FeatureCollection)',
+  })
+  @Get('clusters')
+  getClusters(
+    @Query() dto: ClusterQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.clusteringService.clusterIncidents(dto, toCtx(user).clearanceLevel);
+  }
+
+  @ApiOperation({
+    summary: 'Incident density heatmap data within a bounding box',
+  })
+  @Get('heatmap')
+  getHeatmap(
+    @Query() dto: HeatmapQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.heatmapService.getHeatmapData(dto, toCtx(user).clearanceLevel);
+  }
+
+  @ApiOperation({
+    summary: 'Incident counts bucketed by time for timeline animation',
+  })
+  @Get('analytics/timeline')
+  getTimeline(
+    @Query() dto: TimelineQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.analyticsService.getIncidentTimeline(dto, toCtx(user).clearanceLevel);
   }
 }
